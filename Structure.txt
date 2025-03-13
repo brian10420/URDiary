@@ -1,0 +1,79 @@
+URDiary/                             # 專案根目錄
+│── backend/                         # 後端（FastAPI）
+│   │── app/                         # 應用程式主目錄
+│   │   │── __pycache__/             # Python 快取
+│   │   │── database/                # 資料庫模組
+│   │   │   │── __init__.py
+│   │   │   │── crud.py              # 資料庫 CRUD 操作
+│   │   │   │── models.py            # ORM 資料表模型
+│   │   │── services/                # 服務層
+│   │   │   │── __init__.py
+│   │   │   │── diary_service.py     # 日記服務
+│   │   │   │── interaction_service.py # 互動功能
+│   │   │   │── analytics_service.py  # 數據分析
+│   │   │   │── prompts/             # Prompt 設計
+│   │   │   │   │── conversation_prompt.txt
+│   │   │   │   │── daily_note_prompt.txt
+│   │   │   │   │── interaction_note_prompt.txt
+│   │   │── api/                     # API 端點
+│   │   │   │── v1/                  # API 版本控制
+│   │   │   │   │── __init__.py
+│   │   │   │   │── endpoints.py     # API 主要路由
+│   │   │── core/                    # 核心設定
+│   │   │   │── config.py            # 設定檔（環境變數）
+│   │   │── utils/                    # 通用工具
+│   │   │   │── memory_manager.py     # 記憶管理（Redis）
+│   │   │── main.py                   # FastAPI 主伺服器
+│   │   │── requirements.txt          # 依賴套件清單
+│   │── .env                          # 環境變數設定
+│   │── docker-compose.yml            # Docker 設定
+│   │── Dockerfile                    # Docker 構建檔案
+│   │── postgres_data/                # PostgreSQL 資料存放
+│
+│── frontend/                         # 前端（Web）
+│   │── src/                          # 前端程式碼
+│   │   │── components/               # 可複用的 UI 元件
+│   │   │── pages/                    # 應用的主要頁面
+│   │   │── services/                 # 處理 API 請求的模組
+│   │   │── utils/                    # 工具函數
+│   │   │── App.vue                   # Vue 或 React 應用主檔案
+│   │── public/                       # 靜態資源（如 favicon, index.html）
+│   │── package.json                   # 前端依賴管理
+│   │── vite.config.js                  # 前端建構工具設定
+│
+│── desktop/                          # 桌面應用（Electron）
+│   │── assets/                       # 靜態資源（圖片、圖示）
+│   │   │── icon.png.jpg              # 應用圖示
+│   │── css/                          # 樣式表（CSS）
+│   │   │── animations.css            # 動畫效果
+│   │   │── base.css                  # 基本樣式
+│   │   │── chat.css                  # 聊天介面樣式
+│   │   │── components.css            # UI 元件樣式
+│   │   │── diary.css                 # 日記介面樣式
+│   │   │── layout.css                # 版面配置樣式
+│   │   │── notes.css                 # 筆記樣式
+│   │   │── sidebar.css               # 側邊欄樣式
+│   │   │── styles.css                # 全局樣式匯總
+│   │── js/                           # JavaScript 模組
+│   │   │── api_service.js            # API 服務模組
+│   │   │── app.js                    # 主應用程式入口
+│   │   │── chat_module.js            # 聊天功能模組
+│   │   │── config.js                 # 應用設定
+│   │   │── diary_module.js           # 日記管理模組
+│   │   │── notes_module.js           # 筆記管理模組
+│   │   │── ui_manager.js             # UI 管理模組
+│   │── index.html                    # 主頁面
+│   │── main.js                       # Electron 主進程
+│   │── preload.js                    # Electron 預加載程式
+│   │── package.json                   # Node.js 依賴
+│   │── package-lock.json
+│
+│── prompts/                          # Prompt 設計（與 AI 互動）
+│── Reference/                        # 參考資料夾
+│── Test/                             # 測試資料夾
+│── venv/                             # Python 虛擬環境
+│── .gitignore                        # Git 忽略檔案
+│── LICENSE.txt                       # 授權文件
+│── Structure.txt                     # 結構說明文件
+│── initial_plane.txt                 # 初始規劃
+│── python-version                    # Python 版本標識

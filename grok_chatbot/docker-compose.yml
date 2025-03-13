@@ -8,6 +8,19 @@ services:
     ports:
       - "6379:6379"
 
+  db:
+    image: postgres:latest
+    container_name: "postgres-db"
+    restart: always
+    environment:
+      - POSTGRES_DB=mydb
+      - POSTGRES_USER=myuser
+      - POSTGRES_PASSWORD=mypassword
+    ports:
+      - "5432:5432"
+    volumes:
+      - ./postgres_data:/var/lib/postgresql/data
+
   fastapi:
     build: .
     container_name: "fastapi-app"
@@ -16,11 +29,18 @@ services:
       - "8000:8000"
     depends_on:
       - redis
+      - db
     env_file:
       - .env 
     environment:
+      # Redis
       - REDIS_HOST=redis
       - REDIS_PORT=6379
+      # PostgreSQL
+      - DB_HOST=db
+      - DB_PORT=5432
+      - DB_USER=myuser
+      - DB_PASS=mypassword
+      - DB_NAME=mydb
     volumes:
       - ./app:/app
-    

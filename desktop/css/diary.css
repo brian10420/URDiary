@@ -1,0 +1,200 @@
+/**
+ * 日記模塊樣式表
+ */
+
+/* 日記容器 */
+.diary-container {
+    display: flex;
+    gap: 20px;
+    height: 100%;
+    overflow: hidden;
+}
+
+/* 日記列表 */
+.diary-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+    gap: 16px;
+    padding: 16px;
+    overflow-y: auto;
+    flex: 1;
+    max-height: calc(100vh - 200px);
+}
+
+/* 日記卡片 */
+.diary-card {
+    background-color: var(--card-background, white);
+    border-radius: 10px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    padding: 16px;
+    transition: all 0.3s ease;
+    cursor: pointer;
+    display: flex;
+    flex-direction: column;
+    border: 1px solid var(--border-color, #eaeaea);
+}
+
+.diary-card:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 5px 15px rgba(0, 0, 0, 0.15);
+}
+
+.diary-card.active {
+    border-color: var(--primary-color, #4a6fa5);
+    box-shadow: 0 0 0 2px rgba(74, 111, 165, 0.3);
+}
+
+/* 卡片頭部 */
+.card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 10px;
+}
+
+.card-date {
+    font-size: 0.8rem;
+    color: var(--text-secondary, #666);
+}
+
+.mood-tag {
+    font-size: 0.75rem;
+    padding: 2px 8px;
+    border-radius: 12px;
+    color: white;
+    font-weight: 500;
+}
+
+/* 卡片標題 */
+.card-title {
+    font-size: 1.1rem;
+    margin: 0 0 10px 0;
+    font-weight: 600;
+    color: var(--text-color, #333);
+}
+
+/* 卡片摘要 */
+.card-excerpt {
+    font-size: 0.9rem;
+    color: var(--text-secondary, #666);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    line-height: 1.5;
+    flex: 1;
+}
+
+/* 日記詳情 */
+.diary-detail {
+    background-color: var(--card-background, white);
+    border-radius: 10px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    padding: 20px;
+    flex: 2;
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
+    max-height: calc(100vh - 200px);
+    border: 1px solid var(--border-color, #eaeaea);
+}
+
+.detail-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding-bottom: 16px;
+    border-bottom: 1px solid var(--border-color, #eaeaea);
+    margin-bottom: 16px;
+}
+
+.detail-title {
+    font-size: 1.5rem;
+    margin: 0;
+    color: var(--text-color, #333);
+    font-weight: 600;
+}
+
+.detail-actions {
+    display: flex;
+    gap: 8px;
+}
+
+.detail-content {
+    line-height: 1.6;
+    color: var(--text-color, #333);
+    flex: 1;
+    overflow-y: auto;
+    padding: 10px 0;
+}
+
+.detail-content p {
+    margin-bottom: 16px;
+}
+
+.detail-footer {
+    padding-top: 16px;
+    border-top: 1px solid var(--border-color, #eaeaea);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 0.9rem;
+    color: var(--text-secondary, #666);
+}
+
+.detail-meta {
+    display: flex;
+    gap: 16px;
+}
+
+.detail-date, .detail-mood {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+/* 空狀態 */
+.empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 40px 20px;
+    text-align: center;
+    color: var(--text-secondary, #666);
+    grid-column: 1 / -1;
+    height: 100%;
+}
+
+.empty-icon {
+    font-size: 3rem;
+    margin-bottom: 16px;
+    opacity: 0.7;
+}
+
+.empty-state h3 {
+    margin: 0 0 10px 0;
+    font-weight: 600;
+    color: var(--text-color, #333);
+}
+
+.empty-state p {
+    margin-bottom: 20px;
+}
+
+/* 響應式設計 */
+@media (max-width: 768px) {
+    .diary-container {
+        flex-direction: column;
+    }
+    
+    .diary-detail {
+        flex: 1;
+        max-height: calc(100vh - 250px);
+    }
+    
+    .diary-list {
+        max-height: initial;
+    }
+}

@@ -179,7 +179,7 @@ Thumbs.db  # Windows
 desktop.ini
 *.log
 *.temp
-*.~lock.*
+*.~lock.* 
 *.swp
 *.tmp
 
@@ -190,3 +190,10 @@ kitty/
 Reference/
 Consultant/
 Test/
+
+# --------------------------------------
+# 🚫 確保不提交 .env 和 .txt 檔案
+# --------------------------------------
+*.env
+.env.*
+*.txt

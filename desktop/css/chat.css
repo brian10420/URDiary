@@ -1,0 +1,373 @@
+/* 聊天界面樣式 */
+
+/* 聊天視圖樣式 */
+#chat-view {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+}
+
+/* 聊天容器 */
+.chat-container {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    background-color: var(--background-color);
+}
+
+/* 聊天頭部 */
+.chat-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: var(--spacing-md) var(--spacing-lg);
+    background-color: var(--primary-color);
+    color: var(--text-on-primary);
+    border-top-left-radius: var(--border-radius-lg);
+    border-top-right-radius: var(--border-radius-lg);
+}
+
+.chat-title {
+    font-size: var(--font-size-lg);
+    font-weight: 600;
+}
+
+.chat-actions {
+    display: flex;
+    gap: var(--spacing-sm);
+}
+
+/* 聊天消息區域 */
+.chat-messages {
+    flex: 1;
+    overflow-y: auto;
+    padding: 15px;
+}
+
+/* 聊天消息 */
+.chat-message {
+    display: flex;
+    margin-bottom: 15px;
+    animation: fadeIn 0.3s ease;
+}
+
+/* 用戶消息 */
+.user-message {
+    flex-direction: row-reverse;
+}
+
+/* 系統/助手消息 */
+.system-message {
+    flex-direction: row;
+}
+
+/* 消息頭像 */
+.message-avatar {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    overflow: hidden;
+    margin: 0 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background-color: var(--accent-color);
+}
+
+.message-avatar img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.avatar-text {
+    font-size: 16px;
+    font-weight: bold;
+    color: #ffffff;
+    background-color: var(--accent-color);
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.user-message .avatar-text {
+    background-color: var(--primary-color);
+}
+
+.system-message .avatar-text {
+    background-color: var(--success-color);
+}
+
+/* 消息內容 */
+.message-content {
+    max-width: 70%;
+}
+
+.user-message .message-content {
+    align-items: flex-end;
+}
+
+.system-message .message-content {
+    align-items: flex-start;
+}
+
+/* 消息氣泡 */
+.message-bubble {
+    padding: 10px 15px;
+    border-radius: 18px;
+    margin-bottom: 5px;
+    word-wrap: break-word;
+    max-width: 100%;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+}
+
+.user-message .message-bubble {
+    background-color: var(--primary-light-color);
+    border: 1px solid var(--primary-color);
+    color: var(--text-color);
+    border-top-right-radius: 2px;
+}
+
+.system-message .message-bubble {
+    background-color: var(--card-background);
+    border: 1px solid var(--border-color);
+    color: var(--text-color);
+    border-top-left-radius: 2px;
+}
+
+/* 消息時間 */
+.message-time {
+    font-size: 12px;
+    color: var(--text-secondary);
+    margin-top: 2px;
+}
+
+.user-message .message-time {
+    text-align: right;
+}
+
+/* "思考中"動畫 */
+.thinking .message-bubble {
+    padding: 12px;
+    min-width: 52px;
+    text-align: center;
+}
+
+.thinking-dots {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 4px;
+}
+
+.thinking-dots span {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background-color: var(--text-secondary);
+    animation: pulseAnimation 1.4s infinite ease-in-out;
+}
+
+.thinking-dots span:nth-child(1) {
+    animation-delay: 0s;
+}
+
+.thinking-dots span:nth-child(2) {
+    animation-delay: 0.2s;
+}
+
+.thinking-dots span:nth-child(3) {
+    animation-delay: 0.4s;
+}
+
+@keyframes pulseAnimation {
+    0%, 100% {
+        transform: scale(0.6);
+        opacity: 0.4;
+    }
+    50% {
+        transform: scale(1);
+        opacity: 1;
+    }
+}
+
+/* 聊天輸入區域 */
+.chat-input-container {
+    padding: 15px;
+    border-top: 1px solid var(--border-color);
+    background-color: var(--card-background);
+    display: flex;
+    align-items: center;
+}
+
+#user-input {
+    flex: 1;
+    border: 1px solid var(--border-color);
+    border-radius: 20px;
+    padding: 10px 15px;
+    margin-right: 10px;
+    font-size: 14px;
+    min-height: 40px;
+    max-height: 120px;
+    overflow-y: auto;
+    background-color: var(--input-background);
+    color: var(--text-color);
+}
+
+#user-input:focus {
+    outline: none;
+    border-color: var(--primary-color);
+    box-shadow: 0 0 0 2px rgba(var(--primary-color-rgb), 0.2);
+}
+
+/* 按鈕樣式 */
+.chat-button {
+    border: none;
+    border-radius: 50%;
+    width: 40px;
+    height: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: background-color 0.2s;
+}
+
+.send-button {
+    background-color: var(--success-color);
+    color: white;
+}
+
+.send-button:hover {
+    background-color: var(--success-color-dark);
+}
+
+.send-button:disabled {
+    background-color: var(--disabled-color);
+    cursor: not-allowed;
+}
+
+/* 空聊天提示 */
+.empty-chat {
+    text-align: center;
+    padding: var(--spacing-xl);
+    color: var(--neutral-500);
+}
+
+/* 結束聊天按鈕 */
+.chat-footer {
+    display: flex;
+    justify-content: center;
+    padding: var(--spacing-md);
+    background-color: transparent;
+    border-top: 1px solid var(--border-color);
+}
+
+#end-chat-btn {
+    background-color: var(--accent-color);
+    color: white;
+    padding: var(--spacing-md) var(--spacing-xl);
+    border: none;
+    border-radius: var(--border-radius-xl);
+    cursor: pointer;
+    transition: all var(--transition-medium);
+    box-shadow: var(--shadow-md);
+    outline: none;
+    font-weight: 500;
+}
+
+#end-chat-btn:hover {
+    background-color: var(--accent-light);
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-lg);
+}
+
+#end-chat-btn:active {
+    transform: translateY(0);
+    box-shadow: var(--shadow-sm);
+}
+
+#end-chat-btn:focus {
+    outline: none;
+}
+
+/* 動畫 */
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* 選項按鈕 */
+.chat-options {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 10px;
+    padding: 5px 15px;
+    border-top: 1px solid var(--border-color);
+}
+
+.option-button {
+    padding: 8px 15px;
+    background-color: var(--background-color);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    color: var(--text-color);
+    cursor: pointer;
+    transition: all 0.2s;
+    font-size: 14px;
+}
+
+.option-button:hover {
+    background-color: var(--background-hover);
+    border-color: var(--primary-color);
+}
+
+.option-button.warning {
+    color: var(--warning-color);
+    border-color: var(--warning-color);
+}
+
+.option-button.warning:hover {
+    background-color: rgba(var(--warning-color-rgb), 0.1);
+}
+
+/* 響應式設計 */
+@media (max-width: 768px) {
+    .message-content {
+        max-width: 80%;
+    }
+
+    .chat-input-container {
+        padding: 10px;
+    }
+
+    #user-input {
+        padding: 8px 12px;
+    }
+}
+
+@media (max-width: 480px) {
+    .message-avatar {
+        width: 32px;
+        height: 32px;
+        margin: 0 5px;
+    }
+
+    .message-bubble {
+        padding: 8px 12px;
+    }
+
+    .chat-button {
+        width: 36px;
+        height: 36px;
+    }
+}
