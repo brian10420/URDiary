@@ -100,15 +100,42 @@ const UIManager = (function() {
             // 更新按鈕圖標
             updateThemeToggleIcon(currentTheme);
             
-            // 移除舊事件（如果有）
-            themeToggleBtn.removeEventListener('click', handleThemeToggle);
+            // 移除所有現有的點擊事件
+            const newButton = themeToggleBtn.cloneNode(true);
+            themeToggleBtn.parentNode.replaceChild(newButton, themeToggleBtn);
             
-            // 綁定點擊事件
-            themeToggleBtn.addEventListener('click', handleThemeToggle);
-            console.log('主題切換按鈕事件已綁定');
+            // 使用新引用
+            const newThemeToggleBtn = document.querySelector('#theme-toggle');
             
-            // 測試事件是否綁定成功
-            themeToggleBtn.setAttribute('data-initialized', 'true');
+            // 防止事件重複觸發的標記
+            let isThemeSwitching = false;
+            
+            // 添加點擊事件處理
+            newThemeToggleBtn.addEventListener('click', function(event) {
+                // 防止事件冒泡
+                event.preventDefault();
+                event.stopPropagation();
+                
+                // 如果正在切換中，則忽略點擊
+                if (isThemeSwitching) {
+                    console.log('主題切換中，忽略點擊');
+                    return;
+                }
+                
+                // 設置標記，防止重複觸發
+                isThemeSwitching = true;
+                
+                // 執行主題切換
+                handleThemeToggle();
+                
+                // 500ms後重置標記
+                setTimeout(() => {
+                    isThemeSwitching = false;
+                }, 500);
+            });
+            
+            console.log('主題切換按鈕事件已重新綁定');
+            newThemeToggleBtn.setAttribute('data-initialized', 'true');
         } else {
             console.warn('未找到主題切換按鈕，無法初始化主題切換功能');
         }
@@ -197,22 +224,41 @@ const UIManager = (function() {
     // 處理主題切換點擊
     function handleThemeToggle() {
         try {
-            console.log('主題切換按鈕被點擊');
+            console.log('執行主題切換');
             
-            const currentTheme = getCurrentTheme();
+            // 從DOM和LocalStorage獲取當前主題，確保一致性
+            const domTheme = document.documentElement.getAttribute('data-theme');
+            const storageKey = CONFIG && CONFIG.STORAGE && CONFIG.STORAGE.THEME ? 
+                CONFIG.STORAGE.THEME : 'urdiary_theme';
+            const storedTheme = localStorage.getItem(storageKey);
+            
+            // 確保DOM和存儲設置一致
+            let currentTheme;
+            if (domTheme && (domTheme === 'light' || domTheme === 'dark')) {
+                currentTheme = domTheme;
+                if (storedTheme !== currentTheme) {
+                    localStorage.setItem(storageKey, currentTheme);
+                    console.log(`存儲設置已與DOM同步: ${currentTheme}`);
+                }
+            } else if (storedTheme && (storedTheme === 'light' || storedTheme === 'dark')) {
+                currentTheme = storedTheme;
+                document.documentElement.setAttribute('data-theme', currentTheme);
+                console.log(`DOM已與存儲設置同步: ${currentTheme}`);
+            } else {
+                // 默認為亮色主題
+                currentTheme = 'light';
+                document.documentElement.setAttribute('data-theme', currentTheme);
+                localStorage.setItem(storageKey, currentTheme);
+                console.log(`已設置默認主題: ${currentTheme}`);
+            }
+            
             console.log('當前主題:', currentTheme);
             
             // 切換主題 - 明確比較字符串值
-            let newTheme;
-            if (currentTheme === 'dark') {
-                newTheme = 'light';
-            } else {
-                newTheme = 'dark';
-            }
+            let newTheme = currentTheme === 'dark' ? 'light' : 'dark';
             console.log('切換到新主題:', newTheme);
             
-            // 先更新DOM，再保存設置，這樣可以確保用戶看到即時變化
-            // 設置根元素屬性
+            // 更新DOM
             document.documentElement.setAttribute('data-theme', newTheme);
             
             // 更新body類
@@ -221,8 +267,6 @@ const UIManager = (function() {
             
             // 保存到本地存儲
             try {
-                const storageKey = CONFIG && CONFIG.STORAGE && CONFIG.STORAGE.THEME ? 
-                    CONFIG.STORAGE.THEME : 'urdiary_theme';
                 localStorage.setItem(storageKey, newTheme);
                 console.log('主題已保存到本地存儲');
             } catch (error) {
