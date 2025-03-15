@@ -200,4 +200,3 @@ node_modules/
 *.env
 .env.*
 *.txtgit add .
-grok_chatbot/postgres_data/
