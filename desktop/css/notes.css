@@ -1,0 +1,296 @@
+/* 筆記容器和內容樣式 */
+.notes-container {
+    height: 100%;
+    display: flex;
+    gap: 20px;
+    padding: 15px;
+}
+
+.notes-content {
+    background-color: #f9f9f9;
+    padding: 15px;
+    border-radius: 8px;
+    white-space: pre-line;
+}
+
+/* 筆記界面樣式 */
+#notes-view {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    padding: 20px;
+    background-color: #f5f5f5;
+}
+
+/* 筆記操作按鈕區域 */
+.notes-actions {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 20px;
+}
+
+/* 筆記列表側欄 */
+.notes-sidebar {
+    width: 280px;
+    background: white;
+    border-radius: 12px;
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+}
+
+.notes-search {
+    position: relative;
+}
+
+.notes-search input {
+    width: 100%;
+    padding: 10px 15px;
+    padding-left: 35px;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    font-size: 14px;
+}
+
+.notes-search i {
+    position: absolute;
+    left: 12px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: #999;
+}
+
+/* 筆記列表 */
+.notes-list {
+    flex: 1;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    background-color: white;
+    border-radius: 8px;
+    padding: 15px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+}
+
+/* 筆記卡片 */
+.note-card {
+    background-color: white;
+    border-left: 3px solid #2e7d32;
+    border-radius: 6px;
+    padding: 15px;
+    margin-bottom: 15px;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+    cursor: pointer;
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.note-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+}
+
+.note-card .note-title {
+    font-size: 16px;
+    font-weight: 600;
+    margin-bottom: 8px;
+    color: #333;
+}
+
+.note-card .note-preview {
+    font-size: 14px;
+    color: #666;
+    margin-bottom: 12px;
+    line-height: 1.4;
+}
+
+.note-card .note-footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 12px;
+    color: #888;
+}
+
+.note-card .note-actions {
+    display: flex;
+    gap: 8px;
+}
+
+.note-card .note-actions button {
+    background: none;
+    border: none;
+    color: #666;
+    cursor: pointer;
+    padding: 4px 8px;
+    font-size: 12px;
+    border-radius: 4px;
+    transition: background-color 0.2s;
+}
+
+.note-card .note-actions button:hover {
+    background-color: #f0f0f0;
+    color: #333;
+}
+
+.note-card .note-actions .edit-btn:hover {
+    color: #2e7d32;
+}
+
+.note-card .note-actions .delete-btn:hover {
+    color: #d32f2f;
+}
+
+/* 空筆記消息 */
+.empty-notes-message {
+    text-align: center;
+    padding: 40px 20px;
+    color: #888;
+}
+
+.empty-notes-message p {
+    margin: 10px 0;
+}
+
+/* 筆記編輯器 */
+.note-editor {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+    background: white;
+    border-radius: 12px;
+    padding: 20px;
+    margin-top: 20px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+}
+
+.editor-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding-bottom: 15px;
+    border-bottom: 1px solid #eee;
+}
+
+#note-title {
+    font-size: 18px;
+    font-weight: 500;
+    color: #333;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    outline: none;
+    width: 100%;
+    padding: 8px 12px;
+    margin-right: 15px;
+}
+
+#note-content {
+    flex: 1;
+    border: 1px solid #ddd;
+    outline: none;
+    resize: none;
+    font-size: 16px;
+    line-height: 1.6;
+    padding: 15px;
+    border-radius: 4px;
+    min-height: 200px;
+}
+
+/* 按鈕樣式 */
+.btn {
+    padding: 8px 16px;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 14px;
+    transition: background-color 0.2s;
+}
+
+.btn-primary {
+    background-color: #2e7d32;
+    color: white;
+}
+
+.btn-primary:hover {
+    background-color: #1b5e20;
+}
+
+.btn-secondary {
+    background-color: #e0e0e0;
+    color: #333;
+}
+
+.btn-secondary:hover {
+    background-color: #d5d5d5;
+}
+
+.btn-danger {
+    background-color: #d32f2f;
+    color: white;
+}
+
+.btn-danger:hover {
+    background-color: #b71c1c;
+}
+
+/* 錯誤消息樣式 */
+.error-message {
+    text-align: center;
+    padding: 30px 20px;
+    background-color: #ffebee;
+    border: 1px solid #ffcdd2;
+    border-radius: 8px;
+    color: #b71c1c;
+    margin: 20px 0;
+}
+
+.error-message h3 {
+    margin-top: 0;
+    margin-bottom: 15px;
+    font-size: 18px;
+}
+
+.error-message p {
+    margin-bottom: 20px;
+    color: #c62828;
+}
+
+.error-message button {
+    background-color: #d32f2f;
+    color: white;
+    border: none;
+    padding: 8px 16px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 14px;
+    transition: background-color 0.2s;
+}
+
+.error-message button:hover {
+    background-color: #b71c1c;
+}
+
+/* 加載指示器 */
+.temp-spinner {
+    text-align: center;
+    padding: 30px;
+    color: #666;
+    font-style: italic;
+}
+
+/* 響應式設計 */
+@media (max-width: 768px) {
+    .notes-container {
+        flex-direction: column;
+    }
+    
+    .notes-sidebar {
+        width: 100%;
+    }
+    
+    .note-editor {
+        margin-top: 15px;
+    }
+}

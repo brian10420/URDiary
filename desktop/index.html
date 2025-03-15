@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="zh-TW" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>URDiary - 您的情緒日記助手</title>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="css/base.css">
+    <link rel="stylesheet" href="css/chat.css">
+    <link rel="stylesheet" href="css/diary.css">
+    <!-- 移除不需要的CSS引用 -->
+    
+    <!-- 配置 - 必須最先加載 -->
+    <script src="js/config.js"></script>
+    
+    <!-- 錯誤日誌系統 - 第二優先加載 -->
+    <script src="js/error_logger.js"></script>
+    
+    <!-- 工具和服務 -->
+    <script src="js/ui_manager.js"></script>
+    <script src="js/api_service.js"></script>
+    <script src="js/error_handler.js"></script>
+    <!-- 移除系統日誌模塊 -->
+    
+    <!-- 功能模塊 -->
+    <script src="js/chat_module.js"></script>
+    <script src="js/diary_module.js"></script>
+    <!-- 移除筆記模塊 -->
+    <script src="js/main.js"></script>
+</head>
+<body>
+    <div class="app-container">
+        <!-- 頁面頂部 -->
+        <header class="app-header">
+            <div class="app-logo">
+                <img src="assets/icon.jpg" alt="URDiary Logo" onerror="this.src='assets/default-avatar.png'">
+                <span>URDiary</span>
+            </div>
+            
+            <nav class="app-nav">
+                <div class="nav-item active" data-view="chat">對話</div>
+                <div class="nav-item" data-view="diary">日記</div>
+                <!-- 移除筆記和系統日誌導航項 -->
+            </nav>
+            
+            <div class="app-tools">
+                <button id="theme-toggle" class="icon-btn" title="切換主題">
+                    <i class="fa fa-sun"></i>
+                </button>
+                <button id="debug-btn" class="icon-btn" title="開啟調試工具">
+                    <i class="fa fa-bug"></i>
+                </button>
+            </div>
+        </header>
+        
+        <!-- 主內容區域 -->
+        <main class="app-content">
+            <!-- 對話視圖 -->
+            <div id="chat-view" class="view-container active">
+                <div class="chat-container">
+                    <div class="chat-header">
+                        <div class="chat-title">與AI助手對話</div>
+                        <div class="chat-actions">
+                            <button id="clear-chat-btn" class="btn btn-sm" title="清空對話">
+                                <i class="fa fa-trash"></i>
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <div class="chat-messages"></div>
+                    
+                    <div class="chat-input-area">
+                        <div class="chat-input-wrapper">
+                            <textarea id="user-input" placeholder="告訴我您今天的感受..." autofocus></textarea>
+                            <button id="send-button">
+                                <i class="fa fa-paper-plane"></i>
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <div class="chat-footer">
+                        <button id="end-chat-btn" class="btn">結束對話並生成日記</button>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- 日記視圖 -->
+            <div id="diary-view" class="view-container">
+                <h2 class="view-title">日記記錄</h2>
+                <div class="diary-container">
+                    <div class="diary-list"></div>
+                    <div class="diary-detail" style="display: none;">
+                        <div class="detail-header">
+                            <h3 class="detail-title"></h3>
+                            <div class="detail-actions">
+                                <button id="back-to-list-btn" class="btn btn-sm">返回列表</button>
+                            </div>
+                        </div>
+                        <div class="detail-content"></div>
+                        <div class="detail-footer">
+                            <div class="detail-meta">
+                                <span class="detail-date"></span>
+                                <span class="detail-mood"></span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- 移除筆記視圖和系統日誌視圖 -->
+        </main>
+        
+        <!-- 頁面底部 -->
+        <footer class="app-footer">
+            <p>URDiary &copy; 2025 - 您的日記助手</p>
+        </footer>
+    </div>
+    
+    <!-- 加載動畫 -->
+    <div class="loading-spinner">
+        <div class="spinner"></div>
+    </div>
+    
+    <!-- 錯誤提示區域 -->
+    <div id="error-container" style="display: none;">
+        <div class="error-header">
+            <h3>錯誤信息</h3>
+            <button id="close-error-btn" class="btn-close">×</button>
+        </div>
+        <div id="error-content"></div>
+    </div>
+</body>
+</html>

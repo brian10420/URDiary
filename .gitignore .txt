@@ -179,7 +179,7 @@ Thumbs.db  # Windows
 desktop.ini
 *.log
 *.temp
-*.~lock.*
+*.~lock.* 
 *.swp
 *.tmp
 
@@ -189,4 +189,14 @@ desktop.ini
 kitty/
 Reference/
 Consultant/
-Test/
+Test/# 忽略 node_modules
+desktop/node_modules/
+node_modules/
+
+
+# --------------------------------------
+# 🚫 確保不提交 .env 和 .txt 檔案
+# --------------------------------------
+*.env
+.env.*
+*.txtgit add .
