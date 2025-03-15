@@ -147,17 +147,23 @@ const UIManager = (function() {
                 if (electron.ipcRenderer) {
                     console.log('使用ipcRenderer發送打開開發者工具請求');
                     electron.ipcRenderer.send('open-dev-tools');
-                } 
-                // 備用方案：嘗試使用remote模塊
-                else if (electron.remote) {
-                    console.log('使用remote模塊打開開發者工具');
-                    electron.remote.getCurrentWindow().webContents.openDevTools();
+                    return;
                 }
-                else {
-                    console.warn('無法找到合適的方法打開開發者工具');
-                    // 使用快捷鍵方式
-                    tryKeyboardShortcut();
+                
+                // 在新版Electron中，remote模塊被移除，使用@electron/remote模塊
+                try {
+                    const remote = window.require('@electron/remote');
+                    if (remote) {
+                        console.log('使用@electron/remote模塊打開開發者工具');
+                        remote.getCurrentWindow().webContents.openDevTools();
+                        return;
+                    }
+                } catch (remoteError) {
+                    console.warn('加載@electron/remote模塊失敗:', remoteError);
                 }
+                
+                console.warn('無法找到合適的方法打開開發者工具，嘗試快捷鍵');
+                tryKeyboardShortcut();
             } else {
                 console.warn('window.require未定義，可能在瀏覽器中運行');
                 tryKeyboardShortcut();
