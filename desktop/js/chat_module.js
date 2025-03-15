@@ -237,8 +237,27 @@ const ChatModule = (function() {
                 thinkingMessage.remove();
             }
             
-            // 添加系統回應
-            addSystemMessage(response.message);
+            // 添加系統回應 - 修復數據結構不匹配問題
+            console.log('API響應數據結構:', response);
+            
+            // 檢查響應格式並提取消息內容
+            let messageContent;
+            if (typeof response === 'string') {
+                // 如果響應直接是字符串
+                messageContent = response;
+            } else if (response && response.message) {
+                // 如果響應有message屬性
+                messageContent = response.message;
+            } else if (response && response.response) {
+                // 如果響應有response屬性
+                messageContent = response.response;
+            } else {
+                // 默認錯誤消息
+                messageContent = '抱歉，我無法理解您的請求。';
+            }
+            
+            // 添加系統消息
+            addSystemMessage(messageContent);
             
             // 保存聊天歷史
             saveChatHistory();
@@ -246,7 +265,7 @@ const ChatModule = (function() {
             console.error('處理用戶輸入失敗:', error);
             
             // 移除思考中消息
-            const thinkingMessage = document.getElementById('thinking-message');
+            const thinkingMessage = document.getElementById(thinkingMessageId);
             if (thinkingMessage) {
                 thinkingMessage.remove();
             }

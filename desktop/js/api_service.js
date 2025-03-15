@@ -247,8 +247,12 @@ const ApiService = (function() {
         switch (endpoint) {
             case '/chat/':
             case '/chat/enhanced/':
+                const mockResponse = getRandomResponse();
                 return {
-                    response: getRandomResponse()
+                    success: true,
+                    message: mockResponse,
+                    response: mockResponse,
+                    is_mock: true
                 };
                 
             case '/chat/end/':
@@ -295,6 +299,8 @@ const ApiService = (function() {
     // 發送聊天消息
     async function sendChatMessage(message) {
         try {
+            console.log('開始發送聊天消息:', message.substring(0, 50) + (message.length > 50 ? '...' : ''));
+            
             // 直接調用chat/enhanced端點
             const data = await fetchAPI('/chat/enhanced/', {
                 method: 'POST',
@@ -305,16 +311,52 @@ const ApiService = (function() {
                 }
             });
             
-            return data.response || '抱歉，無法處理您的請求。';
+            console.log('聊天API返回原始數據:', data);
+            
+            // 標準化響應格式
+            let response;
+            if (typeof data === 'string') {
+                response = { message: data, response: data };
+            } else if (data && data.response) {
+                response = { 
+                    message: data.response,
+                    response: data.response,
+                    ...data
+                };
+            } else if (data && data.message) {
+                response = {
+                    response: data.message,
+                    ...data
+                };
+            } else {
+                response = {
+                    message: '無法解析服務器響應',
+                    response: '抱歉，無法處理您的請求。'
+                };
+            }
+            
+            console.log('標準化後的響應:', response);
+            return response;
         } catch (error) {
             console.error('發送消息錯誤:', error);
             
             // 使用模擬數據作為備份
-            if (CONFIG.USE_MOCK_DATA) {
-                return getRandomResponse();
+            if (CONFIG && (CONFIG.USE_MOCK_DATA || CONFIG.DEBUG.MOCK_API)) {
+                console.log('使用模擬數據作為備份響應');
+                const mockResponse = getRandomResponse();
+                return {
+                    message: mockResponse,
+                    response: mockResponse,
+                    is_mock: true
+                };
             }
             
-            throw error;
+            // 返回錯誤消息
+            return {
+                message: '發送消息時出錯: ' + error.message,
+                response: '抱歉，我遇到了技術問題。請稍後再試。',
+                error: true
+            };
         }
     }
     
