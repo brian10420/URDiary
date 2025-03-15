@@ -5,7 +5,7 @@ const ChatModule = (function() {
     // 私有變量
     let chatHistory = [];
     let userAvatar = null;
-    let botAvatar = 'assets/images/robot-avatar.svg';
+    let botAvatar = 'assets/icon.jpg';
     let isProcessing = false;
     
     // DOM元素
@@ -142,20 +142,8 @@ const ChatModule = (function() {
             console.log('機器人頭像加載成功');
         };
         img.onerror = function() {
-            console.warn('機器人頭像加載失敗，嘗試使用備用頭像');
-            // 嘗試使用icon.jpg
-            botAvatar = 'assets/icon.jpg';
-            
-            // 再次檢查icon.jpg是否可用
-            const fallbackImg = new Image();
-            fallbackImg.onload = function() {
-                console.log('備用機器人頭像加載成功');
-            };
-            fallbackImg.onerror = function() {
-                console.warn('備用機器人頭像也加載失敗，使用文字替代');
-                createDefaultBotAvatar();
-            };
-            fallbackImg.src = botAvatar;
+            console.warn('機器人頭像加載失敗，使用文字替代');
+            createDefaultBotAvatar();
         };
         img.src = botAvatar;
     }

@@ -1,6 +1,8 @@
 const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron');
 const path = require('path');
 const fs = require('fs');
+// 引入@electron/remote模塊
+const remoteMain = require('@electron/remote/main');
 
 // 保持對窗口對象的全局引用，避免垃圾回收時窗口被關閉
 let mainWindow;
@@ -34,7 +36,7 @@ function ensureResourceDirectories() {
       fs.writeFileSync(defaultAvatarPath, '');
     }
     
-    const robotAvatarPath = path.join(__dirname, 'assets/images/robot-avatar.svg');
+    const robotAvatarPath = path.join(__dirname, 'assets/icon.jpg');
     if (!fs.existsSync(robotAvatarPath)) {
       console.log(`機器人頭像不存在，創建空文件: ${robotAvatarPath}`);
       fs.writeFileSync(robotAvatarPath, '');
@@ -87,6 +89,8 @@ function createWindow() {
   // 確保資源目錄存在
   ensureResourceDirectories();
   
+  console.log('創建應用程序窗口');
+  
   // 創建瀏覽器窗口
   mainWindow = new BrowserWindow({
     width: config.windowWidth || 1200,
@@ -98,7 +102,7 @@ function createWindow() {
     webPreferences: {
       nodeIntegration: true,
       contextIsolation: false,
-      enableRemoteModule: true,
+      enableRemoteModule: true, // 啟用remote模塊支持
       webSecurity: true,
       autoplayPolicy: 'user-gesture-required',
       // 禁用Autofill功能，避免相關錯誤
@@ -106,6 +110,10 @@ function createWindow() {
       disableBlinkFeatures: 'Autofill'
     }
   });
+  
+  // 初始化@electron/remote
+  remoteMain.initialize();
+  remoteMain.enable(mainWindow.webContents);
 
   // 設置內容安全策略
   mainWindow.webContents.session.webRequest.onHeadersReceived((details, callback) => {
@@ -122,8 +130,13 @@ function createWindow() {
   // 載入應用的 index.html
   mainWindow.loadFile('index.html');
 
-  // 打開開發者工具 - 始终開啟，無需開發模式限制
-  mainWindow.webContents.openDevTools();
+  // 打開開發者工具 - 只在開發模式下打開
+  // 可以通過設置環境變量或配置來控制
+  const isDevelopment = process.env.NODE_ENV === 'development';
+  if (isDevelopment) {
+    mainWindow.webContents.openDevTools();
+    console.log('開發模式: 自動打開開發者工具');
+  }
 
   // 設置窗口標題
   mainWindow.setTitle('URDiary - 您的情緒日記助手');
@@ -149,6 +162,19 @@ function createWindow() {
 
 // 當 Electron 完成初始化並準備建立瀏覽器窗口時調用此方法
 app.whenReady().then(() => {
+  // 解決控制台亂碼問題
+  try {
+    // 使用環境變量設置編碼
+    process.env.LANG = 'zh_TW.UTF-8';
+    
+    // 記錄啟動信息
+    console.log('==========================================');
+    console.log('應用程序啟動成功 - URDiary');
+    console.log('==========================================');
+  } catch (error) {
+    console.error('設置編碼時出錯:', error);
+  }
+  
   createWindow();
 
   app.on('activate', function () {

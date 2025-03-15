@@ -6,13 +6,29 @@ const DiaryModule = (function() {
     let diaries = [];
     let selectedDiaryId = null;
     
-    // DOM元素 - 將常量改為變量以避免賦值錯誤
-    let diaryListElement = document.querySelector('.diary-list');
-    let diaryDetailElement = document.querySelector('.diary-detail');
+    // DOM元素 - 初始化為null，將在init函數中獲取
+    let diaryListElement = null;
+    let diaryDetailElement = null;
     
     // 初始化
     function init() {
         console.log('初始化日記模塊');
+        
+        // 重新獲取DOM元素
+        diaryListElement = document.querySelector('.diary-list');
+        diaryDetailElement = document.querySelector('.diary-detail');
+        
+        if (!diaryListElement) {
+            console.error('初始化時找不到日記列表元素');
+            // 嘗試創建元素
+            const diaryContainer = document.querySelector('.diary-container');
+            if (diaryContainer) {
+                console.log('嘗試創建日記列表元素');
+                diaryListElement = document.createElement('div');
+                diaryListElement.className = 'diary-list';
+                diaryContainer.appendChild(diaryListElement);
+            }
+        }
         
         // 載入日記列表
         loadDiaries();
