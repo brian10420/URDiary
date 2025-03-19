@@ -21,7 +21,7 @@ URDairy’s diary generation process is a cyclical workflow that ensures continu
 
 
 ```mermaid
-graph LR
+graph TD
     A[Interaction Diary] -->|Input before chat to recall memory| B[Conversation]
     B -->|Update interaction diary| C[Today Diary]
     C --> D[New Interaction Diary]
