@@ -19,10 +19,9 @@
 ## Diary Generation Flow
 URDairy’s diary generation process is a cyclical workflow that ensures continuity and personalization. Below is the flow represented in [Mermaid](https://mermaid-js.github.io/mermaid/#/) syntax:
 
+
 ```mermaid
 graph TD
-    A[Interaction Diary<br><small>(PostgreSQL: Long-term memory)</small>] -->|Input: Recall past context| B[Conversation<br><small>(Redis: Chat history)</small>]
-    B -->|Generate| C[Today Diary<br><small>(Local storage)</small>]
-    C -->|Extract insights| D[Update Interaction Diary<br><small>(PostgreSQL)</small>]
-    D -->|Output| E[New Interaction Diary<br><small>(Next cycle input)</small>]
-    E --> A
+    A[Interaction Diary] -->|Input before chat to recall memory| B[Conversation]
+    B -->|Update interaction diary| C[Today Diary]
+    C --> D[New Interaction Diary]
