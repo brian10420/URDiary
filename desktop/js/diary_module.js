@@ -386,9 +386,30 @@ const DiaryModule = (function() {
         return 'diary_' + Date.now() + '_' + Math.floor(Math.random() * 1000);
     }
     
+    // 重置日記模塊
+    function reset() {
+        console.log('重置日記模塊');
+        
+        // 清空日記數據
+        diaries = [];
+        selectedDiaryId = null;
+        
+        // 清空日記列表和詳情元素
+        if (diaryListElement) {
+            diaryListElement.innerHTML = '';
+        }
+        
+        if (diaryDetailElement) {
+            diaryDetailElement.innerHTML = '';
+        }
+        
+        console.log('日記模塊已重置');
+    }
+    
     // 公共接口
     return {
         init,
+        reset,
         loadDiaries,
         showDiaryDetails,
         hideDetails

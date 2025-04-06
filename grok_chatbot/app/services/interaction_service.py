@@ -7,6 +7,7 @@ from typing import Dict, Any, Optional, Tuple
 import re
 import json
 import os
+from datetime import datetime
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PROMPTS_DIR = os.path.join(BASE_DIR, "services", "prompts")
@@ -67,11 +68,15 @@ def update_interaction_note(
     
     chat_content = "\n".join(formatted_history)
     
+    # 獲取今日日期，格式為YYYY-MM-DD
+    today_date = datetime.now().strftime("%Y-%m-%d")
+    
     # 準備提示詞
     prompt = prompt_template.format(
         previous_interaction_note=previous_note_content or "尚無互動筆記",
         chat_history=chat_content,
-        todays_diary=today_diary
+        todays_diary=today_diary,
+        today_date=today_date
     )
     
     # 調用 Grok API
@@ -190,9 +195,17 @@ def enhanced_chat_with_context(chat_id: str, numeric_user_id: int, message: str)
         print(f"增強對話時發生錯誤: {str(e)}")
         return "抱歉，我現在無法回應。請稍後再試。"
     
-def generate_enhanced_diary(chat_id: str, numeric_user_id: int) -> Tuple[str, Dict[str, float]]:
+def generate_enhanced_diary(chat_id: str, numeric_user_id: int, exclude_interaction_notes: bool = False) -> Tuple[str, Dict[str, float]]:
     """
     使用互動筆記增強日記生成
+    
+    Args:
+        chat_id: 用戶聊天ID
+        numeric_user_id: 用戶數字ID
+        exclude_interaction_notes: 是否排除互動筆記，如果為True，則不使用互動筆記
+    
+    Returns:
+        生成的日記內容和情緒評分
     """
     # 獲取聊天歷史
     chat_history = get_chat_history(chat_id)
@@ -201,12 +214,14 @@ def generate_enhanced_diary(chat_id: str, numeric_user_id: int) -> Tuple[str, Di
         return "今天似乎沒有對話記錄。", {"valence": 0.5, "arousal": 0.5}
     
     # 獲取互動筆記上下文
-    db = SessionLocal()
-    try:
-        latest_note = get_latest_interaction_note(db, numeric_user_id)
-        interaction_context = latest_note.content if latest_note else "尚無互動筆記記錄。"
-    finally:
-        db.close()
+    interaction_context = "尚無互動筆記記錄。"
+    if not exclude_interaction_notes:
+        db = SessionLocal()
+        try:
+            latest_note = get_latest_interaction_note(db, numeric_user_id)
+            interaction_context = latest_note.content if latest_note else "尚無互動筆記記錄。"
+        finally:
+            db.close()
     
     # 格式化對話歷史
     formatted_history = []
@@ -223,10 +238,18 @@ def generate_enhanced_diary(chat_id: str, numeric_user_id: int) -> Tuple[str, Di
     simplified_prompt = prompt_template + "\n請確保回應中包含日記內容和簡單的情緒評分格式。請使用這樣的格式：\n\n日記內容...\n\n情緒評分：\nvalence: 0.7\narousal: 0.3"
     
     # 準備提示詞
-    prompt = simplified_prompt.format(
-        chat_history=chat_content,
-        interaction_note=interaction_context
-    )
+    if exclude_interaction_notes:
+        # 如果排除互動筆記，使用不包含互動筆記的提示詞
+        prompt = simplified_prompt.format(
+            chat_history=chat_content,
+            interaction_note="請忽略此部分，專注於今日對話生成日記。"
+        )
+    else:
+        # 使用標準提示詞
+        prompt = simplified_prompt.format(
+            chat_history=chat_content,
+            interaction_note=interaction_context
+        )
     
     try:
         # 調用 Grok API

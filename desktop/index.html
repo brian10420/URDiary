@@ -21,6 +21,7 @@
     <script src="js/ui_manager.js"></script>
     <script src="js/api_service.js"></script>
     <script src="js/error_handler.js"></script>
+    <script src="js/password_manager.js"></script>
     <!-- 移除系統日誌模塊 -->
     
     <!-- 功能模塊 -->
@@ -31,6 +32,17 @@
 </head>
 <body>
     <div class="app-container">
+        <!-- 啟動畫面 -->
+        <div id="splash-screen" class="splash-screen">
+            <div class="splash-content">
+                <div class="splash-logo">
+                    <img src="assets/icon.jpg" alt="URDiary Logo" onerror="this.src='assets/default-avatar.png'">
+                </div>
+                <h1>URDiary</h1>
+                <p>您的情緒陪伴與日記助手</p>
+            </div>
+        </div>
+        
         <!-- 頁面頂部 -->
         <header class="app-header">
             <div class="app-logo">
@@ -45,6 +57,9 @@
             </nav>
             
             <div class="app-tools">
+                <button id="user-select-btn" class="icon-btn" title="切換用戶">
+                    <i class="fa fa-user"></i>
+                </button>
                 <button id="theme-toggle" class="icon-btn" title="切換主題">
                     <i class="fa fa-sun"></i>
                 </button>
@@ -53,6 +68,74 @@
                 </button>
             </div>
         </header>
+        
+        <!-- 用戶選擇對話框 -->
+        <div id="user-select-dialog" class="modal" style="display: none;">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3>選擇用戶</h3>
+                    <button id="close-user-dialog-btn" class="btn-close">×</button>
+                </div>
+                <div class="modal-body">
+                    <div id="user-list" class="user-list">
+                        <!-- 用戶列表將通過JavaScript動態載入 -->
+                        <p>正在載入用戶列表...</p>
+                    </div>
+                    <div class="user-actions">
+                        <button id="create-user-btn" class="btn">創建新用戶</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- 密碼驗證對話框 -->
+        <div id="password-dialog" class="modal" style="display: none;">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3>請輸入密碼</h3>
+                    <button id="close-password-dialog-btn" class="btn-close">×</button>
+                </div>
+                <div class="modal-body">
+                    <div id="selected-user-info" class="mb-3"></div>
+                    <div class="form-group">
+                        <label for="user-password">密碼:</label>
+                        <input type="password" id="user-password" class="form-control" placeholder="請輸入4-20位密碼">
+                        <div id="password-error" class="error-message" style="display: none; color: red; margin-top: 5px;"></div>
+                    </div>
+                    <div class="form-actions">
+                        <button id="verify-password-btn" class="btn">確認</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- 創建用戶對話框 -->
+        <div id="create-user-dialog" class="modal" style="display: none;">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3>創建新用戶</h3>
+                    <button id="close-create-user-btn" class="btn-close">×</button>
+                </div>
+                <div class="modal-body">
+                    <div class="form-group">
+                        <label for="new-username">用戶名稱:</label>
+                        <input type="text" id="new-username" class="form-control" placeholder="請輸入用戶名稱">
+                    </div>
+                    <div class="form-group">
+                        <label for="new-password">密碼:</label>
+                        <input type="password" id="new-password" class="form-control" placeholder="請輸入4-20位密碼">
+                    </div>
+                    <div class="form-group">
+                        <label for="confirm-password">確認密碼:</label>
+                        <input type="password" id="confirm-password" class="form-control" placeholder="請再次輸入密碼">
+                        <div id="create-password-error" class="error-message" style="display: none; color: red; margin-top: 5px;"></div>
+                    </div>
+                    <div class="form-actions">
+                        <button id="submit-new-user" class="btn">創建</button>
+                    </div>
+                </div>
+            </div>
+        </div>
         
         <!-- 主內容區域 -->
         <main class="app-content">

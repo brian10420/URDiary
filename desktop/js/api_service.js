@@ -88,10 +88,10 @@ const ApiService = (function() {
             }
             
             // 使用AbortController設置超時 - 增加超時時間，特別是對於結束聊天請求
-            const isEndChatRequest = endpoint.includes('/diary/enhanced-generate');
+            const isEndChatRequest = endpoint.includes('/chat/end/') || endpoint.includes('/diary/enhanced-generate');
             // 為結束聊天請求設置更長的超時時間
             const timeoutDuration = isEndChatRequest ? 
-                60000 : // 60秒
+                180000 : // 180秒（3分鐘）
                 (CONFIG && CONFIG.API && CONFIG.API.TIMEOUT ? CONFIG.API.TIMEOUT : 30000); // 默認30秒
             
             const controller = new AbortController();
@@ -175,7 +175,7 @@ const ApiService = (function() {
                 console.warn(`請求被中止: ${endpoint}`);
                 
                 // 如果是生成日記的請求，嘗試使用模擬數據
-                if (endpoint.includes('/diary/enhanced-generate') && CONFIG && CONFIG.USE_MOCK_DATA) {
+                if ((endpoint.includes('/chat/end/') || endpoint.includes('/diary/enhanced-generate')) && CONFIG && CONFIG.USE_MOCK_DATA) {
                     console.log('使用模擬數據作為結束聊天響應');
                     return getMockDataForEndpoint('/chat/end/');
                 }
@@ -247,30 +247,24 @@ const ApiService = (function() {
         switch (endpoint) {
             case '/chat/':
             case '/chat/enhanced/':
-                const mockResponse = getRandomResponse();
                 return {
-                    success: true,
-                    message: mockResponse,
-                    response: mockResponse,
-                    is_mock: true
+                    "response": "這是一個模擬的AI回覆。請確保API服務正在運行，或檢查網絡連接。"
                 };
-                
             case '/chat/end/':
-            case '/diary/enhanced-generate':
                 return {
-                    success: true,
-                    message: '對話已結束，日記已生成',
-                    diary: {
-                        diary_id: generateId(),
-                        title: '今日日記',
-                        content: '今天我與AI助手進行了一次愉快的對話，分享了一些想法和感受。通過對話，我更清楚地了解了自己的想法。',
-                        diary_date: new Date().toISOString(),
-                        valence: 0.6,
-                        arousal: 0.4
+                    "success": true,
+                    "message": "對話已結束，日記已生成",
+                    "diary": {
+                        "diary_id": 999,
+                        "content": "## 1. 今日事件\n今天是一個模擬的日記內容。這是由於API請求超時或失敗而生成的備用內容。\n\n## 2. 情緒與感受\n在實際運行時，此處將包含情緒分析。\n\n## 3. 反思與洞察\n請檢查後端服務是否正常運行，或者是否需要增加API超時時間。\n\n## 4. 明日方向\n嘗試再次進行對話，或查看API日誌了解更多詳情。",
+                        "valence": 0.5,
+                        "arousal": 0.5,
+                        "created_at": new Date().toISOString()
                     }
                 };
-                
             case '/diaries/1':
+            case '/diaries/2':
+            case '/diaries/3':
                 return {
                     diaries: generateSampleDiaries().map(d => ({
                         diary_id: d.id,
@@ -366,11 +360,12 @@ const ApiService = (function() {
             console.log('調用API結束聊天並生成日記');
             
             // 使用較長的超時時間
-            const data = await fetchAPI('/diary/enhanced-generate', {
+            const data = await fetchAPI('/chat/end/', {
                 method: 'POST',
                 body: {
                     user_id: currentUserId,
-                    numeric_user_id: numericUserId
+                    numeric_user_id: numericUserId,
+                    exclude_interaction_notes: true  // 添加參數，防止將互動筆記融入日記
                 }
             });
             
