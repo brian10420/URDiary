@@ -76,13 +76,13 @@ const ChatModule = (function() {
             console.warn('清空聊天按鈕元素不存在');
         }
         
+        // 清空聊天界面
+        if (chatMessagesContainer) {
+            chatMessagesContainer.innerHTML = '';
+        }
+        
         // 載入聊天歷史
         loadChatHistory();
-        
-        // 添加歡迎消息
-        if (chatHistory.length === 0) {
-            addSystemMessage("你好！我是你的日記助手。有什麼可以幫助你的嗎？");
-        }
         
         console.log('聊天模塊初始化完成');
     }
@@ -173,29 +173,95 @@ const ChatModule = (function() {
     // 載入聊天歷史
     function loadChatHistory() {
         try {
-            const savedHistory = localStorage.getItem(CONFIG.STORAGE.CHAT_HISTORY);
+            // 獲取當前用戶ID
+            const userId = localStorage.getItem('numericUserId');
+            if (!userId) {
+                console.warn('無法獲取用戶ID，無法載入聊天歷史');
+                return;
+            }
+            
+            // 使用與用戶ID關聯的存儲鍵
+            const storageKey = `${CONFIG.STORAGE.CHAT_HISTORY}_${userId}`;
+            const savedHistory = localStorage.getItem(storageKey);
+            
             if (savedHistory) {
-                chatHistory = JSON.parse(savedHistory);
+                const parsedHistory = JSON.parse(savedHistory);
                 
-                // 渲染聊天歷史
-                if (chatHistory.length > 0) {
-                    chatMessagesContainer.innerHTML = '';
+                // 檢查是否有聊天記錄
+                if (parsedHistory.length > 0) {
+                    // 檢查最後一條消息是否為今日
+                    const isToday = checkIfChatIsFromToday(parsedHistory);
                     
-                    chatHistory.forEach(msg => {
-                        if (msg.type === 'user') {
-                            addUserMessage(msg.content, false);
-                        } else {
-                            addSystemMessage(msg.content, false);
-                        }
-                    });
-                    
-                    scrollToBottom();
+                    if (isToday) {
+                        console.log('載入今日聊天記錄');
+                        chatHistory = parsedHistory;
+                        
+                        // 渲染聊天歷史
+                        chatMessagesContainer.innerHTML = '';
+                        
+                        chatHistory.forEach(msg => {
+                            if (msg.type === 'user') {
+                                addUserMessage(msg.content, false);
+                            } else {
+                                addSystemMessage(msg.content, false);
+                            }
+                        });
+                        
+                        scrollToBottom();
+                    } else {
+                        console.log('聊天記錄不是今日的，顯示新的歡迎消息');
+                        chatHistory = [];
+                        chatMessagesContainer.innerHTML = '';
+                        addSystemMessage("您好！我是您的情緒日記助手。今天想聊些什麼呢？");
+                    }
+                } else {
+                    // 沒有聊天記錄，顯示歡迎消息
+                    addSystemMessage("您好！我是您的情緒日記助手。今天想聊些什麼呢？");
                 }
+            } else {
+                // 沒有保存的聊天記錄，顯示歡迎消息
+                addSystemMessage("您好！我是您的情緒日記助手。今天想聊些什麼呢？");
             }
         } catch (error) {
             console.error('載入聊天歷史失敗:', error);
             chatHistory = [];
+            // 顯示歡迎消息
+            addSystemMessage("您好！我是您的情緒日記助手。今天想聊些什麼呢？");
         }
+    }
+    
+    // 檢查聊天記錄是否為今日
+    function checkIfChatIsFromToday(history) {
+        if (!history || history.length === 0) {
+            return false;
+        }
+        
+        // 獲取最後一條消息的時間戳
+        const lastMessage = history[history.length - 1];
+        if (!lastMessage || !lastMessage.timestamp) {
+            return false;
+        }
+        
+        // 解析最後一條消息的時間
+        const messageDate = new Date(lastMessage.timestamp);
+        
+        // 獲取今天的日期 (年、月、日)
+        const today = new Date();
+        const todayDate = today.getDate();
+        const todayMonth = today.getMonth();
+        const todayYear = today.getFullYear();
+        
+        // 獲取消息的日期 (年、月、日)
+        const messageDay = messageDate.getDate();
+        const messageMonth = messageDate.getMonth();
+        const messageYear = messageDate.getFullYear();
+        
+        // 比較日期是否相同
+        return (
+            messageDay === todayDate &&
+            messageMonth === todayMonth &&
+            messageYear === todayYear
+        );
     }
     
     // 發送消息
@@ -491,6 +557,13 @@ const ChatModule = (function() {
     // 保存聊天歷史
     function saveChatHistory() {
         try {
+            // 獲取當前用戶ID
+            const userId = localStorage.getItem('numericUserId');
+            if (!userId) {
+                console.warn('無法獲取用戶ID，無法保存聊天歷史');
+                return;
+            }
+            
             // 獲取最大聊天歷史記錄數，如果未定義則使用默認值
             const maxHistory = CONFIG && CONFIG.APP && CONFIG.APP.MAX_CHAT_HISTORY ? 
                 CONFIG.APP.MAX_CHAT_HISTORY : 100;
@@ -499,17 +572,17 @@ const ChatModule = (function() {
             const historyToSave = chatHistory.length > maxHistory ? 
                 chatHistory.slice(-maxHistory) : chatHistory;
                 
-            // 保存到本地存儲
-            const storageKey = CONFIG && CONFIG.STORAGE && CONFIG.STORAGE.CHAT_HISTORY ? 
-                CONFIG.STORAGE.CHAT_HISTORY : 'urdiary_chat_history';
+            // 保存到與用戶ID關聯的本地存儲
+            const storageKey = `${CONFIG.STORAGE.CHAT_HISTORY}_${userId}`;
                 
             localStorage.setItem(storageKey, JSON.stringify(historyToSave));
-            console.log(`保存了 ${historyToSave.length} 條聊天記錄`);
+            console.log(`保存了 ${historyToSave.length} 條聊天記錄到鍵 ${storageKey}`);
         } catch (error) {
             console.error('保存聊天歷史失敗:', error);
             // 嘗試使用簡單方式保存
             try {
-                localStorage.setItem('urdiary_chat_history_backup', JSON.stringify(chatHistory));
+                const userId = localStorage.getItem('numericUserId') || 'backup';
+                localStorage.setItem(`urdiary_chat_history_backup_${userId}`, JSON.stringify(chatHistory));
                 console.log('使用備用方式保存聊天記錄');
             } catch (backupError) {
                 console.error('備用保存方式也失敗:', backupError);
@@ -542,9 +615,36 @@ const ChatModule = (function() {
         addSystemMessage(message);
     }
     
+    // 重置聊天模塊
+    function reset() {
+        console.log('重置聊天模塊');
+        
+        // 清空聊天歷史
+        chatHistory = [];
+        
+        // 清空聊天介面
+        if (chatMessagesContainer) {
+            chatMessagesContainer.innerHTML = '';
+        }
+        
+        // 重置處理狀態
+        isProcessing = false;
+        
+        // 清空輸入框
+        if (userInputElement) {
+            userInputElement.value = '';
+        }
+        
+        console.log('聊天模塊已重置');
+    }
+    
     // 返回公共API
     return {
-        init: init
+        init: init,
+        reset: reset,
+        sendMessage: sendMessage,
+        clearHistory: clearChat,
+        endChat: endChat
     };
 })();
 

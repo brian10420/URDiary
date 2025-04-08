@@ -30,6 +30,50 @@ const DiaryModule = (function() {
             }
         }
         
+        // 確保日記詳情元素存在並包含必要的子元素
+        if (!diaryDetailElement) {
+            console.error('初始化時找不到日記詳情元素');
+            const diaryContainer = document.querySelector('.diary-container');
+            if (diaryContainer) {
+                console.log('嘗試創建日記詳情元素');
+                diaryDetailElement = document.createElement('div');
+                diaryDetailElement.className = 'diary-detail';
+                diaryDetailElement.style.display = 'none';
+                diaryContainer.appendChild(diaryDetailElement);
+            }
+        }
+        
+        // 確保日記詳情元素有所需的子元素
+        if (diaryDetailElement) {
+            // 檢查是否有必要的子元素
+            if (!diaryDetailElement.querySelector('.detail-title')) {
+                console.log('創建日記詳情所需的子元素');
+                diaryDetailElement.innerHTML = `
+                    <div class="detail-header">
+                        <h3 class="detail-title"></h3>
+                        <div class="detail-actions">
+                            <button id="back-to-list-btn" class="btn btn-sm">返回列表</button>
+                        </div>
+                    </div>
+                    <div class="detail-content"></div>
+                    <div class="detail-footer">
+                        <div class="detail-meta">
+                            <span class="detail-date"></span>
+                            <span class="detail-mood"></span>
+                        </div>
+                    </div>
+                `;
+                
+                // 重新綁定返回按鈕事件
+                const backToListBtn = diaryDetailElement.querySelector('#back-to-list-btn');
+                if (backToListBtn) {
+                    backToListBtn.addEventListener('click', function() {
+                        hideDetails();
+                    });
+                }
+            }
+        }
+        
         // 載入日記列表
         loadDiaries();
         
@@ -198,6 +242,9 @@ const DiaryModule = (function() {
             // 記錄選中的日記ID
             selectedDiaryId = diaryId;
             
+            // 通知UI管理器顯示日記詳情視圖
+            UIManager.showDiaryDetail();
+            
             // 確保詳情元素存在
             if (!diaryDetailElement) {
                 console.error('日記詳情元素不存在');
@@ -239,21 +286,6 @@ const DiaryModule = (function() {
             if (dateElement) dateElement.textContent = formattedDate;
             if (moodElement) moodElement.textContent = getMoodName(diary.mood);
             
-            // 顯示詳情視圖 - 確保樣式正確設置
-            diaryDetailElement.style.display = 'block';
-            diaryDetailElement.style.visibility = 'visible';
-            diaryDetailElement.style.opacity = '1';
-            
-            console.log('日記詳情視圖顯示狀態設置為:', diaryDetailElement.style.display);
-            
-            // 隱藏列表視圖（在小屏幕上）
-            if (window.innerWidth < 768) {
-                if (diaryListElement) {
-                    diaryListElement.style.display = 'none';
-                    console.log('小屏幕模式：隱藏日記列表');
-                }
-            }
-            
             // 高亮選中的日記卡片
             const cards = document.querySelectorAll('.diary-card');
             console.log(`找到日記卡片數量: ${cards.length}`);
@@ -277,14 +309,8 @@ const DiaryModule = (function() {
     
     // 隱藏詳情視圖
     function hideDetails() {
-        if (diaryDetailElement) {
-            diaryDetailElement.style.display = 'none';
-        }
-        
-        // 在小屏幕上重新顯示列表
-        if (diaryListElement && window.innerWidth < 768) {
-            diaryListElement.style.display = 'block';
-        }
+        // 通知UI管理器隱藏日記詳情
+        UIManager.hideDiaryDetail();
         
         selectedDiaryId = null;
     }
@@ -376,7 +402,9 @@ const DiaryModule = (function() {
         const startChatBtn = document.getElementById('start-chat-btn');
         if (startChatBtn) {
             startChatBtn.addEventListener('click', function() {
-                UIManager.switchView('chat');
+                console.log('點擊"開始對話"按鈕');
+                // 使用handleNavigation切換到聊天視圖
+                UIManager.handleNavigation('chat');
             });
         }
     }
@@ -386,9 +414,31 @@ const DiaryModule = (function() {
         return 'diary_' + Date.now() + '_' + Math.floor(Math.random() * 1000);
     }
     
+    // 重置日記模塊
+    function reset() {
+        console.log('重置日記模塊');
+        
+        // 清空日記數據
+        diaries = [];
+        selectedDiaryId = null;
+        
+        // 清空日記列表元素
+        if (diaryListElement) {
+            diaryListElement.innerHTML = '';
+        }
+        
+        // 隱藏日記詳情元素，但不清空其內容
+        if (diaryDetailElement) {
+            diaryDetailElement.style.display = 'none';
+        }
+        
+        console.log('日記模塊已重置');
+    }
+    
     // 公共接口
     return {
         init,
+        reset,
         loadDiaries,
         showDiaryDetails,
         hideDetails
