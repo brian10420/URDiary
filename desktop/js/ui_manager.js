@@ -2,13 +2,21 @@
  * UI管理器 - 處理界面元素和交互
  */
 const UIManager = (function() {
-    // 視圖枚舉 - 只保留聊天和日記
-    const VIEWS = {
+    // 視圖狀態枚舉
+    const VIEW_STATE = {
+        CHAT_FULL: 'chat_full',             // 狀態1: 全螢幕聊天
+        CHAT_DIARY_SPLIT: 'chat_diary',     // 狀態2: 聊天+日記列表分割
+        DIARY_DETAIL_SPLIT: 'diary_detail', // 狀態3: 日記列表+日記詳情分割
+        CHAT_DETAIL_SPLIT: 'chat_detail'    // 狀態4: 聊天+日記詳情分割
+    };
+    
+    // 視圖基本類型
+    const VIEW_TYPE = {
         CHAT: 'chat',
         DIARY: 'diary'
     };
     
-    // DOM元素引用 - 移除不需要的引用
+    // DOM元素引用
     const elements = {
         navItems: document.querySelectorAll('.nav-item'),
         viewContainers: document.querySelectorAll('.view-container'),
@@ -20,8 +28,8 @@ const UIManager = (function() {
         debugBtn: document.querySelector('#debug-btn')
     };
     
-    // 當前活躍視圖
-    let currentView = VIEWS.CHAT;
+    // 當前視圖狀態
+    let currentViewState = VIEW_STATE.CHAT_FULL;
     
     // 初始化UI管理器
     function init() {
@@ -31,7 +39,7 @@ const UIManager = (function() {
         refreshDOMElements();
         
         // 設置默認視圖
-        switchView(VIEWS.CHAT);
+        switchToState(VIEW_STATE.CHAT_FULL);
         
         // 綁定導航事件
         if (elements.navItems && elements.navItems.length > 0) {
@@ -40,7 +48,7 @@ const UIManager = (function() {
                     const view = this.getAttribute('data-view');
                     if (view) {
                         console.log(`點擊導航項: ${view}`);
-                        switchView(view);
+                        handleNavigation(view);
                     }
                 });
             });
@@ -61,6 +69,228 @@ const UIManager = (function() {
         console.log('UI管理器初始化完成');
     }
     
+    // 處理導航點擊
+    function handleNavigation(view) {
+        console.log(`處理導航點擊: ${view}, 當前狀態: ${currentViewState}`);
+        
+        try {
+            // 根據當前狀態和點擊的導航項目決定下一個狀態
+            switch (currentViewState) {
+                case VIEW_STATE.CHAT_FULL:
+                    // 狀態1: 全螢幕聊天 (點擊日記→狀態2，點擊聊天→維持狀態1)
+                    if (view === VIEW_TYPE.DIARY) {
+                        switchToState(VIEW_STATE.CHAT_DIARY_SPLIT);
+                    }
+                    break;
+                    
+                case VIEW_STATE.CHAT_DIARY_SPLIT:
+                    // 狀態2: 聊天+日記列表分割 (點擊聊天→狀態1)
+                    if (view === VIEW_TYPE.CHAT) {
+                        switchToState(VIEW_STATE.CHAT_FULL);
+                    }
+                    break;
+                    
+                case VIEW_STATE.DIARY_DETAIL_SPLIT:
+                    // 狀態3: 日記列表+日記詳情分割 (點擊聊天→狀態4)
+                    if (view === VIEW_TYPE.CHAT) {
+                        switchToState(VIEW_STATE.CHAT_DETAIL_SPLIT);
+                    }
+                    break;
+                    
+                case VIEW_STATE.CHAT_DETAIL_SPLIT:
+                    // 狀態4: 聊天+日記詳情分割 (點擊聊天→狀態1，點擊日記→狀態2)
+                    if (view === VIEW_TYPE.CHAT) {
+                        switchToState(VIEW_STATE.CHAT_FULL);
+                    } else if (view === VIEW_TYPE.DIARY) {
+                        switchToState(VIEW_STATE.CHAT_DIARY_SPLIT);
+                    }
+                    break;
+                    
+                default:
+                    // 默認回到全螢幕聊天
+                    switchToState(VIEW_STATE.CHAT_FULL);
+                    break;
+            }
+        } catch (error) {
+            console.error('導航處理錯誤:', error);
+        }
+    }
+    
+    // 切換到指定狀態
+    function switchToState(newState) {
+        console.log(`切換視圖狀態: ${currentViewState} -> ${newState}`);
+        
+        // 更新當前狀態
+        currentViewState = newState;
+        
+        // 先移除所有視圖容器的狀態類別
+        elements.viewContainers.forEach(container => {
+            container.classList.remove('active', 'half', 'left', 'right');
+        });
+        
+        // 獲取視圖容器
+        const chatView = document.getElementById('chat-view');
+        const diaryView = document.getElementById('diary-view');
+        
+        // 獲取日記詳情元素
+        const diaryDetail = document.querySelector('.diary-detail');
+        const diaryList = document.querySelector('.diary-list');
+        
+        // 根據狀態設置視圖容器類別
+        switch (newState) {
+            case VIEW_STATE.CHAT_FULL:
+                // 狀態1: 全螢幕聊天
+                chatView.classList.add('active');
+                
+                // 隱藏日記詳情（如果有）
+                if (diaryDetail) {
+                    diaryDetail.classList.remove('active');
+                    setTimeout(() => {
+                        diaryDetail.style.display = 'none';
+                    }, 300);
+                }
+                
+                // 高亮聊天導航項
+                updateNavHighlight(VIEW_TYPE.CHAT);
+                break;
+                
+            case VIEW_STATE.CHAT_DIARY_SPLIT:
+                // 狀態2: 聊天+日記列表分割
+                chatView.classList.add('half', 'left');
+                diaryView.classList.add('half', 'right');
+                
+                // 隱藏日記詳情（如果有）
+                if (diaryDetail) {
+                    diaryDetail.classList.remove('active');
+                    setTimeout(() => {
+                        diaryDetail.style.display = 'none';
+                    }, 300);
+                }
+                
+                // 重置日記列表類別
+                if (diaryList) {
+                    diaryList.classList.remove('with-detail');
+                }
+                
+                // 高亮日記導航項
+                updateNavHighlight(VIEW_TYPE.DIARY);
+                break;
+                
+            case VIEW_STATE.DIARY_DETAIL_SPLIT:
+                // 狀態3: 日記列表+日記詳情分割
+                diaryView.classList.add('active');
+                
+                // 顯示日記詳情
+                if (diaryDetail && diaryList) {
+                    diaryDetail.style.display = 'flex';
+                    setTimeout(() => {
+                        diaryDetail.classList.add('active');
+                        diaryList.classList.add('with-detail');
+                    }, 10);
+                }
+                
+                // 高亮日記導航項
+                updateNavHighlight(VIEW_TYPE.DIARY);
+                break;
+                
+            case VIEW_STATE.CHAT_DETAIL_SPLIT:
+                // 狀態4: 聊天+日記詳情分割
+                chatView.classList.add('half', 'left');
+                diaryView.classList.add('half', 'right');
+                
+                // 顯示日記詳情
+                if (diaryDetail && diaryList) {
+                    diaryDetail.style.display = 'flex';
+                    setTimeout(() => {
+                        diaryDetail.classList.add('active');
+                        diaryList.classList.add('with-detail');
+                    }, 10);
+                }
+                
+                // 高亮聊天導航項
+                updateNavHighlight(VIEW_TYPE.CHAT);
+                break;
+                
+            default:
+                // 默認回到全螢幕聊天
+                chatView.classList.add('active');
+                updateNavHighlight(VIEW_TYPE.CHAT);
+                break;
+        }
+        
+        // 觸發視圖狀態變更事件
+        document.dispatchEvent(new CustomEvent('viewStateChanged', { 
+            detail: { newState: newState } 
+        }));
+    }
+    
+    // 更新導航項目高亮
+    function updateNavHighlight(activeView) {
+        if (elements.navItems) {
+            elements.navItems.forEach(item => {
+                const itemView = item.getAttribute('data-view');
+                if (itemView === activeView) {
+                    item.classList.add('active');
+                } else {
+                    item.classList.remove('active');
+                }
+            });
+        }
+    }
+    
+    // 處理日記詳情顯示
+    function showDiaryDetail() {
+        console.log(`處理顯示日記詳情，當前狀態: ${currentViewState}`);
+        
+        // 根據當前狀態決定切換到哪個狀態
+        switch (currentViewState) {
+            case VIEW_STATE.CHAT_FULL:
+                // 全螢幕聊天 -> 日記列表+日記詳情
+                switchToState(VIEW_STATE.DIARY_DETAIL_SPLIT);
+                break;
+                
+            case VIEW_STATE.CHAT_DIARY_SPLIT:
+                // 聊天+日記列表 -> 日記列表+日記詳情
+                switchToState(VIEW_STATE.DIARY_DETAIL_SPLIT);
+                break;
+                
+            case VIEW_STATE.CHAT_DETAIL_SPLIT:
+                // 已經在聊天+日記詳情狀態，維持不變
+                break;
+                
+            case VIEW_STATE.DIARY_DETAIL_SPLIT:
+                // 已經在日記列表+日記詳情狀態，維持不變
+                break;
+                
+            default:
+                // 默認切換到日記列表+日記詳情
+                switchToState(VIEW_STATE.DIARY_DETAIL_SPLIT);
+                break;
+        }
+    }
+    
+    // 處理日記詳情關閉
+    function hideDiaryDetail() {
+        console.log(`處理隱藏日記詳情，當前狀態: ${currentViewState}`);
+        
+        // 根據當前狀態決定切換到哪個狀態
+        switch (currentViewState) {
+            case VIEW_STATE.DIARY_DETAIL_SPLIT:
+                // 日記列表+日記詳情 -> 聊天+日記列表
+                switchToState(VIEW_STATE.CHAT_DIARY_SPLIT);
+                break;
+                
+            case VIEW_STATE.CHAT_DETAIL_SPLIT:
+                // 聊天+日記詳情 -> 聊天+日記列表
+                switchToState(VIEW_STATE.CHAT_DIARY_SPLIT);
+                break;
+                
+            default:
+                // 對其他狀態不做處理
+                break;
+        }
+    }
+    
     // 刷新DOM元素引用
     function refreshDOMElements() {
         elements.navItems = document.querySelectorAll('.nav-item');
@@ -71,17 +301,39 @@ const UIManager = (function() {
         elements.errorContainer = document.querySelector('#error-container');
         elements.themeToggleBtn = document.querySelector('#theme-toggle');
         elements.debugBtn = document.querySelector('#debug-btn');
+    }
+    
+    // 向後兼容的視圖切換函數 - 支持舊代碼調用
+    function switchView(viewName) {
+        console.log(`兼容模式調用switchView: ${viewName}`);
         
-        console.log('DOM元素引用已刷新:', {
-            'navItems': elements.navItems ? elements.navItems.length : 0,
-            'viewContainers': elements.viewContainers ? elements.viewContainers.length : 0,
-            'chatContainer': !!elements.chatContainer,
-            'diaryContainer': !!elements.diaryContainer,
-            'spinner': !!elements.spinner,
-            'errorContainer': !!elements.errorContainer,
-            'themeToggleBtn': !!elements.themeToggleBtn,
-            'debugBtn': !!elements.debugBtn
-        });
+        try {
+            // 轉換視圖名稱為視圖類型
+            const viewType = viewName.toLowerCase();
+            
+            // 基於當前狀態和目標視圖類型決定下一個狀態
+            if (viewType === VIEW_TYPE.CHAT) {
+                // 切換到聊天視圖
+                if (currentViewState === VIEW_STATE.DIARY_DETAIL_SPLIT) {
+                    // 如果在日記詳情視圖，切換到聊天+日記詳情
+                    switchToState(VIEW_STATE.CHAT_DETAIL_SPLIT);
+                } else {
+                    // 其他情況，直接切換到全螢幕聊天
+                    switchToState(VIEW_STATE.CHAT_FULL);
+                }
+            } else if (viewType === VIEW_TYPE.DIARY) {
+                // 切換到日記視圖
+                if (currentViewState === VIEW_STATE.CHAT_FULL) {
+                    // 從全螢幕聊天切換到聊天+日記分割
+                    switchToState(VIEW_STATE.CHAT_DIARY_SPLIT);
+                } else if (currentViewState === VIEW_STATE.CHAT_DETAIL_SPLIT) {
+                    // 從聊天+日記詳情切換到日記列表+日記詳情
+                    switchToState(VIEW_STATE.DIARY_DETAIL_SPLIT);
+                }
+            }
+        } catch (error) {
+            console.error('視圖切換錯誤:', error);
+        }
     }
     
     // 初始化主題切換功能
@@ -408,51 +660,6 @@ const UIManager = (function() {
         }
     }
     
-    // 切換視圖
-    function switchView(viewName) {
-        // 驗證視圖名稱
-        if (!VIEWS[viewName.toUpperCase()]) {
-            console.error('無效的視圖名稱:', viewName);
-            return;
-        }
-        
-        // 更新當前視圖
-        currentView = viewName;
-        
-        // 處理導航項目
-        if (elements.navItems) {
-            elements.navItems.forEach(item => {
-                const itemView = item.getAttribute('data-view');
-                if (itemView === viewName) {
-                    item.classList.add('active');
-                } else {
-                    item.classList.remove('active');
-                }
-            });
-        }
-        
-        // 處理視圖容器
-        if (elements.viewContainers) {
-            elements.viewContainers.forEach(container => {
-                const containerId = container.id;
-                const containerViewName = containerId.replace('-view', '');
-                
-                if (containerViewName === viewName) {
-                    container.classList.add('active');
-                    // 觸發視圖變更事件
-                    document.dispatchEvent(new CustomEvent('viewChanged', { 
-                        detail: { oldView: currentView, newView: viewName } 
-                    }));
-                } else {
-                    container.classList.remove('active');
-                }
-            });
-        }
-        
-        // 記錄視圖切換
-        console.log(`視圖已切換到: ${viewName}`);
-    }
-    
     // 顯示加載動畫
     function showSpinner() {
         if (elements.spinner) {
@@ -527,7 +734,14 @@ const UIManager = (function() {
     // 提供公共方法
     return {
         init,
+        VIEW_STATE,
+        VIEW_TYPE,
+        getCurrentState: () => currentViewState,
+        switchToState,
         switchView,
+        handleNavigation,
+        showDiaryDetail,
+        hideDiaryDetail,
         getCurrentTheme,
         applyTheme,
         toggleTheme: handleThemeToggle,

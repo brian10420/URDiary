@@ -418,19 +418,52 @@ input:focus, textarea:focus, select:focus {
 }
 
 .app-content {
-    flex: 1;
     display: flex;
+    height: calc(100vh - 120px); /* 調整高度，減去頭部和底部 */
     overflow: hidden;
 }
 
+/* 視圖容器基本樣式 */
 .view-container {
-    display: none;
+    flex: 0;
+    width: 0;
+    opacity: 0;
+    overflow: hidden;
+    transition: all 0.3s ease-in-out;
+    visibility: hidden;
+}
+
+/* 活動視圖 - 全屏顯示 */
+.view-container.active {
     flex: 1;
+    width: auto;
+    opacity: 1;
     overflow: auto;
+    visibility: visible;
     padding: var(--spacing-md);
 }
 
-.view-container.active {
+/* 半屏視圖 - 左右分割 */
+.view-container.half {
+    flex: 0 0 50%;
+    width: 50%;
+    max-width: 50%;
+    opacity: 1;
+    overflow: auto;
+    visibility: visible;
+    padding: var(--spacing-md);
+}
+
+/* 設置左右位置 */
+.view-container.left {
+    order: 1;
+}
+
+.view-container.right {
+    order: 2;
+}
+
+#chat-view {
     display: flex;
     flex-direction: column;
 }

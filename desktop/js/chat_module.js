@@ -641,7 +641,10 @@ const ChatModule = (function() {
     // 返回公共API
     return {
         init: init,
-        reset: reset
+        reset: reset,
+        sendMessage: sendMessage,
+        clearHistory: clearChat,
+        endChat: endChat
     };
 })();
 
