@@ -13,7 +13,7 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[
         logging.StreamHandler(),
-        logging.FileHandler("app_errors.log")
+        logging.FileHandler("/app/logs/app_errors.log")
     ]
 )
 

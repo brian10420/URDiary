@@ -115,11 +115,21 @@
     color: var(--text-secondary, #666);
     overflow: hidden;
     text-overflow: ellipsis;
-    display: -webkit-box;
-    -webkit-line-clamp: 3;
-    -webkit-box-orient: vertical;
+    display: block;
     line-height: 1.5;
     flex: 1;
+    max-height: 4.5em; /* 3 lines * 1.5 line-height */
+    word-break: break-word;
+    position: relative;
+}
+
+.card-excerpt::after {
+    content: "...";
+    position: absolute;
+    bottom: 0;
+    right: 0;
+    padding-left: 40px;
+    background: linear-gradient(to right, transparent, var(--card-background, white) 55%);
 }
 
 /* 日記詳情 */

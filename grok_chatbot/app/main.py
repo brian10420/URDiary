@@ -5,6 +5,7 @@ from database.models import Base
 from api.routes import api_router
 from middleware.error_handler import error_handler
 from middleware.exception_handlers import register_exception_handlers
+from config import CORS_ALLOWED_ORIGINS, ENV
 
 # -----------------------
 # 初始化 FastAPI
@@ -13,8 +14,8 @@ app = FastAPI(
     title="AI Diary API",
     description="AI日記應用後端API",
     version="1.0.0",
-    docs_url="/docs",
-    redoc_url="/redoc"
+    docs_url="/docs" if ENV != "production" else None,
+    redoc_url="/redoc" if ENV != "production" else None
 )
 
 # 添加錯誤處理中間件
@@ -26,10 +27,10 @@ register_exception_handlers(app)
 # 添加 CORS 中間件
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # 在生產環境中，您應該指定具體的源
+    allow_origins=CORS_ALLOWED_ORIGINS,  # 從配置中讀取允許的來源
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE"],  # 限制允許的HTTP方法
+    allow_headers=["Authorization", "Content-Type"],  # 限制允許的標頭
 )
 
 # -----------------------
