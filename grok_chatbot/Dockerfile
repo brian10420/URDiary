@@ -24,7 +24,7 @@ COPY app/requirements.txt .
 RUN pip install --upgrade pip && \
     pip wheel --no-cache-dir --no-deps --wheel-dir /build/wheels -r requirements.txt
 
-# 第二階段：運行環境 - 也更新為 3.21
+# 第二階段：運行環境 
 FROM python:3.12.10-alpine
 
 # 運行環境優化

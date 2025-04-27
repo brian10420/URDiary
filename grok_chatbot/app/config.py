@@ -31,7 +31,7 @@ REDIS_PASSWORD = os.getenv("REDIS_PASSWORD", "")
 DB_HOST = os.getenv("DB_HOST", "db")
 DB_PORT = os.getenv("DB_PORT", "5432")
 DB_USER = os.getenv("DB_USER", "myuser")
-DB_PASS = os.getenv("DB_PASS", "Ligtace760123@")  # 使用您提供的密碼
+DB_PASS = os.getenv("DB_PASS", "")  # 使用您提供的密碼
 DB_NAME = os.getenv("DB_NAME", "mydb")
 
 # 連接池設定 - 環境變量優先，否則使用預設值
@@ -49,3 +49,7 @@ if not CORS_ALLOWED_ORIGINS or CORS_ALLOWED_ORIGINS == [""]:
 # 必要的配置檢查
 if ENV == "production" and not XAI_API_KEY:
     raise ValueError("❌ 生產環境中必須設定 XAI_API_KEY!")
+
+# 數據庫密碼檢查
+if ENV == "production" and not DB_PASS:
+    raise ValueError("❌ 生產環境中必須設定 DB_PASS!")

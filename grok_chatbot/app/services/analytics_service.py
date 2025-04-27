@@ -5,6 +5,7 @@ from database import SessionLocal, crud
 from typing import Dict, List, Any
 import pandas as pd
 import matplotlib.pyplot as plt
+from datetime import datetime, timedelta
 import io
 import base64
 
@@ -83,15 +84,63 @@ def analyze_emotion_trends(user_id: int, time_range: str = "month") -> Dict[str,
         # 創建圖表 (假設我們有一個生成圖表的函數)
         chart_base64 = "圖表數據將在這裡" # 實際項目中會生成真實圖表
         
+        # 增加時間範圍過濾
+        if time_range == "week":
+            start_date = datetime.now() - timedelta(days=7)
+        elif time_range == "month":
+            start_date = datetime.now() - timedelta(days=30)
+        elif time_range == "year":
+            start_date = datetime.now() - timedelta(days=365)
+        else:
+            start_date = datetime.now() - timedelta(days=30)  # 默認一個月
+            
+        # 按時間範圍過濾
+        df = df[df['date'] >= start_date]
+        
+        # 情緒變化速率分析
+        if len(df) > 1:
+            df['valence_diff'] = df['valence'].diff()
+            df['arousal_diff'] = df['arousal'].diff()
+            valence_volatility = df['valence_diff'].abs().mean()
+            arousal_volatility = df['arousal_diff'].abs().mean()
+        else:
+            valence_volatility = 0
+            arousal_volatility = 0        
         return {
             "valence_trend": valence_trend.tolist(),
             "arousal_trend": arousal_trend.tolist(),
             "dates": [d.strftime("%Y-%m-%d") for d in df["date"]],
             "theme_analysis": theme_analysis,
-            "chart": chart_base64
+            "chart": chart_base64,
+            "valence_volatility": valence_volatility,
+            "arousal_volatility": arousal_volatility,
+            "most_positive_day": df.loc[df['valence'].idxmax()]['date'].strftime("%Y-%m-%d") if not df.empty else None,
+            "most_negative_day": df.loc[df['valence'].idxmin()]['date'].strftime("%Y-%m-%d") if not df.empty else None,
         }
     finally:
         db.close()
+        
+def generate_emotion_chart(df, filename="emotion_chart.png"):
+    """生成情緒圖表並返回Base64編碼"""
+    plt.figure(figsize=(10, 6))
+    plt.plot(df['date'], df['valence'], 'b-', label='愉悅度')
+    plt.plot(df['date'], df['arousal'], 'r-', label='激動度')
+    plt.xlabel('日期')
+    plt.ylabel('情緒指數')
+    plt.title('情緒變化趨勢')
+    plt.legend()
+    plt.grid(True)
+    
+    # 保存到內存而不是文件
+    buf = io.BytesIO()
+    plt.savefig(buf, format='png')
+    buf.seek(0)
+    
+    # 轉為base64以便前端顯示
+    chart_base64 = base64.b64encode(buf.read()).decode('utf-8')
+    plt.close()
+    
+    return chart_base64
 
 def extract_key_themes(user_id: int) -> List[str]:
     """

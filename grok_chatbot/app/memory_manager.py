@@ -10,7 +10,7 @@ def get_chat_history(user_id):
     chat_history = redis_client.get(user_id)
     return json.loads(chat_history) if chat_history else []
 
-def save_chat_history(user_id, messages, max_history=10):
+def save_chat_history(user_id, messages, max_history=200):
     """儲存最新的 max_history 條對話記錄"""
     redis_client.set(user_id, json.dumps(messages[-max_history:]))
 
