@@ -10007,6 +10007,7 @@ from services.interaction_service import (
     process_interaction_note_update,
     get_latest_interaction_note
 )
+from services.analytics_service import analyze_emotion_trends
 
 router = APIRouter()
 
@@ -10098,6 +10099,32 @@ def get_diary(diary_id: int, db: Session = Depends(get_db)):
         "created_at": diary.created_at.isoformat()
     }
 
+@router.get("/analytics/emotion/{user_id}", response_model=Dict[str, Any],
+          summary="獲取情緒分析數據",
+          description="分析用戶日記中的情緒變化趨勢")
+def get_emotion_analytics(user_id: int, time_range: str = "month", db: Session = Depends(get_db)):
+    """獲取用戶情緒分析數據"""
+    # 先檢查用戶是否存在
+    user = crud.get_user(db, user_id)
+    if not user:
+        api_logger.warning(f"用戶不存在: user_id={user_id}")
+        raise NotFoundError(
+            error_code=ErrorCode.USER_NOT_FOUND,
+            detail="用戶不存在"
+        )
+    
+    api_logger.info(f"獲取情緒分析: user_id={user_id}, time_range={time_range}")
+    
+    try:
+        result = analyze_emotion_trends(user_id, time_range)
+        return result
+    except Exception as e:
+        log_error(e, {"user_id": user_id, "time_range": time_range, "action": "emotion_analytics"})
+        raise ServerError(
+            error_code=ErrorCode.OPERATION_FAILED,
+            detail=f"情緒分析生成失敗: {str(e)}"
+        )
+    
 @router.put("/{diary_id}", response_model=Dict[str, Any],
           summary="更新日記",
           description="更新指定日記的內容或情緒評分")
@@ -10496,7 +10523,7 @@ REDIS_PASSWORD = os.getenv("REDIS_PASSWORD", "")
 DB_HOST = os.getenv("DB_HOST", "db")
 DB_PORT = os.getenv("DB_PORT", "5432")
 DB_USER = os.getenv("DB_USER", "myuser")
-DB_PASS = os.getenv("DB_PASS", "Ligtace760123@")  # 使用您提供的密碼
+DB_PASS = os.getenv("DB_PASS", "")  # 使用您提供的密碼
 DB_NAME = os.getenv("DB_NAME", "mydb")
 
 # 連接池設定 - 環境變量優先，否則使用預設值
@@ -10514,6 +10541,10 @@ if not CORS_ALLOWED_ORIGINS or CORS_ALLOWED_ORIGINS == [""]:
 # 必要的配置檢查
 if ENV == "production" and not XAI_API_KEY:
     raise ValueError("❌ 生產環境中必須設定 XAI_API_KEY!")
+
+# 數據庫密碼檢查
+if ENV == "production" and not DB_PASS:
+    raise ValueError("❌ 生產環境中必須設定 DB_PASS!")
 
 ================
 File: grok_chatbot/app/database/__init__.py
@@ -10757,6 +10788,39 @@ from api.routes import api_router
 from middleware.error_handler import error_handler
 from middleware.exception_handlers import register_exception_handlers
 from config import CORS_ALLOWED_ORIGINS, ENV
+from utils.logger import cleanup_old_logs, app_logger
+import atexit
+import threading
+import time
+import schedule
+
+# -----------------------
+# 日志管理
+# -----------------------
+# 启动时清理旧日志文件
+cleanup_old_logs(days_to_keep=14)
+
+# 创建定时清理任务
+def schedule_cleanup():
+    def run_scheduled_jobs():
+        while True:
+            schedule.run_pending()
+            time.sleep(3600)  # 每小时检查一次待执行任务
+    
+    # 每天凌晨2点执行日志清理
+    schedule.every().day.at("02:00").do(cleanup_old_logs)
+    
+    # 在后台线程中运行定时任务
+    scheduler_thread = threading.Thread(target=run_scheduled_jobs, daemon=True)
+    scheduler_thread.start()
+    app_logger.info("日志清理定时任务已启动")
+
+# 应用退出时的清理工作
+def on_exit():
+    app_logger.info("应用程序正在关闭")
+
+# 注册退出处理函数
+atexit.register(on_exit)
 
 # -----------------------
 # 初始化 FastAPI
@@ -10793,6 +10857,18 @@ Base.metadata.create_all(bind=engine)
 # 註冊API路由
 app.include_router(api_router)
 
+# 启动定时任务
+schedule_cleanup()
+
+@app.on_event("startup")
+async def startup_event():
+    app_logger.info("URDiary后端服务已启动")
+    app_logger.info(f"环境: {ENV}")
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    app_logger.info("URDiary后端服务正在关闭")
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
@@ -10812,7 +10888,7 @@ def get_chat_history(user_id):
     chat_history = redis_client.get(user_id)
     return json.loads(chat_history) if chat_history else []
 
-def save_chat_history(user_id, messages, max_history=10):
+def save_chat_history(user_id, messages, max_history=200):
     """儲存最新的 max_history 條對話記錄"""
     redis_client.set(user_id, json.dumps(messages[-max_history:]))
 
@@ -11108,6 +11184,7 @@ from database import SessionLocal, crud
 from typing import Dict, List, Any
 import pandas as pd
 import matplotlib.pyplot as plt
+from datetime import datetime, timedelta
 import io
 import base64
 
@@ -11186,15 +11263,63 @@ def analyze_emotion_trends(user_id: int, time_range: str = "month") -> Dict[str,
         # 創建圖表 (假設我們有一個生成圖表的函數)
         chart_base64 = "圖表數據將在這裡" # 實際項目中會生成真實圖表
         
+        # 增加時間範圍過濾
+        if time_range == "week":
+            start_date = datetime.now() - timedelta(days=7)
+        elif time_range == "month":
+            start_date = datetime.now() - timedelta(days=30)
+        elif time_range == "year":
+            start_date = datetime.now() - timedelta(days=365)
+        else:
+            start_date = datetime.now() - timedelta(days=30)  # 默認一個月
+            
+        # 按時間範圍過濾
+        df = df[df['date'] >= start_date]
+        
+        # 情緒變化速率分析
+        if len(df) > 1:
+            df['valence_diff'] = df['valence'].diff()
+            df['arousal_diff'] = df['arousal'].diff()
+            valence_volatility = df['valence_diff'].abs().mean()
+            arousal_volatility = df['arousal_diff'].abs().mean()
+        else:
+            valence_volatility = 0
+            arousal_volatility = 0        
         return {
             "valence_trend": valence_trend.tolist(),
             "arousal_trend": arousal_trend.tolist(),
             "dates": [d.strftime("%Y-%m-%d") for d in df["date"]],
             "theme_analysis": theme_analysis,
-            "chart": chart_base64
+            "chart": chart_base64,
+            "valence_volatility": valence_volatility,
+            "arousal_volatility": arousal_volatility,
+            "most_positive_day": df.loc[df['valence'].idxmax()]['date'].strftime("%Y-%m-%d") if not df.empty else None,
+            "most_negative_day": df.loc[df['valence'].idxmin()]['date'].strftime("%Y-%m-%d") if not df.empty else None,
         }
     finally:
         db.close()
+        
+def generate_emotion_chart(df, filename="emotion_chart.png"):
+    """生成情緒圖表並返回Base64編碼"""
+    plt.figure(figsize=(10, 6))
+    plt.plot(df['date'], df['valence'], 'b-', label='愉悅度')
+    plt.plot(df['date'], df['arousal'], 'r-', label='激動度')
+    plt.xlabel('日期')
+    plt.ylabel('情緒指數')
+    plt.title('情緒變化趨勢')
+    plt.legend()
+    plt.grid(True)
+    
+    # 保存到內存而不是文件
+    buf = io.BytesIO()
+    plt.savefig(buf, format='png')
+    buf.seek(0)
+    
+    # 轉為base64以便前端顯示
+    chart_base64 = base64.b64encode(buf.read()).decode('utf-8')
+    plt.close()
+    
+    return chart_base64
 
 def extract_key_themes(user_id: int) -> List[str]:
     """
@@ -12121,8 +12246,10 @@ File: grok_chatbot/app/utils/logger.py
 import os
 import logging
 import json
+import time
 from datetime import datetime
 from pathlib import Path
+from logging.handlers import RotatingFileHandler, TimedRotatingFileHandler
 
 # 設置日誌目錄
 LOG_DIR = Path("logs")
@@ -12135,13 +12262,19 @@ LOG_LEVEL_NUM = getattr(logging, LOG_LEVEL, logging.INFO)
 # 日誌格式
 LOG_FORMAT = "%(asctime)s - %(levelname)s - [%(name)s] - %(message)s"
 
+# 日誌輪轉設置
+MAX_LOG_SIZE = 10 * 1024 * 1024  # 10MB
+MAX_LOG_BACKUPS = 7  # 保留7個輪轉文件，約一周的量
+LOG_ROTATE_WHEN = 'midnight'  # 每天午夜輪轉
+
 # 創建日誌處理器
-def create_logger(name, log_file=None):
+def create_logger(name, log_file=None, use_rotating=True):
     """創建並配置日誌記錄器
     
     Args:
         name: 日誌記錄器名稱
         log_file: 日誌文件名稱，如不指定則僅輸出到控制台
+        use_rotating: 是否使用輪轉日誌
         
     Returns:
         配置好的日誌記錄器
@@ -12161,7 +12294,32 @@ def create_logger(name, log_file=None):
     # 如果指定了日誌文件，創建文件處理器
     if log_file:
         file_path = LOG_DIR / log_file
-        file_handler = logging.FileHandler(file_path)
+        
+        if use_rotating:
+            # 使用基於時間的輪轉處理器，每天午夜輪轉
+            file_handler = TimedRotatingFileHandler(
+                filename=file_path,
+                when=LOG_ROTATE_WHEN,  # 每天午夜
+                interval=1,  # 每1個單位時間
+                backupCount=MAX_LOG_BACKUPS,  # 保留備份數量
+                encoding='utf-8'
+            )
+            # 設置命名格式為 log_file.2023-12-31
+            file_handler.suffix = "%Y-%m-%d"
+            
+            # 同時使用大小輪轉，確保文件不會過大
+            size_handler = RotatingFileHandler(
+                filename=file_path,
+                maxBytes=MAX_LOG_SIZE,
+                backupCount=3,  # 基於大小的輪轉備份較少
+                encoding='utf-8'
+            )
+            size_handler.setFormatter(logging.Formatter(LOG_FORMAT))
+            logger.addHandler(size_handler)
+        else:
+            # 使用普通文件處理器
+            file_handler = logging.FileHandler(file_path, encoding='utf-8')
+        
         file_handler.setFormatter(logging.Formatter(LOG_FORMAT))
         logger.addHandler(file_handler)
     
@@ -12225,6 +12383,25 @@ def log_error(error, context=None, logger=error_logger):
         logger.error(json.dumps(error_data))
     except Exception as e:
         error_logger.error(f"錯誤記錄失敗: {str(e)}")
+
+# 清理舊日誌文件
+def cleanup_old_logs(days_to_keep=14):
+    """清理超過指定天數的舊日誌文件
+    
+    Args:
+        days_to_keep: 要保留的天數
+    """
+    try:
+        now = time.time()
+        for log_file in LOG_DIR.glob("*.log*"):
+            # 獲取文件修改時間
+            mtime = log_file.stat().st_mtime
+            # 如果文件超過指定天數，刪除它
+            if (now - mtime) > (days_to_keep * 86400):  # 86400秒 = 1天
+                log_file.unlink()
+                print(f"已刪除舊日誌文件: {log_file.name}")
+    except Exception as e:
+        error_logger.error(f"清理舊日誌文件失敗: {str(e)}")
 
 ================
 File: grok_chatbot/app/utils/password_validator.py
@@ -12598,19 +12775,18 @@ if __name__ == "__main__":
 ================
 File: grok_chatbot/docker-compose.yml
 ================
-version: "3.8"
-
 services:
   redis:
     image: "redis:7.2.5-alpine"
     container_name: "urdairy-redis"
     restart: unless-stopped
-    command: >
-      redis-server 
-      --requirepass ${REDIS_PASSWORD} 
-      --maxmemory 256mb 
-      --maxmemory-policy allkeys-lru
-      --appendonly yes
+    command: [
+      "redis-server",
+      "--requirepass", "${REDIS_PASSWORD}",
+      "--maxmemory", "256mb",
+      "--maxmemory-policy", "allkeys-lru",
+      "--appendonly", "yes"
+    ]
     healthcheck:
       test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
       interval: 30s

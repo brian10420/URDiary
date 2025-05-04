@@ -2,9 +2,8 @@ import os
 from dotenv import load_dotenv
 import secrets
 
-# 讀取 .env 文件
-load_dotenv()
-
+# 讀取 .env 文件 - 使用正斜杠避免轉義字符問題
+load_dotenv("../.env")
 # 環境設定
 ENV = os.getenv("ENV", "development")  # development, staging, production
 

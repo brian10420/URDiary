@@ -294,6 +294,18 @@ const ChatModule = (function() {
             // 添加思考中消息
             const thinkingMessageId = addThinkingMessage();
             
+            // 檢查ApiService是否存在
+            if (typeof ApiService === 'undefined') {
+                console.error('ApiService未定義，無法發送消息');
+                throw new Error('API服務未初始化，請重新加載應用');
+            }
+            
+            // 檢查sendChatMessage方法是否存在
+            if (typeof ApiService.sendChatMessage !== 'function') {
+                console.error('ApiService.sendChatMessage方法未定義');
+                throw new Error('API服務不完整，缺少sendChatMessage方法');
+            }
+            
             // 調用API服務發送消息
             const response = await ApiService.sendChatMessage(userInput);
             
@@ -337,7 +349,12 @@ const ChatModule = (function() {
             }
             
             // 添加錯誤消息
-            addSystemMessage('抱歉，我遇到了一些問題。請稍後再試。');
+            addSystemMessage('抱歉，我遇到了一些問題: ' + error.message);
+            
+            // 如果是API服務未定義的錯誤，顯示更詳細的錯誤信息
+            if (error.message.includes('API服務未初始化')) {
+                addSystemMessage('請嘗試刷新頁面，或者檢查API服務是否已啟動。如果問題持續，請聯繫技術支持。');
+            }
         } finally {
             // 恢復輸入狀態
             isProcessing = false;
@@ -471,7 +488,11 @@ const ChatModule = (function() {
             // 確保不在處理狀態
             if (isProcessing) {
                 console.warn('正在處理其他請求，請稍後再試');
-                UIManager.showToast('正在處理中，請稍後再試');
+                if (typeof UIManager !== 'undefined' && UIManager.showToast) {
+                    UIManager.showToast('正在處理中，請稍後再試');
+                } else {
+                    alert('正在處理中，請稍後再試');
+                }
                 return;
             }
             
@@ -479,24 +500,42 @@ const ChatModule = (function() {
             isProcessing = true;
             
             // 顯示加載動畫
-            UIManager.showSpinner();
+            if (typeof UIManager !== 'undefined' && UIManager.showSpinner) {
+                UIManager.showSpinner();
+            }
             
             // 保存當前聊天歷史
             saveChatHistory();
             console.log('聊天歷史已保存');
             
             try {
+                // 檢查ApiService是否存在
+                if (typeof ApiService === 'undefined') {
+                    console.error('ApiService未定義，無法結束聊天');
+                    throw new Error('API服務未初始化，無法生成日記');
+                }
+                
+                // 檢查endChat方法是否存在
+                if (typeof ApiService.endChat !== 'function') {
+                    console.error('ApiService.endChat方法未定義');
+                    throw new Error('API服務不完整，缺少endChat方法');
+                }
+                
                 // 調用API結束聊天並生成日記
                 console.log('調用API結束聊天');
                 const response = await ApiService.endChat();
                 console.log('聊天結束API響應:', response);
                 
                 // 顯示成功消息
-                UIManager.showToast('已生成日記');
+                if (typeof UIManager !== 'undefined' && UIManager.showToast) {
+                    UIManager.showToast('已生成日記');
+                }
                 
                 // 清空聊天記錄
                 chatHistory = [];
-                chatMessagesContainer.innerHTML = '';
+                if (chatMessagesContainer) {
+                    chatMessagesContainer.innerHTML = '';
+                }
                 saveChatHistory();
                 
                 // 添加歡迎消息
@@ -507,7 +546,7 @@ const ChatModule = (function() {
                     typeof CONFIG.APP.AUTO_SWITCH_TO_DIARY_AFTER_END !== 'undefined' ? 
                     CONFIG.APP.AUTO_SWITCH_TO_DIARY_AFTER_END : true;
                 
-                if (shouldAutoSwitch) {
+                if (shouldAutoSwitch && typeof UIManager !== 'undefined' && UIManager.switchView) {
                     console.log('自動切換到日記頁面');
                     setTimeout(() => {
                         UIManager.switchView('diary');
@@ -517,22 +556,39 @@ const ChatModule = (function() {
                 console.error('結束聊天失敗:', error);
                 
                 // 顯示錯誤信息
-                UIManager.showError('生成日記失敗', '無法結束對話並生成日記，請稍後再試。');
+                if (typeof UIManager !== 'undefined' && UIManager.showError) {
+                    UIManager.showError('生成日記失敗', '無法結束對話並生成日記: ' + error.message);
+                } else {
+                    alert('生成日記失敗: ' + error.message);
+                }
                 
                 // 添加錯誤消息
-                addSystemMessage("抱歉，我在生成日記時遇到了問題。請稍後再試。");
+                addSystemMessage("抱歉，我在生成日記時遇到了問題: " + error.message);
+                
+                // 如果是API服務未定義的錯誤，添加更詳細的提示
+                if (error.message.includes('API服務未初始化')) {
+                    addSystemMessage("請檢查API服務是否正常運行，或嘗試重新載入應用程序。");
+                }
             } finally {
                 // 恢復處理狀態
                 isProcessing = false;
                 
                 // 隱藏加載動畫
-                UIManager.hideSpinner();
+                if (typeof UIManager !== 'undefined' && UIManager.hideSpinner) {
+                    UIManager.hideSpinner();
+                }
             }
         } catch (error) {
             console.error('結束聊天過程出錯:', error);
-            UIManager.showError('錯誤', '結束聊天過程中發生錯誤: ' + error.message);
+            if (typeof UIManager !== 'undefined' && UIManager.showError) {
+                UIManager.showError('錯誤', '結束聊天過程中發生錯誤: ' + error.message);
+            } else {
+                alert('錯誤: 結束聊天過程中發生錯誤: ' + error.message);
+            }
             isProcessing = false;
-            UIManager.hideSpinner();
+            if (typeof UIManager !== 'undefined' && UIManager.hideSpinner) {
+                UIManager.hideSpinner();
+            }
         }
     }
     

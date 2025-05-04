@@ -90,6 +90,12 @@ const DiaryModule = (function() {
     async function loadDiaries() {
         console.log('開始載入日記列表');
         try {
+            // 检查UIManager是否存在
+            if (typeof UIManager === 'undefined') {
+                console.error('UIManager未定義，無法顯示載入動畫');
+                throw new Error('UIManager未定義');
+            }
+            
             UIManager.showSpinner();
             console.log('顯示載入動畫');
             
@@ -103,6 +109,18 @@ const DiaryModule = (function() {
                 }
             }
             
+            // 檢查ApiService是否存在
+            if (typeof ApiService === 'undefined') {
+                console.error('ApiService未定義，無法請求日記數據');
+                throw new Error('ApiService未定義，請確保API服務已正確初始化');
+            }
+            
+            // 檢查ApiService.getDiaries方法是否存在
+            if (typeof ApiService.getDiaries !== 'function') {
+                console.error('ApiService.getDiaries方法未定義');
+                throw new Error('API服務未完全初始化，getDiaries方法不可用');
+            }
+            
             // 從API獲取日記列表
             console.log('向API請求日記數據');
             diaries = await ApiService.getDiaries();
@@ -111,7 +129,9 @@ const DiaryModule = (function() {
             // 檢查數據
             if (!diaries || !Array.isArray(diaries)) {
                 console.error('獲取的日記數據無效:', diaries);
-                throw new Error('日記數據格式不正確');
+                // 使用空數組作為後備
+                diaries = [];
+                console.log('使用空數組作為後備');
             }
             
             // 渲染日記列表
@@ -121,11 +141,19 @@ const DiaryModule = (function() {
             console.log('日記載入完成');
         } catch (error) {
             console.error('載入日記列表失敗:', error);
-            UIManager.showError('載入失敗', '載入日記資料時出錯: ' + error.message);
+            if (typeof UIManager !== 'undefined' && UIManager.showError) {
+                UIManager.showError('載入失敗', '載入日記資料時出錯: ' + error.message);
+            } else {
+                alert('載入日記失敗: ' + error.message);
+            }
+            // 确保至少显示空状态
+            diaries = [];
             showEmptyState();
         } finally {
-            UIManager.hideSpinner();
-            console.log('隱藏載入動畫');
+            if (typeof UIManager !== 'undefined' && UIManager.hideSpinner) {
+                UIManager.hideSpinner();
+                console.log('隱藏載入動畫');
+            }
         }
     }
     

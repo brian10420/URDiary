@@ -1,9 +1,29 @@
 import redis
 import json
-from config import REDIS_HOST, REDIS_PORT, REDIS_DB
+import os
+from config import REDIS_HOST, REDIS_PORT, REDIS_DB, REDIS_PASSWORD
+from dotenv import load_dotenv
+
+
+
+# 安全地獲取Redis密碼
+def get_redis_password():
+    # 優先使用環境變量中的密碼
+    env_password = os.getenv("REDIS_PASSWORD")
+    if env_password:
+        return env_password
+    # 如果環境變量中沒有，則使用配置中的密碼
+    return REDIS_PASSWORD
+
 
 # 連接 Redis
-redis_client = redis.StrictRedis(host=REDIS_HOST, port=REDIS_PORT, db=REDIS_DB, decode_responses=True)
+redis_client = redis.StrictRedis(
+    host=REDIS_HOST, 
+    port=REDIS_PORT, 
+    db=REDIS_DB, 
+    password=REDIS_PASSWORD,  
+    decode_responses=True
+)
 
 def get_chat_history(user_id):
     """取得使用者的對話記錄"""
