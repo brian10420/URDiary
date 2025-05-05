@@ -47,6 +47,7 @@ Directory Structure
 ================================================================
 .gitignore
 .python-version
+desktop/[6rC9ZCXOK5TY)+'
 desktop/assets/assets/default-avatar.svg
 desktop/assets/assets/notebook-bg.svg
 desktop/assets/assets/robot-avatar.svg
@@ -82,9 +83,7 @@ desktop/js/ui_manager.js
 desktop/main.js
 desktop/package.json
 desktop/preload.js
-frontend/css/styles.css
-frontend/index.html
-frontend/js/app.js
+desktop/test_app.js
 grok_chatbot/.env.example
 grok_chatbot/.gitignore
 grok_chatbot/app/api/__init__.py
@@ -120,6 +119,10 @@ grok_chatbot/docker-compose.yml
 grok_chatbot/Dockerfile
 grok_chatbot/docs/error_handling.md
 grok_chatbot/generate_secrets.py
+grok_chatbot/tests/__init__.py
+grok_chatbot/tests/api_test.py
+grok_chatbot/tests/README.md
+grok_chatbot/tests/tempCodeRunnerFile.py
 README.md
 Test.py
 
@@ -342,6 +345,11 @@ grok_chatbot/postgres_data/
 File: .python-version
 ================
 3.10.10
+
+================
+File: desktop/[6rC9ZCXOK5TY)+'
+================
+OCI runtime exec failed: exec failed: unable to start container process: exec: "redis-cli": executable file not found in $PATH: unknown
 
 ================
 File: desktop/assets/assets/default-avatar.svg
@@ -2772,25 +2780,22 @@ File: desktop/index.html
     <link rel="stylesheet" href="css/base.css">
     <link rel="stylesheet" href="css/chat.css">
     <link rel="stylesheet" href="css/diary.css">
-    <!-- 移除不需要的CSS引用 -->
     
-    <!-- 配置 - 必須最先加載 -->
+    <!-- 1. 配置和核心服務 - 優先加載 -->
     <script src="js/config.js"></script>
-    
-    <!-- 錯誤日誌系統 - 第二優先加載 -->
     <script src="js/error_logger.js"></script>
-    
-    <!-- 工具和服務 -->
-    <script src="js/ui_manager.js"></script>
     <script src="js/api_service.js"></script>
-    <script src="js/error_handler.js"></script>
     <script src="js/password_manager.js"></script>
-    <!-- 移除系統日誌模塊 -->
     
-    <!-- 功能模塊 -->
+    <!-- 2. UI和錯誤處理 -->
+    <script src="js/ui_manager.js"></script>
+    <script src="js/error_handler.js"></script>
+    
+    <!-- 3. 功能模塊 - 最後加載 -->
     <script src="js/chat_module.js"></script>
     <script src="js/diary_module.js"></script>
-    <!-- 移除筆記模塊 -->
+    
+    <!-- 主程序入口 - 最後加載 -->
     <script src="js/main.js"></script>
 </head>
 <body>
@@ -2816,7 +2821,6 @@ File: desktop/index.html
             <nav class="app-nav">
                 <div class="nav-item active" data-view="chat">對話</div>
                 <div class="nav-item" data-view="diary">日記</div>
-                <!-- 移除筆記和系統日誌導航項 -->
             </nav>
             
             <div class="app-tools">
@@ -2953,8 +2957,6 @@ File: desktop/index.html
                     </div>
                 </div>
             </div>
-            
-            <!-- 移除筆記視圖和系統日誌視圖 -->
         </main>
         
         <!-- 頁面底部 -->
@@ -2993,8 +2995,20 @@ const ApiService = (function() {
     let currentUserId = localStorage.getItem('currentUserId') || 'desktop_user';
     let numericUserId = parseInt(localStorage.getItem('numericUserId') || '1');
     
+    // JWT令牌存儲
+    let accessToken = localStorage.getItem('auth_token') || null;
+    let tokenExpiry = localStorage.getItem('token_expiry') ? new Date(localStorage.getItem('token_expiry')) : null;
+    
+    // 初始化狀態標誌
+    let isInitialized = false;
+    
     // 初始化方法
     function init() {
+        if (isInitialized) {
+            console.log('API 服務已初始化，跳過');
+            return true;
+        }
+        
         console.log('初始化 API 服務');
         // 從配置中獲取 API URL
         if (typeof CONFIG !== 'undefined' && CONFIG.API && CONFIG.API.BASE_URL) {
@@ -3002,9 +3016,20 @@ const ApiService = (function() {
             console.log('使用配置的 API URL:', API_BASE_URL);
         }
         
+        // 設置初始化標誌
+        isInitialized = true;
+        
         // 顯示初始化信息
         console.log('API 服務初始化完成，基礎 URL:', API_BASE_URL);
         return true;
+    }
+    
+    // 確保服務已初始化
+    function ensureInitialized() {
+        if (!isInitialized) {
+            init();
+        }
+        return isInitialized;
     }
     
     // 日誌
@@ -3020,23 +3045,122 @@ const ApiService = (function() {
     }
     
     /**
+     * 設置認證令牌
+     * @param {string} token - JWT令牌
+     * @param {number} expiresIn - 過期時間（秒）
+     */
+    function setAuthToken(token, expiresIn) {
+        if (!token) return;
+        
+        accessToken = token;
+        
+        // 計算過期時間
+        const expiryDate = new Date();
+        expiryDate.setSeconds(expiryDate.getSeconds() + expiresIn);
+        tokenExpiry = expiryDate;
+        
+        // 保存到本地存儲
+        localStorage.setItem('auth_token', token);
+        localStorage.setItem('token_expiry', expiryDate.toISOString());
+        
+        console.log(`認證令牌已設置，有效期至: ${expiryDate.toLocaleString()}`);
+    }
+    
+    /**
+     * 清除認證令牌
+     */
+    function clearAuthToken() {
+        accessToken = null;
+        tokenExpiry = null;
+        localStorage.removeItem('auth_token');
+        localStorage.removeItem('token_expiry');
+        console.log('認證令牌已清除');
+    }
+    
+    /**
+     * 檢查令牌是否即將過期（默認閾值為5分鐘）
+     * @returns {boolean} 是否即將過期
+     */
+    function isTokenExpiringSoon(thresholdMinutes = 5) {
+        if (!accessToken || !tokenExpiry) return true;
+        
+        const now = new Date();
+        const thresholdTime = new Date(now.getTime() + thresholdMinutes * 60 * 1000);
+        
+        return tokenExpiry <= thresholdTime;
+    }
+    
+    /**
+     * 嘗試刷新令牌
+     * @returns {Promise<boolean>} 是否成功刷新
+     */
+    async function refreshToken() {
+        if (!accessToken) return false;
+        
+        try {
+            const response = await fetch(`${API_BASE_URL}/users/token/refresh`, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${accessToken}`,
+                    'Content-Type': 'application/json'
+                }
+            });
+            
+            if (!response.ok) {
+                console.warn('刷新令牌失敗:', response.status);
+                return false;
+            }
+            
+            const data = await response.json();
+            setAuthToken(data.access_token, data.expires_in);
+            return true;
+        } catch (error) {
+            console.error('刷新令牌出錯:', error);
+            return false;
+        }
+    }
+    
+    /**
      * 發送API請求
      * @param {string} endpoint - API端點
      * @param {Object} options - 請求選項
      * @returns {Promise<Object>} - 響應數據
      */
     async function fetchAPI(endpoint, options = {}) {
+        // 確保API服務已初始化
+        ensureInitialized();
+    
         const startTime = Date.now();
         
         try {
-            // 檢查網絡連接
+            // 檢查網絡連接 - 改進檢測邏輯
             if (!navigator.onLine) {
-                throw new Error('設備處於離線狀態，無法連接API');
+                console.warn(`設備處於離線狀態 (${endpoint})，嘗試使用模擬數據`);
+                
+                // 直接拋出特定錯誤
+                throw new Error('OFFLINE_MODE');
+            }
+            
+            // 優先從配置中取得 API URL
+            const baseUrl = CONFIG && CONFIG.API && CONFIG.API.BASE_URL ? 
+                CONFIG.API.BASE_URL : 'http://localhost:8000';
+            
+            // 完全移除API可用性檢測（避免因405錯誤導致不必要的問題）
+            // 相反，我們將依賴後續的真實請求來確定API是否可用
+                
+            // 檢查令牌，如果即將過期則嘗試刷新
+            if (accessToken && isTokenExpiringSoon()) {
+                console.log('令牌即將過期，嘗試刷新...');
+                const refreshed = await refreshToken();
+                
+                // 如果令牌刷新失敗，記錄錯誤但繼續嘗試使用當前令牌
+                if (!refreshed) {
+                    console.warn('令牌刷新失敗，將使用當前令牌繼續嘗試');
+                    // 不清除當前令牌，因為它可能仍然有效
+                }
             }
             
             // 構建完整URL
-            const baseUrl = CONFIG && CONFIG.API && CONFIG.API.BASE_URL ? 
-                CONFIG.API.BASE_URL : 'http://localhost:8000';
             const url = `${baseUrl}${endpoint}`;
             
             // 設置默認選項
@@ -3050,6 +3174,11 @@ const ApiService = (function() {
                 }
             };
             
+            // 添加認證令牌（如果有）
+            if (accessToken) {
+                fetchOptions.headers['Authorization'] = `Bearer ${accessToken}`;
+            }
+            
             // 如果有body，將其轉換為JSON
             if (options.body) {
                 fetchOptions.body = JSON.stringify(options.body);
@@ -3057,7 +3186,7 @@ const ApiService = (function() {
             
             console.log(`發送請求到: ${url}`, { method: fetchOptions.method });
             
-            // 將請求信息添加到系統日誌，添加安全檢查
+            // 將請求信息添加到系統日誌
             try {
                 if (typeof ErrorLogger !== 'undefined' && typeof ErrorLogger.captureInfo === 'function') {
                     ErrorLogger.captureInfo('API請求', { 
@@ -3090,16 +3219,131 @@ const ApiService = (function() {
             const response = await fetch(url, fetchOptions);
             clearTimeout(timeoutId);
             
-            // 檢查響應是否成功
-            if (!response.ok) {
-                let errorText = '';
+            // 檢查是否為401未授權錯誤
+            if (response.status === 401 && accessToken) {
+                console.warn('認證令牌已過期或無效 (401)');
+                
+                // 記錄詳細錯誤信息
                 try {
-                    errorText = await response.text();
-                } catch (textError) {
-                    errorText = `無法獲取錯誤詳情: ${textError.message}`;
+                    const errorData = await response.json();
+                    console.warn('認證錯誤詳情:', errorData);
+                    
+                    // 添加到錯誤日誌
+                    if (typeof ErrorLogger !== 'undefined' && typeof ErrorLogger.captureError === 'function') {
+                        ErrorLogger.captureError(new Error('JWT認證錯誤'), {
+                            type: 'auth',
+                            context: endpoint,
+                            details: errorData
+                        });
+                    }
+                } catch (e) {
+                    console.warn('無法獲取認證錯誤詳情');
                 }
                 
-                throw new Error(`API錯誤 (${response.status}): ${errorText}`);
+                // 清除令牌
+                clearAuthToken();
+                
+                // 使用指定的錯誤碼
+                throw new Error('JWT_AUTH_ERROR');
+            }
+            
+            // 檢查是否為403禁止訪問錯誤（可能是權限問題）
+            if (response.status === 403) {
+                console.warn('無權訪問資源 (403)');
+                
+                // 擷取錯誤詳情
+                try {
+                    const errorData = await response.json();
+                    console.warn('權限錯誤詳情:', errorData);
+                    
+                    // 添加到錯誤日誌
+                    if (typeof ErrorLogger !== 'undefined' && typeof ErrorLogger.captureError === 'function') {
+                        ErrorLogger.captureError(new Error('權限錯誤'), {
+                            type: 'permission',
+                            context: endpoint,
+                            details: errorData
+                        });
+                    }
+                } catch (e) {
+                    console.warn('無法獲取權限錯誤詳情');
+                }
+                
+                throw new Error('PERMISSION_ERROR');
+            }
+            
+            // 檢查響應是否成功
+            if (!response.ok) {
+                // 獲取錯誤響應
+                let errorData = {};
+                let errorText = '';
+                
+                try {
+                    // 嘗試獲取JSON錯誤
+                    try {
+                        errorData = await response.json();
+                        errorText = errorData.detail || errorData.error || errorData.message || `HTTP錯誤 ${response.status}`;
+                    } catch (jsonError) {
+                        // 如果不是JSON，獲取文本
+                    errorText = await response.text();
+                    }
+                } catch (textError) {
+                    errorText = `HTTP錯誤 ${response.status}`;
+                }
+                
+                // 檢查錯誤信息中是否包含JWT相關關鍵詞
+                const isJwtError = errorText.toLowerCase().includes('token') || 
+                                  errorText.toLowerCase().includes('jwt') ||
+                                  errorText.toLowerCase().includes('auth') || 
+                                  errorText.toLowerCase().includes('認證');
+                
+                if (isJwtError) {
+                    console.warn('JWT相關錯誤:', errorText);
+                    
+                    // JWT錯誤時可以嘗試清除令牌，以便下次重新獲取
+                    clearAuthToken();
+                    
+                    throw new Error('JWT_ERROR_IN_RESPONSE');
+                }
+                
+                // 記錄服務器錯誤
+                const isServerError = response.status >= 500 && response.status < 600;
+                if (isServerError) {
+                    console.error(`服務器內部錯誤 (${response.status}):`, errorText);
+                    
+                    // 添加到錯誤日誌
+                    if (typeof ErrorLogger !== 'undefined' && typeof ErrorLogger.captureError === 'function') {
+                        ErrorLogger.captureError(new Error(`服務器錯誤 ${response.status}`), {
+                            type: 'server',
+                            context: endpoint,
+                            details: errorData
+                        });
+                    }
+                    
+                    throw new Error('SERVER_ERROR');
+                }
+                
+                // 其他HTTP錯誤
+                console.error(`API錯誤 (${response.status}):`, errorText);
+                
+                // 構建詳細錯誤信息
+                const errorInfo = {
+                    status: response.status,
+                    detail: errorText,
+                    error: errorData.error || 'api_error',
+                    request_id: errorData.request_id || null,
+                    code: errorData.code || null
+                };
+                
+                // 添加到錯誤日誌
+                if (typeof ErrorLogger !== 'undefined' && typeof ErrorLogger.captureError === 'function') {
+                    ErrorLogger.captureError(new Error(`API錯誤 ${response.status}`), {
+                        type: 'api',
+                        context: endpoint,
+                        details: errorInfo
+                    });
+                }
+                
+                throw new Error(`API_ERROR:${response.status}`);
             }
             
             // 嘗試解析JSON響應
@@ -3154,36 +3398,78 @@ const ApiService = (function() {
                 console.warn('記錄API錯誤信息失敗:', logError);
             }
             
-            // 針對AbortError特殊處理
-            if (error.name === 'AbortError') {
-                console.warn(`請求被中止: ${endpoint}`);
-                
-                // 如果是生成日記的請求，嘗試使用模擬數據
-                if ((endpoint.includes('/chat/end/') || endpoint.includes('/diary/enhanced-generate')) && CONFIG && CONFIG.USE_MOCK_DATA) {
-                    console.log('使用模擬數據作為結束聊天響應');
-                    return getMockDataForEndpoint('/chat/end/');
-                }
-            }
+            // 獲取錯誤碼 - 從自定義錯誤中提取
+            const errorMatches = error.message.match(/^([A-Z_]+)($|:)/);
+            const errorCode = errorMatches ? errorMatches[1] : null;
+            const httpStatus = error.message.split(':')[1]; // 如果是HTTP錯誤，提取狀態碼
             
-            // 針對特定端點實現本地備份策略
+            console.log(`識別錯誤類型: ${errorCode || '未知'}, HTTP狀態: ${httpStatus || 'N/A'}`);
+            
+            // 根據錯誤類型決定如何處理
+            switch (errorCode) {
+                case 'OFFLINE_MODE':
+                    console.log('設備處於離線模式，使用模擬數據');
+                    return getMockDataForEndpoint(endpoint, { ...options, errorType: 'offline' });
+                    
+                case 'JWT_AUTH_ERROR':
+                case 'JWT_ERROR_IN_RESPONSE':
+                    console.log('JWT認證錯誤，使用模擬數據並通知用戶');
+                    if (typeof UIManager !== 'undefined' && UIManager.showToast) {
+                        UIManager.showToast('認證失敗，請重新登入');
+                    }
+                    return getMockDataForEndpoint(endpoint, { ...options, errorType: 'auth' });
+                    
+                case 'PERMISSION_ERROR':
+                    console.log('權限錯誤，使用模擬數據並通知用戶');
+                    if (typeof UIManager !== 'undefined' && UIManager.showToast) {
+                        UIManager.showToast('您沒有權限執行此操作');
+                    }
+                    return getMockDataForEndpoint(endpoint, { ...options, errorType: 'permission' });
+                    
+                case 'SERVER_ERROR':
+                    console.log('服務器錯誤，使用模擬數據');
+                    return getMockDataForEndpoint(endpoint, { ...options, errorType: 'server' });
+                    
+                case 'API_ERROR':
+                    console.log(`API錯誤 (${httpStatus})，檢查是否可降級`);
+                    
+                    // 針對特定端點的降級策略
+                    if (endpoint.includes('/chat/') || endpoint.includes('/diary/')) {
+                        return getMockDataForEndpoint(endpoint, { ...options, errorType: 'api', status: httpStatus });
+                    }
+                    break;
+                    
+                default:
+                    // 處理其他類型的錯誤
+                    if (error.name === 'AbortError') {
+                        console.log('請求超時，使用模擬數據');
+                        return getMockDataForEndpoint(endpoint, { ...options, errorType: 'timeout' });
+                    }
+                    
+                    if (error.name === 'TypeError' || error.name === 'NetworkError') {
+                        console.log('網絡錯誤，使用模擬數據');
+                        return getMockDataForEndpoint(endpoint, { ...options, errorType: 'network' });
+                    }
+                    
+                    // 檢查是否有本地備份
             if (endpoint.includes('/diaries') || endpoint.includes('/notes')) {
                 console.log('嘗試使用本地數據作為備份...');
                 const localData = getLocalData(endpoint);
                 if (localData) {
                     console.log('使用本地備份數據:', endpoint);
                     return localData;
-                }
+                        }
+                    }
             }
             
-            // 如果是超時或網絡錯誤，且配置了使用模擬數據
-            if ((error.name === 'AbortError' || error.name === 'TypeError') && 
-                CONFIG && CONFIG.USE_MOCK_DATA) {
-                console.log('嘗試使用模擬數據...');
-                return getMockDataForEndpoint(endpoint);
+            // 如果配置了自動使用模擬數據，對所有錯誤使用模擬數據
+            if (CONFIG && CONFIG.USE_MOCK_DATA) {
+                console.log('使用模擬數據作為最後的後備方案');
+                return getMockDataForEndpoint(endpoint, { ...options, errorType: 'fallback' });
             }
             
-            // 重新拋出錯誤
-            throw new Error(`API請求出錯: ${error.message}`);
+            // 重新拋出錯誤，如果無法處理
+            throw new Error(`API請求失敗: ${error.message}`);
         }
     }
     
@@ -3227,51 +3513,156 @@ const ApiService = (function() {
     }
     
     // 根據端點獲取模擬數據
-    function getMockDataForEndpoint(endpoint, options) {
-        switch (endpoint) {
-            case '/chat/':
-            case '/chat/enhanced/':
-                return {
-                    "response": "這是一個模擬的AI回覆。請確保API服務正在運行，或檢查網絡連接。"
-                };
-            case '/chat/end/':
-                return {
-                    "success": true,
-                    "message": "對話已結束，日記已生成",
-                    "diary": {
-                        "diary_id": 999,
-                        "content": "## 1. 今日事件\n今天是一個模擬的日記內容。這是由於API請求超時或失敗而生成的備用內容。\n\n## 2. 情緒與感受\n在實際運行時，此處將包含情緒分析。\n\n## 3. 反思與洞察\n請檢查後端服務是否正常運行，或者是否需要增加API超時時間。\n\n## 4. 明日方向\n嘗試再次進行對話，或查看API日誌了解更多詳情。",
-                        "valence": 0.5,
-                        "arousal": 0.5,
-                        "created_at": new Date().toISOString()
-                    }
-                };
-            case '/diaries/1':
-            case '/diaries/2':
-            case '/diaries/3':
-                return {
-                    diaries: generateSampleDiaries().map(d => ({
-                        diary_id: d.id,
-                        title: d.title,
-                        content: d.content,
-                        diary_date: d.date,
-                        valence: d.valence || 0.5,
-                        arousal: d.arousal || 0.5
-                    }))
-                };
-                
-            case '/interaction-notes/1':
-                return {
-                    success: true,
-                    id: 1,
-                    version: 1,
-                    content: '這是一個互動筆記示例...',
-                    updated_at: new Date().toISOString()
-                };
-                
-            default:
-                return { success: false, message: '未找到適合的模擬數據' };
+    function getMockDataForEndpoint(endpoint, options = {}) {
+        console.log(`獲取模擬數據: ${endpoint}`, options);
+        
+        // 提取錯誤類型（如果有）
+        const { errorType, status } = options;
+        
+        // 檢查是否處於離線模式
+        const isOffline = errorType === 'offline';
+        
+        // 檢查是否為認證錯誤
+        const isAuthError = errorType === 'auth';
+        
+        // 檢查是否為權限錯誤
+        const isPermissionError = errorType === 'permission';
+        
+        // 用於響應的通用信息
+        let message = '使用模擬數據響應';
+        if (isOffline) {
+            message = '設備處於離線模式，使用模擬數據';
+        } else if (isAuthError) {
+            message = '認證失敗，請重新登入以訪問此功能';
+        } else if (isPermissionError) {
+            message = '您沒有權限訪問此功能';
         }
+        
+        // 添加通用錯誤信息到所有模擬響應
+        const commonErrorInfo = {
+            _mock: true,
+            _error: errorType || null,
+            _status: status || null,
+            _message: message
+        };
+
+        // 在登錄端點中添加模擬 JWT token
+        if (endpoint === '/auth/login' || endpoint.includes('/login')) {
+            // 檢查登入類型的不同情況
+            if (isAuthError) {
+                return {
+                    ...commonErrorInfo,
+                    success: false,
+                    error: 'AUTH_FAILED',
+                    message: '用戶名或密碼錯誤'
+                };
+            }
+            
+            // 如果是離線模式，生成本地的 token
+            const mockToken = 'MOCK_JWT_' + Date.now();
+                return {
+                ...commonErrorInfo,
+                success: true,
+                token: mockToken,
+                user: {
+                    id: 'local_user',
+                    username: options.data?.username || 'local_user',
+                    name: '離線用戶',
+                    role: 'local'
+                },
+                message: '使用本地模擬登入'
+            };
+        }
+
+        // 聊天相關端點的模擬數據
+        if (endpoint.includes('/chat/')) {
+            if (endpoint.includes('/chat/start')) {
+                return {
+                    ...commonErrorInfo,
+                    success: true,
+                    chatId: 'mock_chat_' + Date.now(),
+                    message: isAuthError ? '聊天記錄無法同步到服務器' : '開始新的聊天'
+                };
+            }
+            
+            if (endpoint.includes('/chat/message')) {
+                return {
+                    ...commonErrorInfo,
+                    success: true,
+                    messageId: 'mock_msg_' + Date.now(),
+                    response: options.data?.message 
+                        ? `這是對"${options.data.message}"的模擬回應。${message}` 
+                        : `模擬回應。${message}`,
+                    save_locally: true
+                };
+            }
+            
+            if (endpoint.includes('/chat/end')) {
+                const summary = isAuthError
+                    ? "聊天已結束，但由於認證問題無法保存到服務器。內容已本地保存。"
+                    : "聊天已結束。由於使用模擬數據，內容僅保存在本地。";
+                    
+                const generatedContent = {
+                    title: "模擬日記標題",
+                    content: options.data?.messages 
+                        ? "基於您的聊天記錄生成的模擬內容。" 
+                        : "模擬日記內容。",
+                    summary: summary
+                };
+                
+                return {
+                    ...commonErrorInfo,
+                    success: true,
+                    diary: generatedContent,
+                    message: summary
+                };
+            }
+        }
+
+        // 日記相關端點的模擬數據
+        if (endpoint.includes('/diary/')) {
+            if (endpoint.includes('/list')) {
+                return {
+                    ...commonErrorInfo,
+                    success: true,
+                    diaries: [],
+                    message: `模擬日記列表 ${message}`
+                };
+            }
+            
+            if (endpoint.includes('/save') || endpoint.includes('/create')) {
+                const saveMessage = isAuthError
+                    ? "日記已本地保存，但無法同步到服務器。請登入後再次嘗試同步。"
+                    : "日記已使用模擬數據保存在本地。";
+                    
+                return {
+                    ...commonErrorInfo,
+                    success: true,
+                    diaryId: 'mock_diary_' + Date.now(),
+                    local_only: true,
+                    message: saveMessage
+                };
+            }
+            
+            if (endpoint.includes('/enhanced-generate')) {
+                return {
+                    ...commonErrorInfo,
+                    success: true,
+                    content: "這是根據您的輸入生成的模擬日記內容。",
+                    title: "模擬生成的日記標題",
+                    message: isAuthError 
+                        ? "日記已生成，但無法使用所有增強功能。請登入以獲取完整體驗。" 
+                        : "使用模擬數據生成的日記內容"
+                };
+            }
+        }
+
+        // 默認模擬數據
+        return {
+            ...commonErrorInfo,
+            success: true,
+            message: `${endpoint} 的默認模擬響應`
+        };
     }
     
     // 發送聊天消息
@@ -3279,6 +3670,19 @@ const ApiService = (function() {
         try {
             console.log('開始發送聊天消息:', message.substring(0, 50) + (message.length > 50 ? '...' : ''));
             
+            // 檢查網絡連接
+            if (!navigator.onLine) {
+                console.warn('設備處於離線狀態，使用離線模式');
+                throw new Error('網絡連接不可用');
+            }
+            
+            // 最大重試次數
+            const maxRetries = CONFIG && CONFIG.API && CONFIG.API.MAX_RETRIES ? CONFIG.API.MAX_RETRIES : 1;
+            let retryCount = 0;
+            let lastError = null;
+            
+            while (retryCount <= maxRetries) {
+                try {
             // 直接調用chat/enhanced端點
             const data = await fetchAPI('/chat/enhanced/', {
                 method: 'POST',
@@ -3315,23 +3719,68 @@ const ApiService = (function() {
             
             console.log('標準化後的響應:', response);
             return response;
+                } catch (error) {
+                    lastError = error;
+                    retryCount++;
+                    
+                    // 只有在重試次數未達到最大值且錯誤是服務器錯誤(500系列)時才重試
+                    const isServerError = error.message.includes('500') || 
+                                         error.message.includes('服務器內部錯誤') || 
+                                         error.message.includes('伺服器內部錯誤');
+                    
+                    if (retryCount <= maxRetries && isServerError) {
+                        console.warn(`嘗試第 ${retryCount} 次重新發送消息...`);
+                        // 等待一段時間再重試，避免立即重試造成服務器負擔
+                        await new Promise(resolve => setTimeout(resolve, 1000));
+                    } else {
+                        // 不再重試，拋出錯誤
+                        break;
+                    }
+                }
+            }
+            
+            // 如果所有重試都失敗，拋出錯誤
+            throw lastError || new Error('發送消息失敗');
         } catch (error) {
             console.error('發送消息錯誤:', error);
+            
+            // 解析錯誤信息
+            let errorDetail = '';
+            try {
+                if (error.message.includes('{')) {
+                    const errorJson = error.message.substring(error.message.indexOf('{'));
+                    const errorObj = JSON.parse(errorJson);
+                    if (errorObj.detail) {
+                        errorDetail = errorObj.detail;
+                    }
+                }
+            } catch (parseError) {
+                console.warn('無法解析錯誤詳情', parseError);
+            }
             
             // 使用模擬數據作為備份
             if (CONFIG && (CONFIG.USE_MOCK_DATA || CONFIG.DEBUG.MOCK_API)) {
                 console.log('使用模擬數據作為備份響應');
                 const mockResponse = getRandomResponse();
+                
+                // 添加錯誤信息提示
+                let responseMessage = mockResponse;
+                if (errorDetail) {
+                    // 將詳細錯誤信息添加到模擬響應中
+                    responseMessage = `[注意: 伺服器暫時不可用 - ${errorDetail}]\n\n${mockResponse}`;
+                }
+                
                 return {
-                    message: mockResponse,
-                    response: mockResponse,
-                    is_mock: true
+                    message: responseMessage,
+                    response: responseMessage,
+                    is_mock: true,
+                    error_detail: errorDetail || error.message
                 };
             }
             
             // 返回錯誤消息
             return {
-                message: '發送消息時出錯: ' + error.message,
+                message: errorDetail ? `發送消息時出錯: ${errorDetail}` : '發送消息時出錯: ' + error.message,
                 response: '抱歉，我遇到了技術問題。請稍後再試。',
                 error: true
             };
@@ -3343,6 +3792,19 @@ const ApiService = (function() {
         try {
             console.log('調用API結束聊天並生成日記');
             
+            // 檢查網絡連接
+            if (!navigator.onLine) {
+                console.warn('設備處於離線狀態，使用離線模式');
+                throw new Error('網絡連接不可用');
+            }
+            
+            // 最大重試次數
+            const maxRetries = CONFIG && CONFIG.API && CONFIG.API.MAX_RETRIES ? CONFIG.API.MAX_RETRIES : 1;
+            let retryCount = 0;
+            let lastError = null;
+            
+            while (retryCount <= maxRetries) {
+                try {
             // 使用較長的超時時間
             const data = await fetchAPI('/chat/end/', {
                 method: 'POST',
@@ -3358,24 +3820,66 @@ const ApiService = (function() {
             // 檢查響應數據
             if (!data || (!data.success && !data.diary)) {
                 console.warn('API返回的數據缺少必要字段');
-                if (CONFIG && CONFIG.USE_MOCK_DATA) {
-                    console.log('使用模擬數據替代');
-                    return getMockDataForEndpoint('/chat/end/');
-                }
                 throw new Error('無效的API響應數據');
             }
             
             return data;
+                } catch (error) {
+                    lastError = error;
+                    retryCount++;
+                    
+                    // 只有在重試次數未達到最大值且錯誤是服務器錯誤(500系列)時才重試
+                    const isServerError = error.message.includes('500') || 
+                                         error.message.includes('服務器內部錯誤') || 
+                                         error.message.includes('伺服器內部錯誤');
+                    
+                    if (retryCount <= maxRetries && isServerError) {
+                        console.warn(`嘗試第 ${retryCount} 次結束聊天...`);
+                        // 等待時間稍微長一些，結束聊天是重操作
+                        await new Promise(resolve => setTimeout(resolve, 2000));
+                    } else {
+                        // 不再重試，拋出錯誤
+                        break;
+                    }
+                }
+            }
+            
+            // 如果所有重試都失敗，拋出錯誤
+            throw lastError || new Error('結束聊天失敗');
         } catch (error) {
             console.error('結束聊天錯誤:', error);
+            
+            // 解析錯誤信息
+            let errorDetail = '';
+            try {
+                if (error.message.includes('{')) {
+                    const errorJson = error.message.substring(error.message.indexOf('{'));
+                    const errorObj = JSON.parse(errorJson);
+                    if (errorObj.detail) {
+                        errorDetail = errorObj.detail;
+                    }
+                }
+            } catch (parseError) {
+                console.warn('無法解析錯誤詳情', parseError);
+            }
             
             // 使用模擬數據作為備份
             if (CONFIG && CONFIG.USE_MOCK_DATA) {
                 console.log('使用模擬數據作為結束聊天響應');
-                return getMockDataForEndpoint('/chat/end/');
+                const mockData = getMockDataForEndpoint('/chat/end/');
+                
+                // 若存在錯誤詳情，將其添加到模擬日記內容中
+                if (errorDetail && mockData.diary && mockData.diary.content) {
+                    const errorNote = `\n\n**系統通知**: 日記是在離線模式下生成的。伺服器錯誤: ${errorDetail}`;
+                    mockData.diary.content += errorNote;
+                    mockData.error_detail = errorDetail;
+                }
+                
+                return mockData;
             }
             
-            throw error;
+            // 如果不使用模擬數據，則拋出錯誤
+            throw new Error(errorDetail ? `結束聊天失敗: ${errorDetail}` : `結束聊天失敗: ${error.message}`);
         }
     }
     
@@ -3886,28 +4390,288 @@ const ApiService = (function() {
         }
     }
     
-    // 返回公共API
+    // 登入並獲取JWT令牌
+    async function login(username) {
+        try {
+            console.log(`嘗試登入用戶: ${username}`);
+            
+            // 檢查參數
+            if (!username) {
+                console.error('登入失敗: 未提供用戶名');
+                throw new Error('登入需要用戶名');
+            }
+            
+            // 檢查是否已經有有效令牌
+            if (accessToken && !isTokenExpiringSoon(60)) { // 如果令牌還有超過60分鐘有效
+                console.log('已有有效的認證令牌，無需重新登入');
+                return { success: true };
+            }
+            
+            // 使用本地密碼或默認密碼
+            // 注意: 在實際生產環境中，應該使用更安全的方式處理密碼
+            const password = 'desktop_client'; // 使用默認密碼，因為是電子客戶端
+            
+            const formData = new URLSearchParams();
+            formData.append('username', username);
+            formData.append('password', password);
+            
+            // 優先從配置獲取API URL
+            const baseUrl = CONFIG && CONFIG.API && CONFIG.API.BASE_URL ? 
+                CONFIG.API.BASE_URL : 'http://localhost:8000';
+            
+            // 檢查網絡連接
+            if (!navigator.onLine) {
+                console.warn('設備處於離線狀態，無法進行登入');
+                
+                // 在模擬模式下創建模擬令牌
+                if (CONFIG && CONFIG.USE_MOCK_DATA) {
+                    console.log('離線模式: 使用模擬令牌');
+                    const mockToken = 'mock_jwt_token_for_offline_mode';
+                    setAuthToken(mockToken, 86400); // 24小時
     return {
-        init: init,
-        sendChatMessage: sendChatMessage,
+                        success: true,
+                        userId: numericUserId,
+                        username: username,
+                        is_mock: true,
+                        offline: true
+                    };
+                }
+                
+                throw new Error('設備處於離線狀態，無法進行登入');
+            }
+            
+            // 登入請求不使用fetchAPI函數，避免循環依賴
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => {
+                console.warn('登入請求超時 (10秒)');
+                controller.abort('登入請求超時');
+            }, 10000);
+            
+            try {
+                console.log(`發送登入請求到: ${baseUrl}/users/login`);
+                
+                const response = await fetch(`${baseUrl}/users/login`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded',
+                        'Accept': 'application/json'
+                    },
+                    body: formData,
+                    signal: controller.signal
+                });
+                
+                clearTimeout(timeoutId);
+                
+                // 檢查響應狀態
+                if (!response.ok) {
+                    let errorText = '';
+                    try {
+                        const errorData = await response.json();
+                        errorText = errorData.detail || errorData.error || errorData.message || `HTTP錯誤 ${response.status}`;
+                    } catch (jsonError) {
+                        try {
+                            errorText = await response.text();
+                        } catch (textError) {
+                            errorText = `HTTP錯誤 ${response.status}`;
+                        }
+                    }
+                    
+                    console.error(`登入失敗 (${response.status}): ${errorText}`);
+                    throw new Error(`登入失敗: ${errorText}`);
+                }
+                
+                // 解析響應
+                const authData = await response.json();
+                
+                // 檢查令牌
+                if (!authData.access_token) {
+                    console.error('登入響應中缺少令牌:', authData);
+                    throw new Error('伺服器響應缺少有效的認證令牌');
+                }
+                
+                // 保存令牌 - 如果服務器未提供過期時間，使用默認值(24小時)
+                const expiresIn = authData.expires_in || 86400;
+                setAuthToken(authData.access_token, expiresIn);
+                
+                // 保存用戶信息
+                if (authData.user_id && authData.username) {
+                    setUserId(authData.username, authData.user_id);
+                } else if (typeof numericUserId !== 'undefined') {
+                    // 如果API响应中没有用户ID但我们已有本地ID，保留現有ID
+                    setUserId(username, numericUserId);
+                }
+                
+                console.log('登入成功，獲取到有效令牌');
+                
+                return {
+                    success: true,
+                    userId: authData.user_id || numericUserId,
+                    username: authData.username || username
+                };
+            } catch (fetchError) {
+                clearTimeout(timeoutId);
+                
+                // 如果是超時或網絡錯誤
+                if (fetchError.name === 'AbortError' || fetchError.name === 'TypeError') {
+                    console.warn('登入請求失敗:', fetchError.message);
+                    
+                    // 在開發或測試模式下使用模擬資料
+                    if (CONFIG && (CONFIG.USE_MOCK_DATA || CONFIG.DEBUG.MOCK_API)) {
+                        console.log('使用模擬登入數據');
+                        
+                        // 模擬令牌（僅用於開發和測試）
+                        const mockToken = 'mock_jwt_token_for_dev_only';
+                        setAuthToken(mockToken, 86400); // 24小時
+                        
+                        return {
+                            success: true,
+                            userId: numericUserId,
+                            username: username,
+                            is_mock: true
+                        };
+                    }
+                }
+                
+                // 重新拋出其他錯誤
+                throw fetchError;
+            }
+        } catch (error) {
+            console.error('登入過程出錯:', error);
+            
+            // 如果是開發或測試模式，使用模擬數據
+            if (CONFIG && (CONFIG.USE_MOCK_DATA || CONFIG.DEBUG.MOCK_API)) {
+                console.log('使用模擬登入數據');
+                
+                // 模擬令牌（僅用於開發和測試）
+                const mockToken = 'mock_jwt_token_for_dev_only';
+                setAuthToken(mockToken, 86400); // 24小時
+                
+                return {
+                    success: true,
+                    userId: numericUserId,
+                    username: currentUserId,
+                    is_mock: true
+                };
+            }
+            
+            return {
+                success: false,
+                error: error.message
+            };
+        }
+    }
+    
+    // 自動登入流程
+    async function autoLogin() {
+        // 如果已有令牌，嘗試使用它
+        if (accessToken) {
+            // 檢查令牌是否已過期
+            if (!isTokenExpiringSoon(60)) { // 如果令牌還有超過60分鐘有效
+                console.log('使用現有令牌');
+                return { success: true };
+            }
+            
+            // 嘗試刷新令牌
+            const refreshed = await refreshToken();
+            if (refreshed) {
+                console.log('令牌已刷新');
+                return { success: true };
+            }
+        }
+        
+        // 如果沒有令牌或刷新失敗，嘗試用戶ID登入
+        if (currentUserId) {
+            console.log('嘗試使用現有用戶ID自動登入');
+            return await login(currentUserId);
+        }
+        
+        return { success: false, error: '無法自動登入' };
+    }
+    
+    /**
+     * 獲取指定ID的筆記
+     * @param {string} noteId - 筆記ID
+     * @returns {Promise<Object>} - 筆記數據
+     */
+    async function getNote(noteId) {
+        try {
+            // 檢查參數
+            if (!noteId) {
+                console.error('獲取筆記失敗: 未提供筆記ID');
+                throw new Error('筆記ID不能為空');
+            }
+            
+            // 構建API端點
+            const endpoint = `/notes/${noteId}`;
+            
+            // 發送請求
+            const response = await fetchAPI(endpoint);
+            
+            // 檢查數據
+            if (validateApiData(response, 'note')) {
+                return response;
+            } else {
+                return fixDataFormat(response, 'note');
+            }
+        } catch (error) {
+            console.error(`獲取筆記失敗 (ID: ${noteId}):`, error);
+            
+            // 如果啟用了模擬數據，則返回模擬數據
+            if (CONFIG.USE_MOCK_DATA) {
+                const mockNotes = getMockDataForEndpoint('/notes', { method: 'GET' });
+                const mockNote = mockNotes.find(note => note.id === noteId);
+                
+                if (mockNote) {
+                    console.log('使用模擬數據代替API響應');
+                    return mockNote;
+                }
+            }
+            
+            throw new Error(`無法獲取筆記: ${error.message}`);
+        }
+    }
+    
+    // 導出API
+    return {
+        init,
+        ensureInitialized,
+        fetchAPI,
+        sendChatMessage,
         endChat: endChat,
         getDiaries: getDiaries,
         getDiaryById: getDiaryById,
-        getMockData: getMockDataForEndpoint,
         getNotes: getNotes,
+        getNote: getNote,
         saveNote: saveNote,
         deleteNote: deleteNote,
-        generateId: generateId,
-        showAppError: showAppError,
-        validateApiData: validateApiData,
-        fixDataFormat: fixDataFormat,
-        getMoodFromValence: getMoodFromValence,
-        setUserId: setUserId,
         getLocalData: getLocalData,
         saveLocalData: saveLocalData,
-        mockApiCall: mockApiCall
+        setUserId: setUserId,
+        login: login,
+        autoLogin: autoLogin,
+        logout: clearAuthToken,
+        isAuthenticated: () => !!accessToken && !isTokenExpiringSoon(60),
+        generateMockData: getMockDataForEndpoint,
+        validateApiData: validateApiData,
+        fixDataFormat: fixDataFormat
     };
 })();
+
+// 初始化API服務
+document.addEventListener('DOMContentLoaded', function() {
+    ApiService.init();
+    
+    // 自動登入
+    ApiService.autoLogin().then(result => {
+        if (result.success) {
+            console.log('自動登入成功');
+        } else {
+            console.warn('自動登入失敗:', result.error);
+        }
+    }).catch(error => {
+        console.error('自動登入過程出錯:', error);
+    });
+});
 
 // 將 ApiService 暴露為全局變量
 window.ApiService = ApiService;
@@ -4466,6 +5230,18 @@ const ChatModule = (function() {
             // 添加思考中消息
             const thinkingMessageId = addThinkingMessage();
             
+            // 檢查ApiService是否存在
+            if (typeof ApiService === 'undefined') {
+                console.error('ApiService未定義，無法發送消息');
+                throw new Error('API服務未初始化，請重新加載應用');
+            }
+            
+            // 檢查sendChatMessage方法是否存在
+            if (typeof ApiService.sendChatMessage !== 'function') {
+                console.error('ApiService.sendChatMessage方法未定義');
+                throw new Error('API服務不完整，缺少sendChatMessage方法');
+            }
+            
             // 調用API服務發送消息
             const response = await ApiService.sendChatMessage(userInput);
             
@@ -4509,7 +5285,12 @@ const ChatModule = (function() {
             }
             
             // 添加錯誤消息
-            addSystemMessage('抱歉，我遇到了一些問題。請稍後再試。');
+            addSystemMessage('抱歉，我遇到了一些問題: ' + error.message);
+            
+            // 如果是API服務未定義的錯誤，顯示更詳細的錯誤信息
+            if (error.message.includes('API服務未初始化')) {
+                addSystemMessage('請嘗試刷新頁面，或者檢查API服務是否已啟動。如果問題持續，請聯繫技術支持。');
+            }
         } finally {
             // 恢復輸入狀態
             isProcessing = false;
@@ -4643,7 +5424,11 @@ const ChatModule = (function() {
             // 確保不在處理狀態
             if (isProcessing) {
                 console.warn('正在處理其他請求，請稍後再試');
-                UIManager.showToast('正在處理中，請稍後再試');
+                if (typeof UIManager !== 'undefined' && UIManager.showToast) {
+                    UIManager.showToast('正在處理中，請稍後再試');
+                } else {
+                    alert('正在處理中，請稍後再試');
+                }
                 return;
             }
             
@@ -4651,24 +5436,42 @@ const ChatModule = (function() {
             isProcessing = true;
             
             // 顯示加載動畫
-            UIManager.showSpinner();
+            if (typeof UIManager !== 'undefined' && UIManager.showSpinner) {
+                UIManager.showSpinner();
+            }
             
             // 保存當前聊天歷史
             saveChatHistory();
             console.log('聊天歷史已保存');
             
             try {
+                // 檢查ApiService是否存在
+                if (typeof ApiService === 'undefined') {
+                    console.error('ApiService未定義，無法結束聊天');
+                    throw new Error('API服務未初始化，無法生成日記');
+                }
+                
+                // 檢查endChat方法是否存在
+                if (typeof ApiService.endChat !== 'function') {
+                    console.error('ApiService.endChat方法未定義');
+                    throw new Error('API服務不完整，缺少endChat方法');
+                }
+                
                 // 調用API結束聊天並生成日記
                 console.log('調用API結束聊天');
                 const response = await ApiService.endChat();
                 console.log('聊天結束API響應:', response);
                 
                 // 顯示成功消息
-                UIManager.showToast('已生成日記');
+                if (typeof UIManager !== 'undefined' && UIManager.showToast) {
+                    UIManager.showToast('已生成日記');
+                }
                 
                 // 清空聊天記錄
                 chatHistory = [];
-                chatMessagesContainer.innerHTML = '';
+                if (chatMessagesContainer) {
+                    chatMessagesContainer.innerHTML = '';
+                }
                 saveChatHistory();
                 
                 // 添加歡迎消息
@@ -4679,7 +5482,7 @@ const ChatModule = (function() {
                     typeof CONFIG.APP.AUTO_SWITCH_TO_DIARY_AFTER_END !== 'undefined' ? 
                     CONFIG.APP.AUTO_SWITCH_TO_DIARY_AFTER_END : true;
                 
-                if (shouldAutoSwitch) {
+                if (shouldAutoSwitch && typeof UIManager !== 'undefined' && UIManager.switchView) {
                     console.log('自動切換到日記頁面');
                     setTimeout(() => {
                         UIManager.switchView('diary');
@@ -4689,22 +5492,39 @@ const ChatModule = (function() {
                 console.error('結束聊天失敗:', error);
                 
                 // 顯示錯誤信息
-                UIManager.showError('生成日記失敗', '無法結束對話並生成日記，請稍後再試。');
+                if (typeof UIManager !== 'undefined' && UIManager.showError) {
+                    UIManager.showError('生成日記失敗', '無法結束對話並生成日記: ' + error.message);
+                } else {
+                    alert('生成日記失敗: ' + error.message);
+                }
                 
                 // 添加錯誤消息
-                addSystemMessage("抱歉，我在生成日記時遇到了問題。請稍後再試。");
+                addSystemMessage("抱歉，我在生成日記時遇到了問題: " + error.message);
+                
+                // 如果是API服務未定義的錯誤，添加更詳細的提示
+                if (error.message.includes('API服務未初始化')) {
+                    addSystemMessage("請檢查API服務是否正常運行，或嘗試重新載入應用程序。");
+                }
             } finally {
                 // 恢復處理狀態
                 isProcessing = false;
                 
                 // 隱藏加載動畫
-                UIManager.hideSpinner();
+                if (typeof UIManager !== 'undefined' && UIManager.hideSpinner) {
+                    UIManager.hideSpinner();
+                }
             }
         } catch (error) {
             console.error('結束聊天過程出錯:', error);
-            UIManager.showError('錯誤', '結束聊天過程中發生錯誤: ' + error.message);
+            if (typeof UIManager !== 'undefined' && UIManager.showError) {
+                UIManager.showError('錯誤', '結束聊天過程中發生錯誤: ' + error.message);
+            } else {
+                alert('錯誤: 結束聊天過程中發生錯誤: ' + error.message);
+            }
             isProcessing = false;
-            UIManager.hideSpinner();
+            if (typeof UIManager !== 'undefined' && UIManager.hideSpinner) {
+                UIManager.hideSpinner();
+            }
         }
     }
     
@@ -4829,58 +5649,135 @@ document.addEventListener('DOMContentLoaded', function() {
 File: desktop/js/config.js
 ================
 /**
- * 全局配置模塊 - 應用程序配置項
+ * URDiary 全局配置文件
+ * 包含API設置、認證配置和其他全局參數
  */
-const CONFIG = {
-    // API 相關配置
-    API: {
-        BASE_URL: 'http://localhost:8000',
-        TIMEOUT: 30000,
-        ENDPOINTS: {
-            CHAT: '/chat/enhanced/',
-            END_CHAT: '/diary/enhanced-generate',
-            DIARIES: '/diaries/'
-        }
-    },
-    
-    // 本地存儲配置
-    STORAGE: {
-        CHAT_HISTORY: 'urdiary_chat_history',
-        DIARIES: 'urdiary_diaries',
-        USER_AVATAR: 'urdiary_user_avatar',
-        THEME: 'urdiary_theme'
-    },
-    
-    // 默認用戶配置
-    USER: {
-        DEFAULT_AVATAR: 'assets/default-avatar.png'
-    },
-    
-    // 應用程序設置
-    APP: {
-        NAME: 'URDiary',
-        VERSION: '1.0.0',
-        LOG_LEVEL: 'info',
-        MAX_LOGS: 1000,
-        MAX_CHAT_HISTORY: 100,
+const CONFIG = (function() {
+    // 默認配置
+    const defaultConfig = {
+        // API配置
+        API: {
+            BASE_URL: 'http://localhost:8000',
+            TIMEOUT: 30000,  // 默認超時時間（毫秒）
+            AUTO_RETRY: true, // 自動重試失敗的請求
+            MAX_RETRIES: 2,  // 最大重試次數
+            ENDPOINTS: {
+                CHAT: '/chat/enhanced/',
+                END_CHAT: '/diary/enhanced-generate',
+                DIARIES: '/diaries/'
+            }
+        },
+        // 本地存儲配置
+        STORAGE: {
+            CHAT_HISTORY: 'urdiary_chat_history',
+            DIARIES: 'urdiary_diaries',
+            USER_AVATAR: 'urdiary_user_avatar',
+            THEME: 'urdiary_theme'
+        },
+        // 默認用戶配置
+        USER: {
+            DEFAULT_AVATAR: 'assets/default-avatar.png'
+        },
+        // 應用程序設置
+        APP: {
+            NAME: 'URDiary',
+            VERSION: '1.0.0',
+            LOG_LEVEL: 'info',
+            MAX_LOGS: 1000,
+            MAX_CHAT_HISTORY: 100,
+            USE_MOCK_DATA: true,
+            AUTO_SWITCH_TO_DIARY_AFTER_END: true,
+            THEME: {
+                LIGHT: 'light',
+                DARK: 'dark'
+            }
+        },
+        // 認證配置
+        AUTH: {
+            ENABLED: true,        // 是否啟用認證
+            AUTO_LOGIN: true,     // 是否自動登入
+            TOKEN_REFRESH: true,  // 是否自動刷新令牌
+            SESSION_PERSIST: true // 是否在會話間保持登入狀態
+        },
+        // 調試選項
+        DEBUG: {
+            ENABLED: true,       // 是否啟用調試模式
+            LOG_API_CALLS: true, // 是否記錄API調用
+            MOCK_API: false      // 是否使用模擬API響應
+        },
+        // 使用模擬數據（如果API不可用）
         USE_MOCK_DATA: true,
-        AUTO_SWITCH_TO_DIARY_AFTER_END: true,
-        THEME: {
-            LIGHT: 'light',
-            DARK: 'dark'
+        // 自動切換到模擬數據模式
+        AUTO_SWITCH_TO_MOCK: true
+    };
+    
+    // 加載配置
+    let loadedConfig = {};
+    try {
+        // 嘗試從localStorage加載設置
+        const storedConfig = localStorage.getItem('urDiary_config');
+        if (storedConfig) {
+            loadedConfig = JSON.parse(storedConfig);
+            console.log('已從localStorage載入配置');
         }
-    },
+    } catch (error) {
+        console.warn('加載配置時出錯:', error);
+    }
     
-    // 開發和調試相關
-    DEBUG: {
-        ENABLED: true,
-        VERBOSE: true,
-        MOCK_API: true
-    },
+    // 合併配置
+    const config = Object.assign({}, defaultConfig);
+    // 深度合併配置
+    if (loadedConfig.API) Object.assign(config.API, loadedConfig.API);
+    if (loadedConfig.AUTH) Object.assign(config.AUTH, loadedConfig.AUTH);
+    if (loadedConfig.DEBUG) Object.assign(config.DEBUG, loadedConfig.DEBUG);
+    if (loadedConfig.USE_MOCK_DATA !== undefined) config.USE_MOCK_DATA = loadedConfig.USE_MOCK_DATA;
     
-    // 模擬數據配置
-    USE_MOCK_DATA: true
-};
+    // 保存配置
+    function saveConfig() {
+        try {
+            localStorage.setItem('urDiary_config', JSON.stringify(config));
+            console.log('配置已保存到localStorage');
+        } catch (error) {
+            console.error('保存配置時出錯:', error);
+        }
+    }
+    
+    // 更新配置
+    function updateConfig(newConfig) {
+        // 更新配置對象
+        if (newConfig.API) Object.assign(config.API, newConfig.API);
+        if (newConfig.AUTH) Object.assign(config.AUTH, newConfig.AUTH);
+        if (newConfig.DEBUG) Object.assign(config.DEBUG, newConfig.DEBUG);
+        if (newConfig.USE_MOCK_DATA !== undefined) config.USE_MOCK_DATA = newConfig.USE_MOCK_DATA;
+        
+        // 保存到localStorage
+        saveConfig();
+        
+        return config;
+    }
+    
+    // 重置配置
+    function resetConfig() {
+        Object.assign(config, defaultConfig);
+        saveConfig();
+        return config;
+    }
+    
+    // 導出配置API
+    return {
+        // 配置屬性
+        ...config,
+        
+        // 配置方法
+        updateConfig,
+        resetConfig
+    };
+})();
+
+// 確保CONFIG變量在全局範圍可用
+if (typeof window !== 'undefined') {
+    window.CONFIG = CONFIG;
+}
 
 // 禁止修改配置對象
 Object.freeze(CONFIG);
@@ -4985,6 +5882,12 @@ const DiaryModule = (function() {
     async function loadDiaries() {
         console.log('開始載入日記列表');
         try {
+            // 检查UIManager是否存在
+            if (typeof UIManager === 'undefined') {
+                console.error('UIManager未定義，無法顯示載入動畫');
+                throw new Error('UIManager未定義');
+            }
+            
             UIManager.showSpinner();
             console.log('顯示載入動畫');
             
@@ -4998,6 +5901,18 @@ const DiaryModule = (function() {
                 }
             }
             
+            // 檢查ApiService是否存在
+            if (typeof ApiService === 'undefined') {
+                console.error('ApiService未定義，無法請求日記數據');
+                throw new Error('ApiService未定義，請確保API服務已正確初始化');
+            }
+            
+            // 檢查ApiService.getDiaries方法是否存在
+            if (typeof ApiService.getDiaries !== 'function') {
+                console.error('ApiService.getDiaries方法未定義');
+                throw new Error('API服務未完全初始化，getDiaries方法不可用');
+            }
+            
             // 從API獲取日記列表
             console.log('向API請求日記數據');
             diaries = await ApiService.getDiaries();
@@ -5006,7 +5921,9 @@ const DiaryModule = (function() {
             // 檢查數據
             if (!diaries || !Array.isArray(diaries)) {
                 console.error('獲取的日記數據無效:', diaries);
-                throw new Error('日記數據格式不正確');
+                // 使用空數組作為後備
+                diaries = [];
+                console.log('使用空數組作為後備');
             }
             
             // 渲染日記列表
@@ -5016,11 +5933,19 @@ const DiaryModule = (function() {
             console.log('日記載入完成');
         } catch (error) {
             console.error('載入日記列表失敗:', error);
-            UIManager.showError('載入失敗', '載入日記資料時出錯: ' + error.message);
+            if (typeof UIManager !== 'undefined' && UIManager.showError) {
+                UIManager.showError('載入失敗', '載入日記資料時出錯: ' + error.message);
+            } else {
+                alert('載入日記失敗: ' + error.message);
+            }
+            // 确保至少显示空状态
+            diaries = [];
             showEmptyState();
         } finally {
-            UIManager.hideSpinner();
-            console.log('隱藏載入動畫');
+            if (typeof UIManager !== 'undefined' && UIManager.hideSpinner) {
+                UIManager.hideSpinner();
+                console.log('隱藏載入動畫');
+            }
         }
     }
     
@@ -6860,50 +7785,61 @@ document.addEventListener('DOMContentLoaded', function() {
 ================
 File: desktop/js/main.js
 ================
-// 初始化應用程序
+/**
+ * 主程序入口 - 初始化和協調各模塊
+ */
 document.addEventListener('DOMContentLoaded', function() {
-    console.log('DOM已加載，初始化應用程序...');
+    console.log('初始化應用...');
     
-    // 顯示啟動畫面
-    const splashScreen = document.getElementById('splash-screen');
-    const appContainer = document.querySelector('.app-container');
+    // 顯示啟動屏幕
+    showSplashScreen();
     
-    // 隱藏主應用內容，直到登錄完成
-    const appContent = document.querySelectorAll('.app-header, .app-content, .app-footer');
-    appContent.forEach(element => {
-        element.style.display = 'none';
-    });
+    // 确保先初始化ApiService
+    if (typeof ApiService !== 'undefined' && typeof ApiService.init === 'function') {
+        ApiService.init();
+    } else {
+        console.error('ApiService未定義或init方法不可用');
+    }
+    
+    // 初始化API認證
+    initializeAuth();
+
+    // 初始化錯誤處理 - 檢查ErrorHandler是否存在且有init方法
+    if (typeof ErrorLogger !== 'undefined') {
+        // ErrorLogger已在外部初始化，不需要再次調用init
+        console.log('ErrorLogger已初始化');
+    } else {
+        console.warn('ErrorLogger未定義');
+    }
     
     // 初始化UI管理器
     UIManager.init();
     
-    // 初始化API服務
-    ApiService.init();
-    
-    // 初始化密碼管理器
-    PasswordManager.init();
-    
-    // 初始化模塊 - 僅保留聊天和日記模塊
+    // 初始化對話模塊
     ChatModule.init();
+    
+    // 初始化日記模塊
     DiaryModule.init();
     
-    // 展示啟動畫面2秒後顯示登錄界面
+    // 初始化用戶選擇功能
+    initUserSelection();
+    
+    // 隱藏啟動屏幕並顯示用戶選擇對話框
     setTimeout(() => {
-        // 淡出啟動畫面
-        splashScreen.classList.add('hidden');
-        
-        // 初始化用戶選擇功能
-        initUserSelection();
+        hideSplashScreen();
         
         // 展示用戶選擇對話框
         setTimeout(() => {
             const userSelectDialog = document.getElementById('user-select-dialog');
-            userSelectDialog.style.display = 'block';
-            
-            // 載入用戶列表
-            loadUserList();
+            if (userSelectDialog) {
+                userSelectDialog.style.display = 'block';
+                // 載入用戶列表
+                if (typeof loadUserList === 'function') {
+                    loadUserList();
+                }
+            }
         }, 800);
-    }, 2000);
+    }, 1000);
     
     // 為視圖切換按鈕添加事件監聽器
     const navItems = document.querySelectorAll('.nav-item');
@@ -6925,74 +7861,83 @@ document.addEventListener('DOMContentLoaded', function() {
     // 為調試按鈕添加事件監聽器
     const debugBtn = document.getElementById('debug-btn');
     if (debugBtn) {
-        console.log('綁定Debug按鈕事件');
         debugBtn.addEventListener('click', function() {
-            console.log('Debug按鈕被點擊');
-            
             // 使用Electron API打開開發者工具
             try {
                 if (window.require) {
                     const electron = window.require('electron');
-                    console.log('electron對象獲取成功');
-                    
-                    // 首先嘗試使用ipcRenderer
                     if (electron.ipcRenderer) {
-                        console.log('使用ipcRenderer發送打開開發者工具請求');
                         electron.ipcRenderer.send('open-dev-tools');
-                    } 
-                    // 備用方案：嘗試使用remote模塊
-                    else if (electron.remote) {
-                        console.log('使用remote模塊打開開發者工具');
+                    } else if (electron.remote) {
                         electron.remote.getCurrentWindow().webContents.openDevTools();
                     }
-                    else {
-                        console.warn('無法找到合適的方法打開開發者工具');
-                        // 使用快捷鍵方式
-                        tryKeyboardShortcut();
-                    }
-                } else {
-                    console.warn('window.require未定義，可能在瀏覽器中運行');
-                    tryKeyboardShortcut();
                 }
             } catch (error) {
                 console.error('打開開發者工具時出錯:', error);
-                alert('開發者工具無法通過按鈕打開，請嘗試使用快捷鍵 Ctrl+Shift+I 或 F12');
-                tryKeyboardShortcut();
             }
         });
-    } else {
-        console.error('未找到Debug按鈕元素');
     }
     
-    // 嘗試使用鍵盤快捷鍵打開開發者工具
-    function tryKeyboardShortcut() {
-        try {
-            // 模擬按下F12鍵
-            const event = new KeyboardEvent('keydown', {
-                key: 'F12',
-                code: 'F12',
-                keyCode: 123,
-                which: 123,
-                bubbles: true,
-                cancelable: true
-            });
-            document.dispatchEvent(event);
-            console.log('已嘗試通過F12快捷鍵打開開發者工具');
-        } catch (err) {
-            console.error('模擬鍵盤事件失敗:', err);
-        }
-    }
-    
-    // 為錯誤提示框關閉按鈕添加事件監聽器
-    const closeErrorBtn = document.getElementById('close-error-btn');
-    if (closeErrorBtn) {
-        closeErrorBtn.addEventListener('click', function() {
-            document.getElementById('error-container').style.display = 'none';
-        });
-    }
-    
-    console.log('應用程序初始化完成');
+    console.log('應用初始化完成');
 });
+
+// 顯示啟動屏幕
+function showSplashScreen() {
+    const splashScreen = document.getElementById('splash-screen');
+    if (splashScreen) {
+        splashScreen.style.display = 'flex';
+    }
+}
+
+// 隱藏啟動屏幕
+function hideSplashScreen() {
+    const splashScreen = document.getElementById('splash-screen');
+    if (splashScreen) {
+        splashScreen.classList.add('fade-out');
+        setTimeout(() => {
+            splashScreen.style.display = 'none';
+        }, 500);
+    }
+}
+
+// 初始化API認證
+async function initializeAuth() {
+    console.log('初始化API認證...');
+    
+    try {
+        // 檢查ApiService是否存在並已初始化
+        if (typeof ApiService === 'undefined') {
+            console.error('無法初始化認證: ApiService未定義');
+            return;
+        }
+        
+        // 確保ApiService已初始化
+        if (typeof ApiService.ensureInitialized === 'function') {
+            ApiService.ensureInitialized();
+        } else if (typeof ApiService.init === 'function') {
+            ApiService.init();
+        }
+        
+        // 檢查配置是否啟用認證
+        if (CONFIG && CONFIG.AUTH && CONFIG.AUTH.ENABLED) {
+            console.log('認證已啟用，嘗試登入');
+            
+            // 執行自動登入
+            if (CONFIG.AUTH.AUTO_LOGIN && typeof ApiService.autoLogin === 'function') {
+                const authResult = await ApiService.autoLogin();
+                if (authResult.success) {
+                    console.log('自動登入成功');
+                } else {
+                    console.warn('自動登入失敗:', authResult.error);
+                }
+            }
+        } else {
+            console.log('認證未啟用');
+        }
+    } catch (error) {
+        console.error('初始化認證時出錯:', error);
+    }
+}
 
 // 初始化用戶選擇功能
 function initUserSelection() {
@@ -7025,139 +7970,181 @@ function initUserSelection() {
     };
     
     // 顯示用戶選擇對話框
-    userSelectBtn.addEventListener('click', function() {
-        console.log('打開用戶選擇對話框');
-        // 載入用戶列表
-        loadUserList();
-        // 顯示對話框
-        userSelectDialog.style.display = 'block';
-    });
+    if (userSelectBtn) {
+        userSelectBtn.addEventListener('click', function() {
+            console.log('打開用戶選擇對話框');
+            // 載入用戶列表
+            if (typeof loadUserList === 'function') {
+                loadUserList();
+            }
+            // 顯示對話框
+            if (userSelectDialog) {
+                userSelectDialog.style.display = 'block';
+            }
+        });
+    }
     
     // 關閉用戶選擇對話框
-    closeUserDialogBtn.addEventListener('click', function() {
-        userSelectDialog.style.display = 'none';
-    });
+    if (closeUserDialogBtn) {
+        closeUserDialogBtn.addEventListener('click', function() {
+            if (userSelectDialog) {
+                userSelectDialog.style.display = 'none';
+            }
+        });
+    }
     
     // 顯示創建用戶對話框
-    createUserBtn.addEventListener('click', function() {
-        userSelectDialog.style.display = 'none';
-        createUserDialog.style.display = 'block';
-        // 清空輸入框
-        newUsernameInput.value = '';
-        newPasswordInput.value = '';
-        confirmPasswordInput.value = '';
-        createPasswordError.style.display = 'none';
-        newUsernameInput.focus();
-    });
+    if (createUserBtn) {
+        createUserBtn.addEventListener('click', function() {
+            if (userSelectDialog) userSelectDialog.style.display = 'none';
+            if (createUserDialog) createUserDialog.style.display = 'block';
+            // 清空輸入框
+            if (newUsernameInput) newUsernameInput.value = '';
+            if (newPasswordInput) newPasswordInput.value = '';
+            if (confirmPasswordInput) confirmPasswordInput.value = '';
+            if (createPasswordError) createPasswordError.style.display = 'none';
+            if (newUsernameInput) newUsernameInput.focus();
+        });
+    }
     
     // 關閉創建用戶對話框
-    closeCreateUserBtn.addEventListener('click', function() {
-        createUserDialog.style.display = 'none';
-        userSelectDialog.style.display = 'block';
-    });
+    if (closeCreateUserBtn) {
+        closeCreateUserBtn.addEventListener('click', function() {
+            if (createUserDialog) createUserDialog.style.display = 'none';
+            if (userSelectDialog) userSelectDialog.style.display = 'block';
+        });
+    }
     
     // 關閉密碼驗證對話框
-    closePasswordDialogBtn.addEventListener('click', function() {
-        passwordDialog.style.display = 'none';
-        userSelectDialog.style.display = 'block';
-    });
+    if (closePasswordDialogBtn) {
+        closePasswordDialogBtn.addEventListener('click', function() {
+            if (passwordDialog) passwordDialog.style.display = 'none';
+            if (userSelectDialog) userSelectDialog.style.display = 'block';
+        });
+    }
     
     // 驗證密碼
-    verifyPasswordBtn.addEventListener('click', function() {
-        const password = userPasswordInput.value;
-        
-        // 檢查密碼是否為空
-        if (!password) {
-            showPasswordError('請輸入密碼');
-            return;
-        }
-        
-        // 驗證密碼
-        if (PasswordManager.verifyPassword(selectedUser.id, password)) {
-            // 密碼正確，登入
-            loginUser(selectedUser.username, selectedUser.id);
-        } else {
-            // 密碼錯誤
-            showPasswordError('密碼錯誤，請重試');
-            userPasswordInput.value = '';
-            userPasswordInput.focus();
-        }
-    });
+    if (verifyPasswordBtn) {
+        verifyPasswordBtn.addEventListener('click', function() {
+            const password = userPasswordInput ? userPasswordInput.value : '';
+            
+            // 檢查密碼是否為空
+            if (!password) {
+                showPasswordError('請輸入密碼');
+                return;
+            }
+            
+            // 驗證密碼
+            if (typeof PasswordManager !== 'undefined' && 
+                PasswordManager.verifyPassword && 
+                PasswordManager.verifyPassword(selectedUser.id, password)) {
+                // 密碼正確，登入
+                loginUser(selectedUser.username, selectedUser.id);
+            } else {
+                // 密碼錯誤
+                showPasswordError('密碼錯誤，請重試');
+                if (userPasswordInput) {
+                    userPasswordInput.value = '';
+                    userPasswordInput.focus();
+                }
+            }
+        });
+    }
     
     // 當用戶在密碼輸入框按下Enter鍵時
-    userPasswordInput.addEventListener('keypress', function(e) {
-        if (e.key === 'Enter') {
-            verifyPasswordBtn.click();
-        }
-    });
+    if (userPasswordInput) {
+        userPasswordInput.addEventListener('keypress', function(e) {
+            if (e.key === 'Enter' && verifyPasswordBtn) {
+                verifyPasswordBtn.click();
+            }
+        });
+    }
     
     // 提交創建用戶表單
-    submitNewUserBtn.addEventListener('click', function() {
-        const username = newUsernameInput.value.trim();
-        const password = newPasswordInput.value;
-        const confirmPassword = confirmPasswordInput.value;
-        
-        // 檢查用戶名
-        if (!username) {
-            showCreatePasswordError('請輸入用戶名稱');
-            return;
-        }
-        
-        // 檢查密碼
-        const passwordValidation = PasswordManager.validatePassword(password);
-        if (!passwordValidation.valid) {
-            showCreatePasswordError(passwordValidation.message);
-            return;
-        }
-        
-        // 檢查密碼一致性
-        if (password !== confirmPassword) {
-            showCreatePasswordError('兩次輸入的密碼不一致');
-            return;
-        }
-        
-        createNewUser(username, password);
-    });
+    if (submitNewUserBtn) {
+        submitNewUserBtn.addEventListener('click', function() {
+            const username = newUsernameInput ? newUsernameInput.value.trim() : '';
+            const password = newPasswordInput ? newPasswordInput.value : '';
+            const confirmPassword = confirmPasswordInput ? confirmPasswordInput.value : '';
+            
+            // 檢查用戶名
+            if (!username) {
+                showCreatePasswordError('請輸入用戶名稱');
+                return;
+            }
+            
+            // 檢查密碼
+            if (typeof PasswordManager !== 'undefined' && PasswordManager.validatePassword) {
+                const passwordValidation = PasswordManager.validatePassword(password);
+                if (!passwordValidation.valid) {
+                    showCreatePasswordError(passwordValidation.message);
+                    return;
+                }
+            }
+            
+            // 檢查密碼一致性
+            if (password !== confirmPassword) {
+                showCreatePasswordError('兩次輸入的密碼不一致');
+                return;
+            }
+            
+            createNewUser(username, password);
+        });
+    }
     
     // 當用戶按下Enter鍵時提交
     function handleEnterKeyInCreateForm(e) {
-        if (e.key === 'Enter') {
+        if (e.key === 'Enter' && submitNewUserBtn) {
             submitNewUserBtn.click();
         }
     }
     
-    newUsernameInput.addEventListener('keypress', handleEnterKeyInCreateForm);
-    newPasswordInput.addEventListener('keypress', handleEnterKeyInCreateForm);
-    confirmPasswordInput.addEventListener('keypress', handleEnterKeyInCreateForm);
+    if (newUsernameInput) {
+        newUsernameInput.addEventListener('keypress', handleEnterKeyInCreateForm);
+    }
+    if (newPasswordInput) {
+        newPasswordInput.addEventListener('keypress', handleEnterKeyInCreateForm);
+    }
+    if (confirmPasswordInput) {
+        confirmPasswordInput.addEventListener('keypress', handleEnterKeyInCreateForm);
+    }
     
     // 顯示密碼錯誤信息
     function showPasswordError(message) {
-        passwordError.textContent = message;
-        passwordError.style.display = 'block';
+        if (passwordError) {
+            passwordError.textContent = message;
+            passwordError.style.display = 'block';
+        }
     }
     
     // 顯示創建用戶時的錯誤信息
     function showCreatePasswordError(message) {
-        createPasswordError.textContent = message;
-        createPasswordError.style.display = 'block';
+        if (createPasswordError) {
+            createPasswordError.textContent = message;
+            createPasswordError.style.display = 'block';
+        }
     }
     
     // 載入用戶列表
     window.loadUserList = function() {
-        userListContainer.innerHTML = '<p>正在載入用戶列表...</p>';
+        if (userListContainer) {
+            userListContainer.innerHTML = '<p>正在載入用戶列表...</p>';
+        }
         
         fetch('http://localhost:8000/users/')
             .then(response => response.json())
             .then(users => {
                 if (Array.isArray(users) && users.length > 0) {
                     renderUserList(users);
-                } else {
+                } else if (userListContainer) {
                     userListContainer.innerHTML = '<p>沒有找到用戶，請創建新用戶。</p>';
                 }
             })
             .catch(error => {
                 console.error('獲取用戶列表出錯:', error);
-                userListContainer.innerHTML = '<p>無法載入用戶列表，請檢查API連接。</p>';
+                if (userListContainer) {
+                    userListContainer.innerHTML = '<p>無法載入用戶列表，請檢查API連接。</p>';
+                }
             });
     }
     
@@ -7177,7 +8164,9 @@ function initUserSelection() {
             `;
         });
         
-        userListContainer.innerHTML = html;
+        if (userListContainer) {
+            userListContainer.innerHTML = html;
+        }
         
         // 添加點擊事件
         document.querySelectorAll('.user-item').forEach(item => {
@@ -7196,25 +8185,46 @@ function initUserSelection() {
         selectedUser.username = username;
         
         // 顯示用戶信息
-        selectedUserInfo.innerHTML = `<strong>用戶:</strong> ${username} (ID: ${userId})`;
+        if (selectedUserInfo) {
+            selectedUserInfo.innerHTML = `<strong>用戶:</strong> ${username} (ID: ${userId})`;
+        }
         
         // 清空密碼輸入框和錯誤信息
-        userPasswordInput.value = '';
-        passwordError.style.display = 'none';
+        if (userPasswordInput) {
+            userPasswordInput.value = '';
+        }
+        if (passwordError) {
+            passwordError.style.display = 'none';
+        }
         
         // 隱藏用戶選擇對話框，顯示密碼驗證對話框
-        userSelectDialog.style.display = 'none';
-        passwordDialog.style.display = 'block';
+        if (userSelectDialog) userSelectDialog.style.display = 'none';
+        if (passwordDialog) passwordDialog.style.display = 'block';
         
         // 聚焦到密碼輸入框
-        userPasswordInput.focus();
+        if (userPasswordInput) userPasswordInput.focus();
     }
     
     // 登入用戶
     function loginUser(username, userId) {
         console.log(`登入用戶: ${username} (ID: ${userId})`);
-        ApiService.setUserId(username, userId);
-        passwordDialog.style.display = 'none';
+        
+        if (typeof ApiService !== 'undefined' && ApiService.setUserId) {
+            ApiService.setUserId(username, userId);
+        }
+        
+        // 同時進行JWT登入
+        if (typeof ApiService !== 'undefined' && ApiService.login) {
+            ApiService.login(username)
+                .then(result => {
+                    console.log('JWT登入結果:', result);
+                })
+                .catch(error => {
+                    console.error('JWT登入失敗:', error);
+                });
+        }
+        
+        if (passwordDialog) passwordDialog.style.display = 'none';
         
         // 顯示主應用界面
         const appContent = document.querySelectorAll('.app-header, .app-content, .app-footer');
@@ -7226,15 +8236,16 @@ function initUserSelection() {
         updateUserDisplay(username);
         
         // 重置和重新初始化聊天模塊
-        ChatModule.reset();
-        ChatModule.init();
+        if (typeof ChatModule !== 'undefined') {
+            if (ChatModule.reset) ChatModule.reset();
+            if (ChatModule.init) ChatModule.init();
+        }
         
         // 重置和重新初始化日記模塊
-        DiaryModule.reset();
-        DiaryModule.init();
-        
-        // 因為我們已經修改了DOM直接顯示界面，不需要刷新頁面
-        // location.reload();
+        if (typeof DiaryModule !== 'undefined') {
+            if (DiaryModule.reset) DiaryModule.reset();
+            if (DiaryModule.init) DiaryModule.init();
+        }
     }
     
     // 更新用戶顯示名稱
@@ -7243,7 +8254,6 @@ function initUserSelection() {
         if (userBtn) {
             // 添加用戶名提示
             userBtn.setAttribute('title', `當前用戶: ${username}`);
-            // 可以考慮添加一個用戶標識到按鈕中
         }
     }
     
@@ -7264,9 +8274,11 @@ function initUserSelection() {
                 console.log(`用戶創建成功: ${data.username} (ID: ${data.user_id})`);
                 
                 // 保存密碼
-                PasswordManager.setPassword(data.user_id, password);
+                if (typeof PasswordManager !== 'undefined' && PasswordManager.setPassword) {
+                    PasswordManager.setPassword(data.user_id, password);
+                }
                 
-                createUserDialog.style.display = 'none';
+                if (createUserDialog) createUserDialog.style.display = 'none';
                 
                 // 登入新用戶
                 loginUser(data.username, data.user_id);
@@ -7280,6 +8292,21 @@ function initUserSelection() {
         });
     }
 }
+
+// 全局錯誤處理
+window.onerror = function(message, source, lineno, colno, error) {
+    console.error('全局錯誤:', message, error);
+    
+    if (typeof ErrorLogger !== 'undefined') {
+        ErrorLogger.captureError(error || new Error(message), {
+            source: source,
+            lineno: lineno,
+            colno: colno
+        });
+    }
+    
+    return false; // 允許默認處理
+};
 
 ================
 File: desktop/js/notes_module.js
@@ -9201,558 +10228,130 @@ window.addEventListener('DOMContentLoaded', () => {
 });
 
 ================
-File: frontend/css/styles.css
+File: desktop/test_app.js
 ================
-body {
-    font-family: 'Arial', sans-serif;
-    line-height: 1.6;
-    margin: 0;
-    padding: 0;
-    background-color: #f5f5f5;
-    color: #333;
-}
-.container {
-    max-width: 1200px;
-    margin: 0 auto;
-    padding: 20px;
-    display: flex;
-    min-height: 100vh;
-}
-.sidebar {
-    width: 250px;
-    background-color: #2c3e50;
-    color: #ecf0f1;
-    padding: 20px;
-    border-radius: 8px 0 0 8px;
-}
-.main-content {
-    flex: 1;
-    background-color: #fff;
-    padding: 20px;
-    border-radius: 0 8px 8px 0;
-    box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
-    display: flex;
-    flex-direction: column;
-}
-.user-info {
-    margin-bottom: 20px;
-    padding-bottom: 20px;
-    border-bottom: 1px solid #34495e;
-}
-.user-avatar {
-    width: 80px;
-    height: 80px;
-    border-radius: 50%;
-    background-color: #3498db;
-    color: white;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 32px;
-    margin: 0 auto 10px;
-}
-.navigation {
-    list-style: none;
-    padding: 0;
-}
-.navigation li {
-    margin-bottom: 10px;
-}
-.navigation a {
-    color: #ecf0f1;
-    text-decoration: none;
-    display: block;
-    padding: 8px;
-    border-radius: 4px;
-}
-.navigation a:hover,
-.navigation a.active {
-    background-color: #34495e;
-}
-.chat-container {
-    display: flex;
-    flex-direction: column;
-    flex: 1;
-    min-height: 0;
-}
-.chat-header {
-    padding-bottom: 10px;
-    border-bottom: 1px solid #e1e1e1;
-    margin-bottom: 15px;
-}
-.chat-messages {
-    flex: 1;
-    overflow-y: auto;
-    padding: 10px;
-    background-color: #f9f9f9;
-    border-radius: 8px;
-    margin-bottom: 15px;
-    max-height: 500px;
-}
-.message {
-    margin-bottom: 15px;
-    padding: 10px 15px;
-    border-radius: 18px;
-    max-width: 70%;
-    position: relative;
-}
-.user-message {
-    background-color: #3498db;
-    color: white;
-    align-self: flex-end;
-    margin-left: auto;
-}
-.assistant-message {
-    background-color: #e1e1e1;
-    color: #333;
-    align-self: flex-start;
-}
-.message-time {
-    font-size: 0.7em;
-    margin-top: 5px;
-    text-align: right;
-}
-.chat-input {
-    display: flex;
-}
-.chat-input input {
-    flex: 1;
-    padding: 10px;
-    border: 1px solid #ddd;
-    border-radius: 4px 0 0 4px;
-    outline: none;
-}
-.chat-input button {
-    padding: 10px 15px;
-    background-color: #3498db;
-    color: white;
-    border: none;
-    border-radius: 0 4px 4px 0;
-    cursor: pointer;
-}
-.chat-input button:hover {
-    background-color: #2980b9;
-}
-.end-chat-btn {
-    margin-top: 10px;
-    padding: 10px;
-    background-color: #2ecc71;
-    color: white;
-    border: none;
-    border-radius: 4px;
-    cursor: pointer;
-    width: 100%;
-}
-.end-chat-btn:hover {
-    background-color: #27ae60;
-}
-.diary-container,
-.notes-container {
-    display: none;
-}
-.diary-list,
-.notes-content {
-    background-color: #f9f9f9;
-    padding: 15px;
-    border-radius: 8px;
-}
-.diary-item {
-    padding: 10px;
-    margin-bottom: 10px;
-    background-color: white;
-    border-radius: 4px;
-    border-left: 4px solid #3498db;
-    cursor: pointer;
-}
-.diary-item:hover {
-    box-shadow: 0 0 5px rgba(0, 0, 0, 0.1);
-}
-.diary-date {
-    font-weight: bold;
-    color: #2c3e50;
-}
-.diary-excerpt {
-    color: #7f8c8d;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
-.diary-content,
-.notes-content {
-    white-space: pre-line;
-}
-.spinner {
-    border: 4px solid rgba(0, 0, 0, 0.1);
-    width: 36px;
-    height: 36px;
-    border-radius: 50%;
-    border-left-color: #3498db;
-    animation: spin 1s ease infinite;
-    margin: 0 auto;
-    display: none;
-}
-@keyframes spin {
-    0% { transform: rotate(0deg); }
-    100% { transform: rotate(360deg); }
-}
+/**
+ * URDiary - 测试脚本
+ * 用于本地测试 JWT 认证功能
+ */
+console.log('启动测试脚本...');
 
-================
-File: frontend/index.html
-================
-<!DOCTYPE html>
-<html lang="zh-TW">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>心理陪伴筆記系統</title>
-    <link rel="stylesheet" href="css/styles.css">
-</head>
-<body>
-    <div class="container">
-        <div class="sidebar">
-            <div class="user-info">
-                <div class="user-avatar">U</div>
-                <h3 id="username">用戶</h3>
-                <p id="user-id">ID: #12345</p>
-            </div>
-            <ul class="navigation">
-                <li><a href="#" class="active" data-view="chat">聊天對話</a></li>
-                <li><a href="#" data-view="diary">日記列表</a></li>
-                <li><a href="#" data-view="notes">互動筆記</a></li>
-            </ul>
-        </div>
-        <div class="main-content">
-            <!-- 聊天界面 -->
-            <div class="chat-container" id="chat-view">
-                <div class="chat-header">
-                    <h2>心理陪伴對話</h2>
-                    <p>與 AI 助手開始一段有益的對話</p>
-                </div>
-                <div class="chat-messages" id="chat-messages">
-                    <div class="message assistant-message">
-                        你好！我是你的心理陪伴助手。今天你想聊些什麼呢？
-                        <div class="message-time">現在</div>
-                    </div>
-                </div>
-                <div class="spinner" id="chat-spinner"></div>
-                <div class="chat-input">
-                    <input type="text" id="message-input" placeholder="輸入你的訊息...">
-                    <button id="send-btn">發送</button>
-                </div>
-                <button class="end-chat-btn" id="end-chat-btn">結束對話 & 生成日記</button>
-            </div>
-
-            <!-- 日記列表界面 -->
-            <div class="diary-container" id="diary-view">
-                <div class="chat-header">
-                    <h2>我的日記</h2>
-                    <p>查看您的日記歷史</p>
-                </div>
-                <div class="spinner" id="diary-spinner"></div>
-                <div class="diary-list" id="diary-list">
-                    <!-- 日記項目將通過 JavaScript 動態添加 -->
-                </div>
-                <div class="diary-content" id="diary-content" style="display: none;">
-                    <h3 id="diary-content-date">日期</h3>
-                    <div id="diary-content-text"></div>
-                    <div id="diary-content-emotions">
-                        <p>愉悅度: <span id="diary-valence">0.5</span></p>
-                        <p>激動度: <span id="diary-arousal">0.5</span></p>
-                    </div>
-                    <button id="back-to-list-btn" style="margin-top: 15px;">返回列表</button>
-                </div>
-            </div>
-
-            <!-- 互動筆記界面 -->
-            <div class="notes-container" id="notes-view">
-                <div class="chat-header">
-                    <h2>互動筆記</h2>
-                    <p>查看您的交互記錄摘要</p>
-                </div>
-                <div class="spinner" id="notes-spinner"></div>
-                <div class="notes-content" id="notes-content"></div>
-            </div>
-        </div>
-    </div>
-
-    <script src="js/app.js"></script>
-</body>
-</html>
-
-================
-File: frontend/js/app.js
-================
-// 配置
-const API_URL = 'http://localhost:8000';
-const USER_ID = 'frontend_user';
-const NUMERIC_USER_ID = 1; // 確保這與數據庫中的ID匹配
-
-// 頁面元素
-const chatMessages = document.getElementById('chat-messages');
-const messageInput = document.getElementById('message-input');
-const sendBtn = document.getElementById('send-btn');
-const endChatBtn = document.getElementById('end-chat-btn');
-const navLinks = document.querySelectorAll('.navigation a');
-const chatView = document.getElementById('chat-view');
-const diaryView = document.getElementById('diary-view');
-const notesView = document.getElementById('notes-view');
-const diaryList = document.getElementById('diary-list');
-const diaryContent = document.getElementById('diary-content');
-const diaryContentDate = document.getElementById('diary-content-date');
-const diaryContentText = document.getElementById('diary-content-text');
-const diaryValence = document.getElementById('diary-valence');
-const diaryArousal = document.getElementById('diary-arousal');
-const backToListBtn = document.getElementById('back-to-list-btn');
-const notesContent = document.getElementById('notes-content');
-const spinners = {
-    chat: document.getElementById('chat-spinner'),
-    diary: document.getElementById('diary-spinner'),
-    notes: document.getElementById('notes-spinner')
+// 模拟配置
+window.CONFIG = {
+    API: {
+        BASE_URL: 'http://localhost:8000',
+        TIMEOUT: 30000
+    },
+    AUTH: {
+        ENABLED: true,
+        AUTO_LOGIN: true,
+        TOKEN_REFRESH: true
+    },
+    DEBUG: {
+        ENABLED: true,
+        LOG_API_CALLS: true
+    },
+    USE_MOCK_DATA: true
 };
 
-// 設置用戶信息
-document.getElementById('username').textContent = '測試用戶';
-document.getElementById('user-id').textContent = `ID: #${NUMERIC_USER_ID}`;
+// 监听控制台输出
+const originalConsoleLog = console.log;
+const originalConsoleError = console.error;
+const originalConsoleWarn = console.warn;
 
-// 導航功能
-navLinks.forEach(link => {
-    link.addEventListener('click', function(e) {
-        e.preventDefault();
-        
-        // 更新活動鏈接樣式
-        navLinks.forEach(l => l.classList.remove('active'));
-        this.classList.add('active');
-        
-        // 顯示對應的視圖
-        const viewName = this.getAttribute('data-view');
-        chatView.style.display = viewName === 'chat' ? 'flex' : 'none';
-        diaryView.style.display = viewName === 'diary' ? 'block' : 'none';
-        notesView.style.display = viewName === 'notes' ? 'block' : 'none';
-        
-        // 如果切換到日記或筆記視圖，則加載數據
-        if (viewName === 'diary') {
-            loadDiaries();
-        } else if (viewName === 'notes') {
-            loadInteractionNotes();
-        }
-    });
-});
-
-// 發送消息功能
-sendBtn.addEventListener('click', sendMessage);
-messageInput.addEventListener('keypress', function(e) {
-    if (e.key === 'Enter') {
-        sendMessage();
+console.log = function(...args) {
+    if (args[0] && typeof args[0] === 'string' && args[0].includes('JWT')) {
+        args[0] = '[JWT] ' + args[0];
     }
-});
+    originalConsoleLog.apply(console, args);
+};
 
-function sendMessage() {
-    const message = messageInput.value.trim();
-    if (!message) return;
-    
-    // 添加用戶消息到聊天框
-    addMessage(message, 'user');
-    messageInput.value = '';
-    
-    // 顯示加載指示器
-    showSpinner('chat');
-    
-    // 發送到API
-    fetch(`${API_URL}/chat/enhanced/`, {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-            user_id: USER_ID,
-            numeric_user_id: NUMERIC_USER_ID,
-            message: message
-        })
-    })
-    .then(response => response.json())
-    .then(data => {
-        // 添加助手回覆到聊天框
-        addMessage(data.response, 'assistant');
-        hideSpinner('chat');
-    })
-    .catch(error => {
-        console.error('發送消息時出錯:', error);
-        addMessage('抱歉，發送消息時出錯。請稍後再試。', 'assistant');
-        hideSpinner('chat');
-    });
-}
+console.error = function(...args) {
+    if (args[0] && typeof args[0] === 'string' && args[0].includes('JWT')) {
+        args[0] = '[JWT-ERROR] ' + args[0];
+    }
+    originalConsoleError.apply(console, args);
+};
 
-// 結束對話功能
-endChatBtn.addEventListener('click', endChat);
+console.warn = function(...args) {
+    if (args[0] && typeof args[0] === 'string' && args[0].includes('JWT')) {
+        args[0] = '[JWT-WARNING] ' + args[0];
+    }
+    originalConsoleWarn.apply(console, args);
+};
 
-function endChat() {
-    // 確認對話結束
-    if (!confirm('確定要結束當前對話並生成日記嗎？')) {
-        return;
+// 模拟 localStorage
+const mockStorage = {};
+const originalLocalStorageGetItem = localStorage.getItem;
+const originalLocalStorageSetItem = localStorage.setItem;
+
+localStorage.getItem = function(key) {
+    console.log(`[测试] 读取本地存储: ${key}`);
+    if (key === 'auth_token') {
+        // 记录读取 token 的操作
+        console.log('[JWT] 读取认证令牌');
+    }
+    return originalLocalStorageGetItem.call(localStorage, key);
+};
+
+localStorage.setItem = function(key, value) {
+    console.log(`[测试] 写入本地存储: ${key}`);
+    if (key === 'auth_token') {
+        // 记录存储 token 的操作
+        console.log('[JWT] 保存认证令牌');
+    }
+    return originalLocalStorageSetItem.call(localStorage, key, value);
+};
+
+// 模拟 JWT 验证
+const verifyJwtToken = function(token) {
+    if (!token) return false;
+    
+    // 简单检查是否是有效的 JWT 格式
+    const parts = token.split('.');
+    return parts.length === 3;
+};
+
+// 检测 JWT 相关的网络请求
+const originalFetch = window.fetch;
+window.fetch = async function(url, options) {
+    if (url.includes('/users/login') || url.includes('/users/token/refresh')) {
+        console.log(`[JWT] 发送认证请求: ${url}`);
     }
     
-    // 顯示加載指示器
-    showSpinner('chat');
+    // 检查认证头
+    if (options && options.headers && options.headers['Authorization']) {
+        console.log(`[JWT] 请求包含认证头: ${options.headers['Authorization'].substring(0, 20)}...`);
+    }
     
-    // 呼叫結束對話API
-    fetch(`${API_URL}/chat/end/`, {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-            user_id: USER_ID,
-            numeric_user_id: NUMERIC_USER_ID
-        })
-    })
-    .then(response => response.json())
-    .then(data => {
-        // 顯示成功消息
-        alert('對話已結束，日記已生成！');
+    try {
+        const response = await originalFetch.apply(window, arguments);
         
-        // 清空聊天記錄
-        chatMessages.innerHTML = `
-            <div class="message assistant-message">
-                你好！我是你的心理陪伴助手。今天你想聊些什麼呢？
-                <div class="message-time">現在</div>
-            </div>
-        `;
-        
-        hideSpinner('chat');
-        
-        // 切換到日記視圖
-        document.querySelector('[data-view="diary"]').click();
-    })
-    .catch(error => {
-        console.error('結束對話時出錯:', error);
-        alert('結束對話時出錯，請稍後再試。');
-        hideSpinner('chat');
-    });
-}
-
-// 加載日記列表
-function loadDiaries() {
-    showSpinner('diary');
-    diaryList.style.display = 'block';
-    diaryContent.style.display = 'none';
-    
-    fetch(`${API_URL}/diaries/${NUMERIC_USER_ID}`)
-        .then(response => response.json())
-        .then(data => {
-            if (data.diaries && data.diaries.length > 0) {
-                diaryList.innerHTML = '';
-                data.diaries.forEach(diary => {
-                    const date = new Date(diary.diary_date);
-                    const dateStr = date.toLocaleDateString();
-                    const excerpt = diary.content.substring(0, 100) + '...';
-                    
-                    const diaryItem = document.createElement('div');
-                    diaryItem.className = 'diary-item';
-                    diaryItem.innerHTML = `
-                        <div class="diary-date">${dateStr}</div>
-                        <div class="diary-excerpt">${excerpt}</div>
-                    `;
-                    
-                    diaryItem.addEventListener('click', () => {
-                        showDiaryContent(diary);
-                    });
-                    
-                    diaryList.appendChild(diaryItem);
-                });
-            } else {
-                diaryList.innerHTML = '<p>暫無日記</p>';
-            }
-            hideSpinner('diary');
-        })
-        .catch(error => {
-            console.error('加載日記時出錯:', error);
-            diaryList.innerHTML = '<p>加載日記時出錯</p>';
-            hideSpinner('diary');
-        });
-}
-
-// 顯示日記內容
-function showDiaryContent(diary) {
-    diaryList.style.display = 'none';
-    diaryContent.style.display = 'block';
-    
-    const date = new Date(diary.diary_date);
-    diaryContentDate.textContent = date.toLocaleDateString();
-    diaryContentText.textContent = diary.content;
-    diaryValence.textContent = diary.valence?.toFixed(2) || '未知';
-    diaryArousal.textContent = diary.arousal?.toFixed(2) || '未知';
-}
-
-// 返回日記列表
-backToListBtn.addEventListener('click', () => {
-    diaryList.style.display = 'block';
-    diaryContent.style.display = 'none';
-});
-
-// 加載互動筆記
-function loadInteractionNotes() {
-    showSpinner('notes');
-    
-    fetch(`${API_URL}/interaction-notes/${NUMERIC_USER_ID}`)
-        .then(response => {
-            if (!response.ok) {
-                if (response.status === 404) {
-                    throw new Error('尚未有互動筆記');
-                }
-                throw new Error('加載互動筆記時出錯');
-            }
-            return response.json();
-        })
-        .then(data => {
-            // 渲染 Markdown 內容 (簡易版)
-            const content = data.content
-                .replace(/## (.*)/g, '<h2>$1</h2>')
-                .replace(/### (.*)/g, '<h3>$1</h3>')
-                .replace(/\n- (.*)/g, '<li>$1</li>')
-                .replace(/\n/g, '<br>');
+        // 如果是认证相关响应，记录
+        if (url.includes('/users/login') || url.includes('/users/token/refresh')) {
+            console.log(`[JWT] 收到认证响应: ${response.status}`);
             
-            notesContent.innerHTML = `
-                <div style="margin-bottom: 10px;">
-                    <b>版本:</b> ${data.version} | <b>更新時間:</b> ${new Date(data.updated_at).toLocaleString()}
-                </div>
-                ${content}
-            `;
-            hideSpinner('notes');
-        })
-        .catch(error => {
-            console.error('加載互動筆記時出錯:', error);
-            notesContent.innerHTML = `<p>${error.message}</p>`;
-            hideSpinner('notes');
-        });
-}
-
-// 輔助函數
-function addMessage(content, sender) {
-    const messageDiv = document.createElement('div');
-    messageDiv.className = `message ${sender}-message`;
-    messageDiv.innerHTML = `
-        ${content}
-        <div class="message-time">${formatTime(new Date())}</div>
-    `;
-    chatMessages.appendChild(messageDiv);
-    chatMessages.scrollTop = chatMessages.scrollHeight;
-}
-
-function formatTime(date) {
-    return `${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}`;
-}
-
-function showSpinner(view) {
-    if (spinners[view]) {
-        spinners[view].style.display = 'block';
+            // 克隆响应以便读取
+            const clonedResponse = response.clone();
+            try {
+                const data = await clonedResponse.json();
+                if (data.access_token) {
+                    console.log('[JWT] 收到新的访问令牌');
+                }
+            } catch (e) {
+                // 忽略解析错误
+            }
+        }
+        
+        return response;
+    } catch (error) {
+        console.error(`[测试] 请求失败: ${url}`, error);
+        throw error;
     }
-}
+};
 
-function hideSpinner(view) {
-    if (spinners[view]) {
-        spinners[view].style.display = 'none';
-    }
-}
+// 启动应用
+console.log('测试环境准备完成，启动应用...');
 
 ================
 File: grok_chatbot/.env.example
@@ -10494,9 +11093,8 @@ import os
 from dotenv import load_dotenv
 import secrets
 
-# 讀取 .env 文件
-load_dotenv()
-
+# 讀取 .env 文件 - 使用正斜杠避免轉義字符問題
+load_dotenv("../.env")
 # 環境設定
 ENV = os.getenv("ENV", "development")  # development, staging, production
 
@@ -10545,6 +11143,28 @@ if ENV == "production" and not XAI_API_KEY:
 # 數據庫密碼檢查
 if ENV == "production" and not DB_PASS:
     raise ValueError("❌ 生產環境中必須設定 DB_PASS!")
+
+# API地址配置
+API_HOST = os.getenv("API_HOST", "http://localhost:8000")
+
+def get_config():
+    """返回配置字典，便于在测试和其他模块中使用"""
+    return {
+        "ENV": ENV,
+        "SECRET_KEY": SECRET_KEY,
+        "ALGORITHM": ALGORITHM,
+        "TOKEN_EXPIRE_MINUTES": TOKEN_EXPIRE_MINUTES,
+        "GROK_API_URL": GROK_API_URL,
+        "REDIS_HOST": REDIS_HOST,
+        "REDIS_PORT": REDIS_PORT,
+        "REDIS_DB": REDIS_DB,
+        "DB_HOST": DB_HOST,
+        "DB_PORT": DB_PORT,
+        "DB_USER": DB_USER,
+        "DB_NAME": DB_NAME,
+        "CORS_ALLOWED_ORIGINS": CORS_ALLOWED_ORIGINS,
+        "API_HOST": API_HOST
+    }
 
 ================
 File: grok_chatbot/app/database/__init__.py
@@ -10878,10 +11498,30 @@ File: grok_chatbot/app/memory_manager.py
 ================
 import redis
 import json
-from config import REDIS_HOST, REDIS_PORT, REDIS_DB
+import os
+from config import REDIS_HOST, REDIS_PORT, REDIS_DB, REDIS_PASSWORD
+from dotenv import load_dotenv
+
+
+
+# 安全地獲取Redis密碼
+def get_redis_password():
+    # 優先使用環境變量中的密碼
+    env_password = os.getenv("REDIS_PASSWORD")
+    if env_password:
+        return env_password
+    # 如果環境變量中沒有，則使用配置中的密碼
+    return REDIS_PASSWORD
+
 
 # 連接 Redis
-redis_client = redis.StrictRedis(host=REDIS_HOST, port=REDIS_PORT, db=REDIS_DB, decode_responses=True)
+redis_client = redis.StrictRedis(
+    host=REDIS_HOST, 
+    port=REDIS_PORT, 
+    db=REDIS_DB, 
+    password=REDIS_PASSWORD,  
+    decode_responses=True
+)
 
 def get_chat_history(user_id):
     """取得使用者的對話記錄"""
@@ -13252,6 +13892,484 @@ def update_env_file(env_file='.env'):
 if __name__ == "__main__":
     update_env_file()
     print("密鑰生成完成！")
+
+================
+File: grok_chatbot/tests/__init__.py
+================
+# tests包初始化文件
+
+================
+File: grok_chatbot/tests/api_test.py
+================
+import os
+import sys
+import time
+import json
+import requests
+from datetime import datetime
+from colorama import init, Fore, Style
+
+# 初始化colorama
+init()
+
+# 添加项目根目录到Python路径
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
+# 从配置文件导入接口地址
+from app.config import get_config
+
+# 测试配置
+HOST = "http://localhost:8000"  # 默认本地测试地址，可通过命令行参数覆盖
+VERBOSE = False  # 是否输出详细信息
+
+# 颜色输出函数
+def print_success(message):
+    print(f"{Fore.GREEN}✅ {message}{Style.RESET_ALL}")
+
+def print_warning(message):
+    print(f"{Fore.YELLOW}⚠️ {message}{Style.RESET_ALL}")
+
+def print_error(message):
+    print(f"{Fore.RED}❌ {message}{Style.RESET_ALL}")
+
+def print_info(message):
+    print(f"{Fore.CYAN}ℹ️ {message}{Style.RESET_ALL}")
+
+def print_header(message):
+    print(f"\n{Fore.BLUE}{'='*10} {message} {'='*10}{Style.RESET_ALL}")
+
+def print_response(response, endpoint):
+    """打印响应信息"""
+    if VERBOSE:
+        print(f"状态码: {response.status_code}")
+        try:
+            print(f"响应内容: {json.dumps(response.json(), indent=2, ensure_ascii=False)}")
+        except:
+            print(f"响应内容: {response.text}")
+    
+    if 200 <= response.status_code < 300:
+        print_success(f"{endpoint} - 请求成功 ({response.status_code})")
+        return True
+    else:
+        print_error(f"{endpoint} - 请求失败 ({response.status_code})")
+        try:
+            error_detail = response.json().get("detail", "无详细信息")
+            print_error(f"错误详情: {error_detail}")
+        except:
+            print_error(f"错误响应: {response.text}")
+        return False
+
+class APITester:
+    def __init__(self, base_url=HOST):
+        self.base_url = base_url
+        self.test_user_id = None
+        self.test_username = f"test_user_{int(time.time())}"
+        self.test_password = "test_password123"  # 固定测试密码
+        self.access_token = None
+        self.refresh_token = None
+        self.test_diary_id = None
+        self.success_count = 0
+        self.fail_count = 0
+        self.test_count = 0
+
+    def run_test(self, endpoint, method="GET", data=None, auth=True, expected_status=None, headers=None, is_form_data=False):
+        """运行单个API测试"""
+        self.test_count += 1
+        url = f"{self.base_url}{endpoint}"
+        
+        if headers is None:
+            headers = {}
+            
+        if not is_form_data:
+            headers["Content-Type"] = "application/json"
+            
+        if auth and self.access_token:
+            headers["Authorization"] = f"Bearer {self.access_token}"
+        
+        print_info(f"测试 [{method}] {endpoint}")
+        
+        try:
+            if method == "GET":
+                response = requests.get(url, headers=headers)
+            elif method == "POST":
+                if is_form_data:
+                    response = requests.post(url, data=data, headers=headers)
+                else:
+                    response = requests.post(url, json=data, headers=headers)
+            elif method == "PUT":
+                if is_form_data:
+                    response = requests.put(url, data=data, headers=headers)
+                else:
+                    response = requests.put(url, json=data, headers=headers)
+            elif method == "DELETE":
+                response = requests.delete(url, headers=headers)
+            else:
+                print_error(f"不支持的HTTP方法: {method}")
+                self.fail_count += 1
+                return False
+            
+            if expected_status and response.status_code != expected_status:
+                print_error(f"状态码不匹配: 期望 {expected_status}, 实际 {response.status_code}")
+                self.fail_count += 1
+                return False
+            
+            success = print_response(response, endpoint)
+            if success:
+                self.success_count += 1
+            else:
+                self.fail_count += 1
+            return success, response
+        except Exception as e:
+            print_error(f"请求异常: {str(e)}")
+            self.fail_count += 1
+            return False, None
+
+    def test_user_apis(self):
+        """测试用户相关API"""
+        print_header("测试用户API")
+        
+        # 创建用户
+        success, response = self.run_test(
+            "/users/create", 
+            method="POST", 
+            data={"username": self.test_username, "password": self.test_password},
+            auth=False
+        )
+        
+        if success:
+            self.test_user_id = response.json().get("user_id")
+            print_info(f"创建测试用户: {self.test_username}, ID: {self.test_user_id}")
+        
+        # 用户登录 - 使用表单数据
+        form_data = {
+            "username": self.test_username,
+            "password": self.test_password
+        }
+        
+        headers = {"Content-Type": "application/x-www-form-urlencoded"}
+        
+        success, response = self.run_test(
+            "/users/login", 
+            method="POST", 
+            data=form_data,
+            headers=headers,
+            is_form_data=True,
+            auth=False
+        )
+        
+        if success:
+            token_data = response.json()
+            self.access_token = token_data.get("access_token")
+            self.refresh_token = token_data.get("refresh_token")
+            print_info(f"获取访问令牌成功")
+        
+        # 获取用户信息
+        if self.test_user_id:
+            self.run_test(f"/users/{self.test_user_id}")
+        
+        # 获取用户列表
+        self.run_test("/users/")
+        
+        # 刷新令牌
+        if self.access_token:
+            self.run_test(
+                "/users/token/refresh", 
+                method="POST"
+            )
+            
+        # 测试OAuth2标准令牌端点
+        if not self.access_token:  # 如果之前登录失败，再尝试使用OAuth2标准端点
+            form_data = {
+                "username": self.test_username,
+                "password": self.test_password
+            }
+            
+            headers = {"Content-Type": "application/x-www-form-urlencoded"}
+            
+            success, response = self.run_test(
+                "/users/token", 
+                method="POST", 
+                data=form_data,
+                headers=headers,
+                is_form_data=True,
+                auth=False
+            )
+            
+            if success:
+                token_data = response.json()
+                self.access_token = token_data.get("access_token")
+                self.refresh_token = token_data.get("refresh_token")
+                print_info(f"通过OAuth2标准端点获取访问令牌成功")
+
+    def test_chat_apis(self):
+        """测试聊天相关API"""
+        print_header("测试聊天API")
+        
+        if not self.test_user_id:
+            print_warning("跳过聊天API测试: 没有测试用户ID")
+            return
+
+        # 发送聊天消息
+        self.run_test(
+            "/chat/", 
+            method="POST", 
+            data={
+                "user_id": str(self.test_user_id),
+                "message": "Hello, I'm feeling happy today!"
+            }
+        )
+        
+        # 增强版聊天
+        self.run_test(
+            "/chat/enhanced/", 
+            method="POST", 
+            data={
+                "user_id": str(self.test_user_id),
+                "numeric_user_id": self.test_user_id,
+                "message": "Tell me about my day."
+            }
+        )
+        
+        # 结束聊天生成日记
+        success, response = self.run_test(
+            "/chat/end/", 
+            method="POST", 
+            data={
+                "user_id": str(self.test_user_id),
+                "numeric_user_id": self.test_user_id,
+                "exclude_interaction_notes": False
+            }
+        )
+        
+        if success and response.json().get("diary"):
+            self.test_diary_id = response.json().get("diary").get("diary_id")
+            print_info(f"创建测试日记: ID: {self.test_diary_id}")
+        
+        # 清除聊天历史
+        self.run_test(
+            f"/chat/clear/?user_id={self.test_user_id}", 
+            method="DELETE"
+        )
+
+    def test_diary_apis(self):
+        """测试日记相关API"""
+        print_header("测试日记API")
+        
+        if not self.test_user_id:
+            print_warning("跳过日记API测试: 没有测试用户ID")
+            return
+        
+        # 生成日记
+        self.run_test(
+            "/generate", 
+            method="POST", 
+            data={
+                "user_id": str(self.test_user_id),
+                "numeric_user_id": self.test_user_id,
+                "exclude_interaction_notes": False
+            }
+        )
+        
+        # 获取用户日记列表
+        self.run_test(f"/diaries/{self.test_user_id}")
+        
+        # 获取特定日记
+        if self.test_diary_id:
+            self.run_test(f"/{self.test_diary_id}")
+        
+        # 更新日记
+        if self.test_diary_id:
+            self.run_test(
+                f"/{self.test_diary_id}", 
+                method="PUT", 
+                data={
+                    "content": "This is an updated diary entry from API test",
+                    "valence": 0.8,
+                    "arousal": 0.5
+                }
+            )
+        
+        # 获取情感分析
+        self.run_test(f"/analytics/emotion/{self.test_user_id}")
+        
+        # 测试增强日记生成
+        self.run_test(
+            "/enhanced-generate", 
+            method="POST", 
+            data={
+                "user_id": str(self.test_user_id),
+                "numeric_user_id": self.test_user_id
+            }
+        )
+        
+        # 获取互动笔记
+        self.run_test(f"/interaction-notes/{self.test_user_id}")
+        
+        # 更新互动笔记
+        self.run_test(
+            "/interaction-notes/update", 
+            method="POST", 
+            data={
+                "user_id": str(self.test_user_id),
+                "numeric_user_id": self.test_user_id
+            }
+        )
+        
+        # 删除日记
+        if self.test_diary_id:
+            self.run_test(f"/{self.test_diary_id}", method="DELETE")
+
+    def run_all_tests(self):
+        """运行所有API测试"""
+        start_time = time.time()
+        
+        print_header("开始API测试")
+        print_info(f"测试基地址: {self.base_url}")
+        print_info(f"测试时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        
+        # 测试用户API
+        self.test_user_apis()
+        
+        # 测试聊天API
+        self.test_chat_apis()
+        
+        # 测试日记API
+        self.test_diary_apis()
+        
+        # 打印测试统计
+        print_header("测试结果统计")
+        print_info(f"总计测试: {self.test_count}")
+        print_success(f"成功: {self.success_count}")
+        if self.fail_count > 0:
+            print_error(f"失败: {self.fail_count}")
+        else:
+            print_success("失败: 0")
+        
+        duration = time.time() - start_time
+        print_info(f"测试用时: {duration:.2f} 秒")
+
+def main():
+    """主函数"""
+    global HOST, VERBOSE
+    
+    import argparse
+    parser = argparse.ArgumentParser(description='测试URDiary API')
+    parser.add_argument('--host', type=str, help='API 主机地址')
+    parser.add_argument('--verbose', action='store_true', help='显示详细输出')
+    args = parser.parse_args()
+    
+    if args.host:
+        HOST = args.host
+    
+    if args.verbose:
+        VERBOSE = True
+    
+    # 获取配置
+    config = get_config()
+    if not args.host and config.get("API_HOST"):
+        HOST = config.get("API_HOST")
+    
+    tester = APITester(HOST)
+    tester.run_all_tests()
+
+if __name__ == "__main__":
+    main()
+
+================
+File: grok_chatbot/tests/README.md
+================
+# URDiary API 测试工具
+
+这个测试工具用于测试URDiary后端API的各个端点，帮助开发人员在修改后端代码后快速验证API功能是否正常。
+
+## 功能特点
+
+- 测试所有主要API端点
+- 彩色输出测试结果
+- 详细的错误报告
+- 支持自定义API主机地址
+- 支持详细输出模式
+
+## 安装依赖
+
+```bash
+pip install -r tests/requirements.txt
+```
+
+## 使用方法
+
+基本用法:
+
+```bash
+python -m tests.api_test
+```
+
+指定API主机地址:
+
+```bash
+python -m tests.api_test --host http://your-api-server:8000
+```
+
+显示详细输出:
+
+```bash
+python -m tests.api_test --verbose
+```
+
+同时使用两个参数:
+
+```bash
+python -m tests.api_test --host http://your-api-server:8000 --verbose
+```
+
+## 测试凭据
+
+测试工具使用以下凭据创建测试用户和进行登录操作：
+
+- 用户名：动态生成（格式为 `test_user_[时间戳]`）
+- 密码：`test_password123`
+
+如果后端的用户创建/登录逻辑有变化，可能需要调整 `api_test.py` 中的相关代码。
+
+## 测试内容
+
+该工具会自动测试以下API端点:
+
+### 用户相关
+- 创建用户
+- 用户登录
+- 获取用户信息
+- 获取用户列表
+- 刷新令牌
+
+### 聊天相关
+- 发送聊天消息
+- 增强版聊天
+- 结束聊天生成日记
+- 清除聊天历史
+
+### 日记相关
+- 生成日记
+- 获取用户日记列表
+- 获取特定日记
+- 更新日记
+- 获取情感分析
+- 测试增强日记生成
+- 获取互动笔记
+- 更新互动笔记
+- 删除日记
+
+## 注意事项
+
+- 测试会创建临时用户和日记数据，仅用于测试目的
+- 建议在开发环境或测试环境中运行，避免在生产环境使用
+- 如果测试成功，会显示绿色的成功消息，如有错误则显示红色的错误消息
+- 测试完成后会显示总体测试统计信息（成功/失败数量和用时）
+
+================
+File: grok_chatbot/tests/tempCodeRunnerFile.py
+================
+test_username
 
 ================
 File: README.md

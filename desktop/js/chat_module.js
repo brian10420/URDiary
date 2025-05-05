@@ -550,6 +550,35 @@ const ChatModule = (function() {
                     console.log('自動切換到日記頁面');
                     setTimeout(() => {
                         UIManager.switchView('diary');
+                        
+                        // 在切换到日记页面后刷新日记列表
+                        setTimeout(() => {
+                            // 判断DiaryModule是否存在并包含必要的方法
+                            if (typeof DiaryModule !== 'undefined') {
+                                console.log('刷新日記列表');
+                                
+                                // 重新加载日记列表
+                                if (typeof DiaryModule.loadDiaries === 'function') {
+                                    DiaryModule.loadDiaries().then(() => {
+                                        console.log('日記列表已刷新');
+                                        
+                                        // 如果有日记ID，打开最新的日记
+                                        if (response && response.diary && response.diary.id) {
+                                            console.log('打開新生成的日記:', response.diary.id);
+                                            if (typeof DiaryModule.showDiaryDetails === 'function') {
+                                                DiaryModule.showDiaryDetails(response.diary.id);
+                                            }
+                                        }
+                                    }).catch(err => {
+                                        console.error('刷新日記列表失敗:', err);
+                                    });
+                                } else {
+                                    console.warn('DiaryModule.loadDiaries方法不存在');
+                                }
+                            } else {
+                                console.warn('DiaryModule未定義，無法刷新日記列表');
+                            }
+                        }, 500); // 等待视图切换完成后再刷新
                     }, 1500);
                 }
             } catch (error) {

@@ -463,13 +463,12 @@ const DiaryModule = (function() {
         console.log('日記模塊已重置');
     }
     
-    // 公共接口
+    // 返回公共API
     return {
-        init,
-        reset,
-        loadDiaries,
-        showDiaryDetails,
-        hideDetails
+        init: init,
+        reset: reset,
+        loadDiaries: loadDiaries,
+        showDiaryDetails: showDiaryDetails
     };
 })();
 

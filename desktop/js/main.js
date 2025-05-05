@@ -39,13 +39,19 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // 隱藏啟動屏幕並顯示用戶選擇對話框
     setTimeout(() => {
-        hideSplashScreen();
+        // 不完全隱藏啟動畫面，而是將其轉換為背景
+        const splashScreen = document.getElementById('splash-screen');
+        if (splashScreen) {
+            splashScreen.classList.add('login-background');
+        }
         
         // 展示用戶選擇對話框
         setTimeout(() => {
             const userSelectDialog = document.getElementById('user-select-dialog');
             if (userSelectDialog) {
                 userSelectDialog.style.display = 'block';
+                // 確保對話框在啟動畫面上方
+                userSelectDialog.style.zIndex = '1000';
                 // 載入用戶列表
                 if (typeof loadUserList === 'function') {
                     loadUserList();
@@ -99,6 +105,8 @@ function showSplashScreen() {
     const splashScreen = document.getElementById('splash-screen');
     if (splashScreen) {
         splashScreen.style.display = 'flex';
+        // 添加標記類，用於CSS樣式識別登錄流程中
+        document.body.classList.add('splash-active');
     }
 }
 
@@ -106,9 +114,21 @@ function showSplashScreen() {
 function hideSplashScreen() {
     const splashScreen = document.getElementById('splash-screen');
     if (splashScreen) {
+        // 如果正在登錄流程中，不要隱藏啟動畫面
+        if (document.getElementById('user-select-dialog')?.style.display === 'block' ||
+            document.getElementById('password-dialog')?.style.display === 'block' ||
+            document.getElementById('create-user-dialog')?.style.display === 'block') {
+            // 只降低不透明度，但保持背景可見
+            splashScreen.classList.add('login-background');
+            return;
+        }
+        
         splashScreen.classList.add('fade-out');
         setTimeout(() => {
             splashScreen.style.display = 'none';
+            // 移除標記類
+            document.body.classList.remove('splash-active');
+            splashScreen.classList.remove('login-background');
         }, 500);
     }
 }
@@ -232,6 +252,7 @@ function initUserSelection() {
     if (closePasswordDialogBtn) {
         closePasswordDialogBtn.addEventListener('click', function() {
             if (passwordDialog) passwordDialog.style.display = 'none';
+            // 保持啟動畫面作為背景
             if (userSelectDialog) userSelectDialog.style.display = 'block';
         });
     }
@@ -402,6 +423,13 @@ function initUserSelection() {
             selectedUserInfo.innerHTML = `<strong>用戶:</strong> ${username} (ID: ${userId})`;
         }
         
+        // 我們現在使用啟動畫面作為背景，不需要單獨的背景遮罩
+        // 確保啟動畫面處於背景模式
+        const splashScreen = document.getElementById('splash-screen');
+        if (splashScreen) {
+            splashScreen.classList.add('login-background');
+        }
+        
         // 清空密碼輸入框和錯誤信息
         if (userPasswordInput) {
             userPasswordInput.value = '';
@@ -412,7 +440,11 @@ function initUserSelection() {
         
         // 隱藏用戶選擇對話框，顯示密碼驗證對話框
         if (userSelectDialog) userSelectDialog.style.display = 'none';
-        if (passwordDialog) passwordDialog.style.display = 'block';
+        if (passwordDialog) {
+            passwordDialog.style.display = 'block';
+            // 確保密碼對話框在啟動畫面上方
+            passwordDialog.style.zIndex = '1000';
+        }
         
         // 聚焦到密碼輸入框
         if (userPasswordInput) userPasswordInput.focus();
@@ -438,6 +470,17 @@ function initUserSelection() {
         }
         
         if (passwordDialog) passwordDialog.style.display = 'none';
+        
+        // 完全隱藏啟動畫面
+        const splashScreen = document.getElementById('splash-screen');
+        if (splashScreen) {
+            splashScreen.classList.remove('login-background');
+            splashScreen.classList.add('fade-out');
+            setTimeout(() => {
+                splashScreen.style.display = 'none';
+                document.body.classList.remove('splash-active');
+            }, 500);
+        }
         
         // 顯示主應用界面
         const appContent = document.querySelectorAll('.app-header, .app-content, .app-footer');

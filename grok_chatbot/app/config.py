@@ -52,3 +52,25 @@ if ENV == "production" and not XAI_API_KEY:
 # 數據庫密碼檢查
 if ENV == "production" and not DB_PASS:
     raise ValueError("❌ 生產環境中必須設定 DB_PASS!")
+
+# API地址配置
+API_HOST = os.getenv("API_HOST", "http://localhost:8000")
+
+def get_config():
+    """返回配置字典，便于在测试和其他模块中使用"""
+    return {
+        "ENV": ENV,
+        "SECRET_KEY": SECRET_KEY,
+        "ALGORITHM": ALGORITHM,
+        "TOKEN_EXPIRE_MINUTES": TOKEN_EXPIRE_MINUTES,
+        "GROK_API_URL": GROK_API_URL,
+        "REDIS_HOST": REDIS_HOST,
+        "REDIS_PORT": REDIS_PORT,
+        "REDIS_DB": REDIS_DB,
+        "DB_HOST": DB_HOST,
+        "DB_PORT": DB_PORT,
+        "DB_USER": DB_USER,
+        "DB_NAME": DB_NAME,
+        "CORS_ALLOWED_ORIGINS": CORS_ALLOWED_ORIGINS,
+        "API_HOST": API_HOST
+    }
