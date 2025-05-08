@@ -2,6 +2,7 @@ from sqlalchemy.orm import Session
 from datetime import datetime
 from typing import List, Optional
 from database import models
+from utils.time_utils import get_diary_datetime  # 修正导入路径
 
 # User CRUD operations
 def create_user(db: Session, username: str):
@@ -33,7 +34,7 @@ def create_diary(db: Session, user_id: int, content: str,
         content=content,
         valence=valence,
         arousal=arousal,
-        diary_date=datetime.utcnow()
+        diary_date=get_diary_datetime()  # 使用自定义时间函数获取正确的日期
     )
     db.add(diary)
     db.commit()

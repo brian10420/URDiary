@@ -1209,6 +1209,74 @@ input:focus, textarea:focus, select:focus {
     visibility: hidden;
 }
 
+/* 在登入流程中的啟動畫面樣式 */
+.splash-screen.login-background {
+    opacity: 0.95;
+    z-index: 990; /* 低於登入對話框，但高於其他內容 */
+}
+
+/* 當啟動畫面活躍時，確保對話框樣式 */
+.splash-active .modal-content {
+    background-color: rgba(255, 255, 255, 0.95);
+    box-shadow: 0 5px 25px rgba(0, 0, 0, 0.3);
+    border: 1px solid var(--primary-dark);
+    color: var(--text-color);
+}
+
+.splash-active .modal-header {
+    background-color: var(--primary-dark);
+    color: white;
+    border-bottom: none;
+    border-radius: 8px 8px 0 0;
+}
+
+.splash-active .modal-header h3 {
+    font-weight: 500;
+}
+
+.splash-active .btn-close {
+    color: white;
+}
+
+.splash-active .form-control {
+    background-color: rgba(255, 255, 255, 0.95);
+    border: 1px solid var(--border-color);
+}
+
+.splash-active .user-item {
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius-md);
+    transition: all 0.2s ease;
+}
+
+.splash-active .user-item:hover {
+    background-color: var(--primary-light);
+    color: white;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+}
+
+.splash-active .user-item.active {
+    background-color: var(--primary-color);
+    color: white;
+    border-color: var(--primary-dark);
+}
+
+.splash-active .btn {
+    background-color: var(--primary-color);
+    color: white;
+    border: none;
+}
+
+.splash-active .btn:hover {
+    background-color: var(--primary-dark);
+    transform: translateY(-1px);
+}
+
+.splash-screen.fade-out {
+    opacity: 0;
+}
+
 .splash-content {
     text-align: center;
     color: white;
@@ -5486,6 +5554,35 @@ const ChatModule = (function() {
                     console.log('自動切換到日記頁面');
                     setTimeout(() => {
                         UIManager.switchView('diary');
+                        
+                        // 在切换到日记页面后刷新日记列表
+                        setTimeout(() => {
+                            // 判断DiaryModule是否存在并包含必要的方法
+                            if (typeof DiaryModule !== 'undefined') {
+                                console.log('刷新日記列表');
+                                
+                                // 重新加载日记列表
+                                if (typeof DiaryModule.loadDiaries === 'function') {
+                                    DiaryModule.loadDiaries().then(() => {
+                                        console.log('日記列表已刷新');
+                                        
+                                        // 如果有日记ID，打开最新的日记
+                                        if (response && response.diary && response.diary.id) {
+                                            console.log('打開新生成的日記:', response.diary.id);
+                                            if (typeof DiaryModule.showDiaryDetails === 'function') {
+                                                DiaryModule.showDiaryDetails(response.diary.id);
+                                            }
+                                        }
+                                    }).catch(err => {
+                                        console.error('刷新日記列表失敗:', err);
+                                    });
+                                } else {
+                                    console.warn('DiaryModule.loadDiaries方法不存在');
+                                }
+                            } else {
+                                console.warn('DiaryModule未定義，無法刷新日記列表');
+                            }
+                        }, 500); // 等待视图切换完成后再刷新
                     }, 1500);
                 }
             } catch (error) {
@@ -6255,13 +6352,12 @@ const DiaryModule = (function() {
         console.log('日記模塊已重置');
     }
     
-    // 公共接口
+    // 返回公共API
     return {
-        init,
-        reset,
-        loadDiaries,
-        showDiaryDetails,
-        hideDetails
+        init: init,
+        reset: reset,
+        loadDiaries: loadDiaries,
+        showDiaryDetails: showDiaryDetails
     };
 })();
 
@@ -7826,13 +7922,19 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // 隱藏啟動屏幕並顯示用戶選擇對話框
     setTimeout(() => {
-        hideSplashScreen();
+        // 不完全隱藏啟動畫面，而是將其轉換為背景
+        const splashScreen = document.getElementById('splash-screen');
+        if (splashScreen) {
+            splashScreen.classList.add('login-background');
+        }
         
         // 展示用戶選擇對話框
         setTimeout(() => {
             const userSelectDialog = document.getElementById('user-select-dialog');
             if (userSelectDialog) {
                 userSelectDialog.style.display = 'block';
+                // 確保對話框在啟動畫面上方
+                userSelectDialog.style.zIndex = '1000';
                 // 載入用戶列表
                 if (typeof loadUserList === 'function') {
                     loadUserList();
@@ -7886,6 +7988,8 @@ function showSplashScreen() {
     const splashScreen = document.getElementById('splash-screen');
     if (splashScreen) {
         splashScreen.style.display = 'flex';
+        // 添加標記類，用於CSS樣式識別登錄流程中
+        document.body.classList.add('splash-active');
     }
 }
 
@@ -7893,9 +7997,21 @@ function showSplashScreen() {
 function hideSplashScreen() {
     const splashScreen = document.getElementById('splash-screen');
     if (splashScreen) {
+        // 如果正在登錄流程中，不要隱藏啟動畫面
+        if (document.getElementById('user-select-dialog')?.style.display === 'block' ||
+            document.getElementById('password-dialog')?.style.display === 'block' ||
+            document.getElementById('create-user-dialog')?.style.display === 'block') {
+            // 只降低不透明度，但保持背景可見
+            splashScreen.classList.add('login-background');
+            return;
+        }
+        
         splashScreen.classList.add('fade-out');
         setTimeout(() => {
             splashScreen.style.display = 'none';
+            // 移除標記類
+            document.body.classList.remove('splash-active');
+            splashScreen.classList.remove('login-background');
         }, 500);
     }
 }
@@ -8019,6 +8135,7 @@ function initUserSelection() {
     if (closePasswordDialogBtn) {
         closePasswordDialogBtn.addEventListener('click', function() {
             if (passwordDialog) passwordDialog.style.display = 'none';
+            // 保持啟動畫面作為背景
             if (userSelectDialog) userSelectDialog.style.display = 'block';
         });
     }
@@ -8189,6 +8306,13 @@ function initUserSelection() {
             selectedUserInfo.innerHTML = `<strong>用戶:</strong> ${username} (ID: ${userId})`;
         }
         
+        // 我們現在使用啟動畫面作為背景，不需要單獨的背景遮罩
+        // 確保啟動畫面處於背景模式
+        const splashScreen = document.getElementById('splash-screen');
+        if (splashScreen) {
+            splashScreen.classList.add('login-background');
+        }
+        
         // 清空密碼輸入框和錯誤信息
         if (userPasswordInput) {
             userPasswordInput.value = '';
@@ -8199,7 +8323,11 @@ function initUserSelection() {
         
         // 隱藏用戶選擇對話框，顯示密碼驗證對話框
         if (userSelectDialog) userSelectDialog.style.display = 'none';
-        if (passwordDialog) passwordDialog.style.display = 'block';
+        if (passwordDialog) {
+            passwordDialog.style.display = 'block';
+            // 確保密碼對話框在啟動畫面上方
+            passwordDialog.style.zIndex = '1000';
+        }
         
         // 聚焦到密碼輸入框
         if (userPasswordInput) userPasswordInput.focus();
@@ -8225,6 +8353,17 @@ function initUserSelection() {
         }
         
         if (passwordDialog) passwordDialog.style.display = 'none';
+        
+        // 完全隱藏啟動畫面
+        const splashScreen = document.getElementById('splash-screen');
+        if (splashScreen) {
+            splashScreen.classList.remove('login-background');
+            splashScreen.classList.add('fade-out');
+            setTimeout(() => {
+                splashScreen.style.display = 'none';
+                document.body.classList.remove('splash-active');
+            }, 500);
+        }
         
         // 顯示主應用界面
         const appContent = document.querySelectorAll('.app-header, .app-content, .app-footer');
