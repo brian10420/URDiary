@@ -1,6 +1,111 @@
-# URDiary API 测试工具
+# URDiary API测试工具
 
-这个测试工具用于测试URDiary后端API的各个端点，帮助开发人员在修改后端代码后快速验证API功能是否正常。
+此目录包含用于测试URDiary API的脚本和工具。
+
+## 环境准备
+
+在运行测试之前，请确保安装了所需的依赖：
+
+```bash
+pip install -r requirements.txt
+```
+
+## 测试工具说明
+
+### api_test.py
+
+综合API测试工具，可以测试所有的API端点。
+
+使用方法：
+
+```bash
+python api_test.py --host http://localhost:8000 --verbose
+```
+
+参数说明：
+- `--host`: 指定API服务器地址 (默认: http://localhost:8000)
+- `--verbose`: 显示详细输出
+
+### test_api_directly.py
+
+简单的API直接测试工具，用于快速测试基本的API功能。
+
+使用方法：
+
+```bash
+python test_api_directly.py
+```
+
+此工具会测试三个主要端点：
+- 基本聊天API
+- 增强聊天API
+- 结束聊天API
+
+### test_multi_model.py
+
+多模型支持测试工具，用于测试是否正确实现了grok2和grok3的模型支持。
+
+使用方法：
+
+```bash
+python test_multi_model.py
+```
+
+此工具会自动测试：
+1. 使用默认模型的情况
+2. 使用grok2模型的情况
+3. 使用grok3模型的情况
+
+### test_model_cmd.py
+
+命令行模型测试工具，用于从命令行快速测试不同模型。
+
+使用方法：
+
+```bash
+# 使用默认模型测试基本聊天API
+python test_model_cmd.py
+
+# 指定使用grok2模型
+python test_model_cmd.py --model grok2
+
+# 指定使用grok3模型
+python test_model_cmd.py --model grok3
+
+# 测试增强聊天API
+python test_model_cmd.py --enhanced
+
+# 自定义测试消息
+python test_model_cmd.py --message "你支持哪些功能？" --model grok3
+```
+
+参数说明：
+- `--model`, `-m`: 指定要测试的模型 (可选值: grok2, grok3)
+- `--message`, `-t`: 指定测试消息内容 (默认: "你好，请告诉我你是哪个模型版本？")
+- `--enhanced`, `-e`: 使用增强聊天API进行测试
+- `--user-id`, `-u`: 指定用户ID (numeric_user_id, 默认为1)
+
+## 测试多模型功能
+
+要验证多模型支持是否正确实现，可以通过以下步骤进行测试：
+
+1. 首先运行完整的多模型测试：
+
+```bash
+python test_multi_model.py
+```
+
+2. 然后分别测试不同模型的响应：
+
+```bash
+# 测试 grok2
+python test_model_cmd.py --model grok2 --message "请告诉我你是哪个版本的模型"
+
+# 测试 grok3
+python test_model_cmd.py --model grok3 --message "请告诉我你是哪个版本的模型"
+```
+
+3. 检查响应中的 `model_used` 字段，确认是否与请求中指定的模型一致。
 
 ## 功能特点
 

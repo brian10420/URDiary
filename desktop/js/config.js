@@ -17,6 +17,16 @@ const CONFIG = (function() {
                 DIARIES: '/diaries/'
             }
         },
+        // 模型配置
+        MODELS: {
+            DEFAULT: 'grok3',  // 默認使用 Grok 3
+            AVAILABLE: ['grok2', 'grok3'],  // 可用模型列表
+            AUTO_SWITCH: true,  // 如果一個模型不可用，是否自動切換到另一個
+            DISPLAY_NAMES: {  // 用於顯示的模型名稱
+                'grok2': 'Grok 2',
+                'grok3': 'Grok 3'
+            }
+        },
         // 本地存儲配置
         STORAGE: {
             CHAT_HISTORY: 'urdiary_chat_history',
@@ -80,6 +90,7 @@ const CONFIG = (function() {
     if (loadedConfig.API) Object.assign(config.API, loadedConfig.API);
     if (loadedConfig.AUTH) Object.assign(config.AUTH, loadedConfig.AUTH);
     if (loadedConfig.DEBUG) Object.assign(config.DEBUG, loadedConfig.DEBUG);
+    if (loadedConfig.MODELS) Object.assign(config.MODELS, loadedConfig.MODELS);
     if (loadedConfig.USE_MOCK_DATA !== undefined) config.USE_MOCK_DATA = loadedConfig.USE_MOCK_DATA;
     
     // 保存配置
@@ -98,6 +109,7 @@ const CONFIG = (function() {
         if (newConfig.API) Object.assign(config.API, newConfig.API);
         if (newConfig.AUTH) Object.assign(config.AUTH, newConfig.AUTH);
         if (newConfig.DEBUG) Object.assign(config.DEBUG, newConfig.DEBUG);
+        if (newConfig.MODELS) Object.assign(config.MODELS, newConfig.MODELS);
         if (newConfig.USE_MOCK_DATA !== undefined) config.USE_MOCK_DATA = newConfig.USE_MOCK_DATA;
         
         // 保存到localStorage

@@ -8,6 +8,22 @@ import matplotlib.pyplot as plt
 from datetime import datetime, timedelta
 import io
 import base64
+import os
+
+# 獲取提示詞目錄路徑
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+PROMPTS_DIR = os.path.join(BASE_DIR, "services", "prompts")
+
+def read_prompt_file(filename):
+    """安全讀取提示詞文件"""
+    try:
+        prompt_path = os.path.join(PROMPTS_DIR, filename)
+        with open(prompt_path, "r", encoding="utf-8") as f:
+            return f.read()
+    except Exception as e:
+        print(f"讀取提示詞文件 {filename} 時發生錯誤: {str(e)}")
+        # 返回一個簡單的備用提示詞
+        return "請根據提供的內容進行分析。"
 
 def analyze_emotion_trends(user_id: int, time_range: str = "month") -> Dict[str, Any]:
     """
@@ -47,22 +63,13 @@ def analyze_emotion_trends(user_id: int, time_range: str = "month") -> Dict[str,
         
         # 使用 Grok 分析情緒主題
         recent_contents = "\n\n".join([d["content"] for d in data[-5:]])
-        prompt = f"""
-        分析以下一系列日記中的情緒主題和模式：
         
-        {recent_contents}
-        
-        請提供：
-        1. 主要情緒主題 (列出3-5個)
-        2. 情緒變化模式
-        3. 積極和消極因素
-        4. 建議的關注點
-        
-        以JSON格式回應，包含這四個字段。
-        """
+        # 讀取情緒分析提示詞
+        prompt_template = read_prompt_file("emotion_analysis_prompt.txt")
+        prompt = prompt_template.format(recent_contents=recent_contents)
         
         completion = client.chat.completions.create(
-            model="grok-2-latest",
+            model="grok-3-latest",
             messages=[
                 {"role": "system", "content": "你是一位情緒分析專家。"},
                 {"role": "user", "content": prompt}
@@ -153,19 +160,14 @@ def extract_key_themes(user_id: int) -> List[str]:
         if not latest_note:
             return []
             
-        # 分析互動筆記內容
-        prompt = f"""
-        從以下互動筆記中提取5-7個關鍵主題或關注點：
-        
-        {latest_note.content}
-        
-        只返回關鍵主題列表，無需其他解釋。每個主題控制在3-5個字。
-        """
+        # 讀取主題提取提示詞
+        prompt_template = read_prompt_file("theme_extraction_prompt.txt")
+        prompt = prompt_template.format(interaction_note_content=latest_note.content)
         
         completion = client.chat.completions.create(
-            model="grok-2-latest",
+            model="grok-3-latest",
             messages=[
-                {"role": "system", "content": "你是一位主題分析專家。"},
+                {"role": "system", "content": "你是一位心靈事件主題分析專家。"},
                 {"role": "user", "content": prompt}
             ]
         )

@@ -104,6 +104,8 @@ grok_chatbot/app/middleware/error_handler.py
 grok_chatbot/app/middleware/exception_handlers.py
 grok_chatbot/app/Scripts/health_check.py
 grok_chatbot/app/Scripts/init-db.sql
+grok_chatbot/app/Scripts/reset-db-sequence.sh
+grok_chatbot/app/Scripts/reset-sequence.sql
 grok_chatbot/app/services/analytics_service.py
 grok_chatbot/app/services/diary_service.py
 grok_chatbot/app/services/interaction_service.py
@@ -115,14 +117,19 @@ grok_chatbot/app/utils/logger.py
 grok_chatbot/app/utils/password_validator.py
 grok_chatbot/app/utils/security.py
 grok_chatbot/app/utils/test_password_strength.py
+grok_chatbot/app/utils/time_utils.py
 grok_chatbot/docker-compose.yml
 grok_chatbot/Dockerfile
 grok_chatbot/docs/error_handling.md
 grok_chatbot/generate_secrets.py
+grok_chatbot/MODELS_GUIDE.md
 grok_chatbot/tests/__init__.py
 grok_chatbot/tests/api_test.py
 grok_chatbot/tests/README.md
 grok_chatbot/tests/tempCodeRunnerFile.py
+grok_chatbot/tests/test_api_directly.py
+grok_chatbot/tests/test_model_cmd.py
+grok_chatbot/tests/test_multi_model.py
 README.md
 Test.py
 
@@ -1345,6 +1352,38 @@ File: desktop/css/chat.css
 .chat-actions {
     display: flex;
     gap: var(--spacing-sm);
+}
+
+/* 模型選擇器 */
+.model-selector-container {
+    margin: 0 15px 10px;
+    text-align: right;
+    font-size: 12px;
+    color: #666;
+    display: flex;
+    justify-content: flex-end;
+    align-items: center;
+}
+
+#model-selector {
+    padding: 4px 8px;
+    border-radius: 4px;
+    border: 1px solid var(--border-color);
+    background-color: var(--bg-color);
+    color: var(--text-color);
+    font-size: 12px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+#model-selector:hover {
+    border-color: var(--primary-color);
+}
+
+#model-selector:focus {
+    outline: none;
+    border-color: var(--accent-color);
+    box-shadow: 0 0 0 2px rgba(var(--accent-color-rgb), 0.2);
 }
 
 /* 聊天消息區域 */
@@ -3734,9 +3773,9 @@ const ApiService = (function() {
     }
     
     // 發送聊天消息
-    async function sendChatMessage(message) {
+    async function sendChatMessage(message, model = null) {
         try {
-            console.log('開始發送聊天消息:', message.substring(0, 50) + (message.length > 50 ? '...' : ''));
+            console.log(`開始發送聊天消息${model ? `(模型: ${model})` : ''}:`, message.substring(0, 50) + (message.length > 50 ? '...' : ''));
             
             // 檢查網絡連接
             if (!navigator.onLine) {
@@ -3757,7 +3796,8 @@ const ApiService = (function() {
                 body: {
                     user_id: currentUserId,
                     numeric_user_id: numericUserId,
-                    message: message
+                    message: message,
+                    model: model // 添加模型參數
                 }
             });
             
@@ -3842,7 +3882,8 @@ const ApiService = (function() {
                     message: responseMessage,
                     response: responseMessage,
                     is_mock: true,
-                    error_detail: errorDetail || error.message
+                    error_detail: errorDetail || error.message,
+                    model_used: model || 'mock'
                 };
             }
             
@@ -3856,9 +3897,9 @@ const ApiService = (function() {
     }
     
     // 結束聊天並生成日記
-    async function endChat() {
+    async function endChat(model = null) {
         try {
-            console.log('調用API結束聊天並生成日記');
+            console.log(`調用API結束聊天並生成日記${model ? `(模型: ${model})` : ''}`);
             
             // 檢查網絡連接
             if (!navigator.onLine) {
@@ -3879,7 +3920,8 @@ const ApiService = (function() {
                 body: {
                     user_id: currentUserId,
                     numeric_user_id: numericUserId,
-                    exclude_interaction_notes: true  // 添加參數，防止將互動筆記融入日記
+                    exclude_interaction_notes: true,  // 添加參數，防止將互動筆記融入日記
+                    model: model  // 添加模型參數
                 }
             });
             
@@ -3942,6 +3984,9 @@ const ApiService = (function() {
                     mockData.diary.content += errorNote;
                     mockData.error_detail = errorDetail;
                 }
+                
+                // 添加使用的模型信息
+                mockData.model_used = model || 'mock';
                 
                 return mockData;
             }
@@ -5011,10 +5056,11 @@ const ChatModule = (function() {
     let userAvatar = null;
     let botAvatar = 'assets/icon.jpg';
     let isProcessing = false;
+    let currentModel = null; // 當前使用的模型
     
     // DOM元素
     let chatContainer, chatMessagesContainer, userInputElement, 
-        sendButtonElement, endChatBtnElement, clearChatBtnElement;
+        sendButtonElement, endChatBtnElement, clearChatBtnElement, modelSelectorElement;
     
     // 初始化
     function init() {
@@ -5046,6 +5092,9 @@ const ChatModule = (function() {
         
         // 確保機器人頭像存在
         ensureBotAvatar();
+        
+        // 初始化模型選擇器
+        initModelSelector();
         
         // 綁定發送按鈕點擊事件
         if (sendButtonElement) {
@@ -5089,6 +5138,72 @@ const ChatModule = (function() {
         loadChatHistory();
         
         console.log('聊天模塊初始化完成');
+    }
+    
+    // 初始化模型選擇器
+    function initModelSelector() {
+        // 查找聊天行為區域，如果是input-wrapper，查找其父級
+        const inputArea = document.querySelector('.chat-input-area') || 
+                          document.querySelector('.chat-input-wrapper')?.parentElement;
+        
+        if (!inputArea) {
+            console.warn('無法找到聊天輸入區域，無法添加模型選擇器');
+            return;
+        }
+        
+        // 檢查是否已有模型選擇器
+        if (document.getElementById('model-selector')) {
+            modelSelectorElement = document.getElementById('model-selector');
+            console.log('模型選擇器已存在');
+            return;
+        }
+        
+        // 創建模型選擇器元素
+        const selectorDiv = document.createElement('div');
+        selectorDiv.className = 'model-selector-container';
+        selectorDiv.style.cssText = 'margin: 0 15px 10px; text-align: right; font-size: 12px; color: #666;';
+        
+        // 獲取可用模型
+        const availableModels = CONFIG?.MODELS?.AVAILABLE || ['grok2', 'grok3'];
+        const defaultModel = CONFIG?.MODELS?.DEFAULT || 'grok3';
+        
+        // 設置當前模型
+        currentModel = localStorage.getItem('urDiary_current_model') || defaultModel;
+        
+        // 創建選擇器HTML
+        selectorDiv.innerHTML = `
+            <label for="model-selector" style="margin-right: 5px;">模型: </label>
+            <select id="model-selector" style="padding: 4px 8px; border-radius: 4px; border: 1px solid #ddd;">
+                ${availableModels.map(model => {
+                    const displayName = CONFIG?.MODELS?.DISPLAY_NAMES?.[model] || model;
+                    return `<option value="${model}" ${model === currentModel ? 'selected' : ''}>${displayName}</option>`;
+                }).join('')}
+            </select>
+        `;
+        
+        // 如果有原有選擇器，則替換，否則插入到輸入區域前
+        const existingSelector = document.querySelector('.model-selector-container');
+        if (existingSelector) {
+            inputArea.replaceChild(selectorDiv, existingSelector);
+        } else {
+            inputArea.insertBefore(selectorDiv, inputArea.firstChild);
+        }
+        
+        // 獲取選擇器元素
+        modelSelectorElement = document.getElementById('model-selector');
+        
+        // 綁定變更事件
+        if (modelSelectorElement) {
+            modelSelectorElement.addEventListener('change', function(e) {
+                currentModel = e.target.value;
+                console.log(`模型已切換為: ${currentModel}`);
+                localStorage.setItem('urDiary_current_model', currentModel);
+                
+                // 添加系統提示消息
+                const displayName = CONFIG?.MODELS?.DISPLAY_NAMES?.[currentModel] || currentModel;
+                addSystemMessage(`已切換到模型: ${displayName}`);
+            });
+        }
     }
     
     // 載入用戶頭像
@@ -5310,8 +5425,12 @@ const ChatModule = (function() {
                 throw new Error('API服務不完整，缺少sendChatMessage方法');
             }
             
+            // 獲取當前選擇的模型
+            const selectedModel = currentModel || CONFIG?.MODELS?.DEFAULT || 'grok3';
+            console.log(`使用模型 ${selectedModel} 處理用戶輸入`);
+            
             // 調用API服務發送消息
-            const response = await ApiService.sendChatMessage(userInput);
+            const response = await ApiService.sendChatMessage(userInput, selectedModel);
             
             // 移除思考中消息
             const thinkingMessage = document.getElementById(thinkingMessageId);
@@ -5338,8 +5457,22 @@ const ChatModule = (function() {
                 messageContent = '抱歉，我無法理解您的請求。';
             }
             
+            // 添加模型信息到消息末尾（如果有）
+            const modelUsed = response.model_used || selectedModel;
+            if (modelUsed && typeof messageContent === 'string') {
+                const modelDisplayName = CONFIG?.MODELS?.DISPLAY_NAMES?.[modelUsed] || modelUsed;
+                messageContent = messageContent;
+            }
+            
             // 添加系統消息
             addSystemMessage(messageContent);
+            
+            // 如果響應中包含模型信息，但和當前選擇的不同，更新選擇器
+            if (response.model_used && response.model_used !== selectedModel && modelSelectorElement) {
+                modelSelectorElement.value = response.model_used;
+                currentModel = response.model_used;
+                localStorage.setItem('urDiary_current_model', currentModel);
+            }
             
             // 保存聊天歷史
             saveChatHistory();
@@ -5500,127 +5633,77 @@ const ChatModule = (function() {
                 return;
             }
             
+            // 獲取當前選擇的模型
+            const selectedModel = currentModel || CONFIG?.MODELS?.DEFAULT || 'grok3';
+            console.log(`使用模型 ${selectedModel} 結束聊天並生成日記`);
+            
             // 設置處理狀態
             isProcessing = true;
             
-            // 顯示加載動畫
-            if (typeof UIManager !== 'undefined' && UIManager.showSpinner) {
-                UIManager.showSpinner();
+            // 禁用輸入和按鈕
+            userInputElement.disabled = true;
+            if (endChatBtnElement) endChatBtnElement.disabled = true;
+            
+            // 顯示載入狀態
+            try {
+                UIManager.showLoadingSpinner('生成日記中...');
+            } catch (error) {
+                console.warn('無法顯示載入動畫:', error);
             }
             
-            // 保存當前聊天歷史
-            saveChatHistory();
-            console.log('聊天歷史已保存');
+            // 調用API服務結束聊天
+            const response = await ApiService.endChat(selectedModel);
             
-            try {
-                // 檢查ApiService是否存在
-                if (typeof ApiService === 'undefined') {
-                    console.error('ApiService未定義，無法結束聊天');
-                    throw new Error('API服務未初始化，無法生成日記');
-                }
-                
-                // 檢查endChat方法是否存在
-                if (typeof ApiService.endChat !== 'function') {
-                    console.error('ApiService.endChat方法未定義');
-                    throw new Error('API服務不完整，缺少endChat方法');
-                }
-                
-                // 調用API結束聊天並生成日記
-                console.log('調用API結束聊天');
-                const response = await ApiService.endChat();
-                console.log('聊天結束API響應:', response);
-                
-                // 顯示成功消息
-                if (typeof UIManager !== 'undefined' && UIManager.showToast) {
-                    UIManager.showToast('已生成日記');
-                }
-                
-                // 清空聊天記錄
-                chatHistory = [];
-                if (chatMessagesContainer) {
-                    chatMessagesContainer.innerHTML = '';
-                }
-                saveChatHistory();
-                
-                // 添加歡迎消息
-                addSystemMessage("感謝您的分享！我已經為您生成了一篇日記。您可以在「日記」頁面中查看。");
-                
-                // 自動切換到日記頁面
-                const shouldAutoSwitch = CONFIG && CONFIG.APP && 
-                    typeof CONFIG.APP.AUTO_SWITCH_TO_DIARY_AFTER_END !== 'undefined' ? 
-                    CONFIG.APP.AUTO_SWITCH_TO_DIARY_AFTER_END : true;
-                
-                if (shouldAutoSwitch && typeof UIManager !== 'undefined' && UIManager.switchView) {
-                    console.log('自動切換到日記頁面');
-                    setTimeout(() => {
-                        UIManager.switchView('diary');
-                        
-                        // 在切换到日记页面后刷新日记列表
-                        setTimeout(() => {
-                            // 判断DiaryModule是否存在并包含必要的方法
-                            if (typeof DiaryModule !== 'undefined') {
-                                console.log('刷新日記列表');
-                                
-                                // 重新加载日记列表
-                                if (typeof DiaryModule.loadDiaries === 'function') {
-                                    DiaryModule.loadDiaries().then(() => {
-                                        console.log('日記列表已刷新');
-                                        
-                                        // 如果有日记ID，打开最新的日记
-                                        if (response && response.diary && response.diary.id) {
-                                            console.log('打開新生成的日記:', response.diary.id);
-                                            if (typeof DiaryModule.showDiaryDetails === 'function') {
-                                                DiaryModule.showDiaryDetails(response.diary.id);
-                                            }
-                                        }
-                                    }).catch(err => {
-                                        console.error('刷新日記列表失敗:', err);
-                                    });
-                                } else {
-                                    console.warn('DiaryModule.loadDiaries方法不存在');
-                                }
-                            } else {
-                                console.warn('DiaryModule未定義，無法刷新日記列表');
-                            }
-                        }, 500); // 等待视图切换完成后再刷新
-                    }, 1500);
-                }
-            } catch (error) {
-                console.error('結束聊天失敗:', error);
-                
-                // 顯示錯誤信息
-                if (typeof UIManager !== 'undefined' && UIManager.showError) {
-                    UIManager.showError('生成日記失敗', '無法結束對話並生成日記: ' + error.message);
-                } else {
-                    alert('生成日記失敗: ' + error.message);
-                }
-                
-                // 添加錯誤消息
-                addSystemMessage("抱歉，我在生成日記時遇到了問題: " + error.message);
-                
-                // 如果是API服務未定義的錯誤，添加更詳細的提示
-                if (error.message.includes('API服務未初始化')) {
-                    addSystemMessage("請檢查API服務是否正常運行，或嘗試重新載入應用程序。");
-                }
-            } finally {
-                // 恢復處理狀態
-                isProcessing = false;
-                
-                // 隱藏加載動畫
-                if (typeof UIManager !== 'undefined' && UIManager.hideSpinner) {
-                    UIManager.hideSpinner();
-                }
+            // 處理響應
+            console.log('結束聊天API響應:', response);
+            
+            // 清空聊天歷史
+            chatHistory = [];
+            saveChatHistory();
+            
+            // 顯示日記已生成消息
+            const diaryMessage = response.message || '日記已生成，您可以在日記頁面查看。';
+            addSystemMessage(diaryMessage);
+            
+            // 檢查配置是否自動切換到日記視圖
+            if (CONFIG && CONFIG.APP.AUTO_SWITCH_TO_DIARY_AFTER_END) {
+                // 0.5秒後切換到日記頁面
+                setTimeout(() => {
+                    try {
+                        const diaryTabElement = document.querySelector('[data-view="diary"]');
+                        if (diaryTabElement) {
+                            diaryTabElement.click();
+                        }
+                    } catch (error) {
+                        console.warn('無法自動切換到日記頁面:', error);
+                    }
+                }, 500);
             }
         } catch (error) {
-            console.error('結束聊天過程出錯:', error);
-            if (typeof UIManager !== 'undefined' && UIManager.showError) {
-                UIManager.showError('錯誤', '結束聊天過程中發生錯誤: ' + error.message);
-            } else {
-                alert('錯誤: 結束聊天過程中發生錯誤: ' + error.message);
+            console.error('結束聊天失敗:', error);
+            
+            // 顯示錯誤信息
+            let errorMessage = '生成日記時出錯: ' + error.message;
+            addSystemMessage(errorMessage);
+            
+            // 如果可能，添加一條更詳細的錯誤消息
+            if (typeof ErrorHandler !== 'undefined' && typeof ErrorHandler.getDetailedErrorMessage === 'function') {
+                const detailedMessage = ErrorHandler.getDetailedErrorMessage(error, '結束聊天');
+                if (detailedMessage) {
+                    addSystemMessage(detailedMessage);
+                }
             }
+        } finally {
+            // 恢復狀態
             isProcessing = false;
-            if (typeof UIManager !== 'undefined' && UIManager.hideSpinner) {
-                UIManager.hideSpinner();
+            userInputElement.disabled = false;
+            if (endChatBtnElement) endChatBtnElement.disabled = false;
+            
+            // 關閉載入動畫
+            try {
+                UIManager.hideLoadingSpinner();
+            } catch (error) {
+                console.warn('無法隱藏載入動畫:', error);
             }
         }
     }
@@ -5764,6 +5847,16 @@ const CONFIG = (function() {
                 DIARIES: '/diaries/'
             }
         },
+        // 模型配置
+        MODELS: {
+            DEFAULT: 'grok3',  // 默認使用 Grok 3
+            AVAILABLE: ['grok2', 'grok3'],  // 可用模型列表
+            AUTO_SWITCH: true,  // 如果一個模型不可用，是否自動切換到另一個
+            DISPLAY_NAMES: {  // 用於顯示的模型名稱
+                'grok2': 'Grok 2',
+                'grok3': 'Grok 3'
+            }
+        },
         // 本地存儲配置
         STORAGE: {
             CHAT_HISTORY: 'urdiary_chat_history',
@@ -5827,6 +5920,7 @@ const CONFIG = (function() {
     if (loadedConfig.API) Object.assign(config.API, loadedConfig.API);
     if (loadedConfig.AUTH) Object.assign(config.AUTH, loadedConfig.AUTH);
     if (loadedConfig.DEBUG) Object.assign(config.DEBUG, loadedConfig.DEBUG);
+    if (loadedConfig.MODELS) Object.assign(config.MODELS, loadedConfig.MODELS);
     if (loadedConfig.USE_MOCK_DATA !== undefined) config.USE_MOCK_DATA = loadedConfig.USE_MOCK_DATA;
     
     // 保存配置
@@ -5845,6 +5939,7 @@ const CONFIG = (function() {
         if (newConfig.API) Object.assign(config.API, newConfig.API);
         if (newConfig.AUTH) Object.assign(config.AUTH, newConfig.AUTH);
         if (newConfig.DEBUG) Object.assign(config.DEBUG, newConfig.DEBUG);
+        if (newConfig.MODELS) Object.assign(config.MODELS, newConfig.MODELS);
         if (newConfig.USE_MOCK_DATA !== undefined) config.USE_MOCK_DATA = newConfig.USE_MOCK_DATA;
         
         // 保存到localStorage
@@ -10599,11 +10694,11 @@ File: grok_chatbot/app/api/routes/chat.py
 ================
 from fastapi import APIRouter, HTTPException, Depends
 from sqlalchemy.orm import Session
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 from pydantic import BaseModel
 
 from api.deps import get_db
-from grok_client import send_to_grok
+from grok_client import send_to_grok, MODELS
 from memory_manager import clear_chat_history
 from services.diary_service import check_sensitive_content, get_support_message
 from services.interaction_service import (
@@ -10612,22 +10707,26 @@ from services.interaction_service import (
     process_interaction_note_update
 )
 from database import SessionLocal, crud
+from config import DEFAULT_MODEL
 
 router = APIRouter()
 
 class ChatInput(BaseModel):
     user_id: str
     message: str
+    model: Optional[str] = None
 
 class EnhancedChatInput(BaseModel):
     user_id: str  # Redis用的字符串ID
     numeric_user_id: int  # 數據庫用的數字ID
     message: str
+    model: Optional[str] = None
     
 class UserDiaryCreate(BaseModel):
     user_id: str
     numeric_user_id: int
     exclude_interaction_notes: bool = False  # 添加新參數，默認為False
+    model: Optional[str] = None
 
 @router.post("/", response_model=Dict[str, str],
            summary="發送聊天消息",
@@ -10636,17 +10735,23 @@ def chat_with_ai(user_input: ChatInput):
     """對話 API，調用 Grok AI 進行回應"""
     user_id = user_input.user_id
     message = user_input.message
-
+    # 使用指定模型或默認模型
+    model = user_input.model or DEFAULT_MODEL
+    
+    # 檢查模型是否有效
+    if model not in MODELS:
+        model = DEFAULT_MODEL
+        
     # 檢查敏感內容
     if check_sensitive_content(message):
         support_message = get_support_message()
         # 依然發送給 AI，但會附上關懷訊息
-        ai_response = send_to_grok(user_id, message)
-        return {"response": f"{ai_response}\n\n{support_message}"}
+        ai_response = send_to_grok(user_id, message, model)
+        return {"response": f"{ai_response}\n\n{support_message}", "model_used": model}
     
     # 正常對話
-    response = send_to_grok(user_id, message)
-    return {"response": response}
+    response = send_to_grok(user_id, message, model)
+    return {"response": response, "model_used": model}
 
 @router.delete("/clear/",
              summary="清除聊天歷史",
@@ -10664,17 +10769,23 @@ def enhanced_chat_with_ai(user_input: EnhancedChatInput):
     user_id = user_input.user_id
     numeric_user_id = user_input.numeric_user_id
     message = user_input.message
+    # 使用指定模型或默認模型
+    model = user_input.model or DEFAULT_MODEL
+    
+    # 檢查模型是否有效
+    if model not in MODELS:
+        model = DEFAULT_MODEL
 
     # 檢查敏感內容
     if check_sensitive_content(message):
         support_message = get_support_message()
         # 使用增強對話但附上關懷訊息
-        ai_response = enhanced_chat_with_context(user_id, numeric_user_id, message)
-        return {"response": f"{ai_response}\n\n{support_message}"}
+        ai_response = enhanced_chat_with_context(user_id, numeric_user_id, message, model)
+        return {"response": f"{ai_response}\n\n{support_message}", "model_used": model}
     
     # 增強對話
-    response = enhanced_chat_with_context(user_id, numeric_user_id, message)
-    return {"response": response}
+    response = enhanced_chat_with_context(user_id, numeric_user_id, message, model)
+    return {"response": response, "model_used": model}
 
 @router.post("/end/", response_model=Dict[str, Any],
            summary="結束對話並生成摘要",
@@ -10682,11 +10793,19 @@ def enhanced_chat_with_ai(user_input: EnhancedChatInput):
 def end_chat_session(user_input: UserDiaryCreate):
     """結束當前對話，生成日記並更新互動筆記"""
     try:
+        # 使用指定模型或默認模型
+        model = user_input.model or DEFAULT_MODEL
+        
+        # 檢查模型是否有效
+        if model not in MODELS:
+            model = DEFAULT_MODEL
+            
         # 1. 生成今日對話筆記
         diary_content, emotion_scores = generate_enhanced_diary(
             user_input.user_id, 
             user_input.numeric_user_id,
-            user_input.exclude_interaction_notes  # 傳遞參數
+            user_input.exclude_interaction_notes,  # 傳遞參數
+            model  # 傳遞模型參數
         )
         
         # 2. 保存日記到數據庫
@@ -10704,7 +10823,8 @@ def end_chat_session(user_input: UserDiaryCreate):
             note_result = process_interaction_note_update(
                 user_input.user_id, 
                 user_input.numeric_user_id,
-                diary_content
+                diary_content,
+                model  # 傳遞模型參數
             )
             
             # 4. 清除 Redis 中的當前對話歷史
@@ -10712,6 +10832,7 @@ def end_chat_session(user_input: UserDiaryCreate):
             
             return {
                 "message": "對話已結束並生成摘要",
+                "model_used": model,
                 "diary": {
                     "diary_id": diary.id,
                     "content": diary.content,
@@ -11250,6 +11371,11 @@ TOKEN_EXPIRE_MINUTES = int(os.getenv("TOKEN_EXPIRE_MINUTES", "1440"))  # 默認2
 GROK_API_URL = os.getenv("GROK_API_URL", "https://api.x.ai/v1")
 XAI_API_KEY = os.getenv("XAI_API_KEY")
 
+# 默認模型設定
+DEFAULT_MODEL = os.getenv("DEFAULT_MODEL", "grok3")  # 可選值: grok2, grok3
+# 如果未指定模型，是否自動選擇最新版本
+AUTO_USE_LATEST_MODEL = os.getenv("AUTO_USE_LATEST_MODEL", "True").lower() in ("true", "1", "yes")
+
 # Redis 相關
 REDIS_HOST = os.getenv("REDIS_HOST", "redis")
 REDIS_PORT = int(os.getenv("REDIS_PORT", 6379))
@@ -11294,6 +11420,8 @@ def get_config():
         "ALGORITHM": ALGORITHM,
         "TOKEN_EXPIRE_MINUTES": TOKEN_EXPIRE_MINUTES,
         "GROK_API_URL": GROK_API_URL,
+        "DEFAULT_MODEL": DEFAULT_MODEL,
+        "AUTO_USE_LATEST_MODEL": AUTO_USE_LATEST_MODEL,
         "REDIS_HOST": REDIS_HOST,
         "REDIS_PORT": REDIS_PORT,
         "REDIS_DB": REDIS_DB,
@@ -11365,6 +11493,7 @@ from sqlalchemy.orm import Session
 from datetime import datetime
 from typing import List, Optional
 from database import models
+from utils.time_utils import get_diary_datetime  # 修正导入路径
 
 # User CRUD operations
 def create_user(db: Session, username: str):
@@ -11396,7 +11525,7 @@ def create_diary(db: Session, user_id: int, content: str,
         content=content,
         valence=valence,
         arousal=arousal,
-        diary_date=datetime.utcnow()
+        diary_date=get_diary_datetime()  # 使用自定义时间函数获取正确的日期
     )
     db.add(diary)
     db.commit()
@@ -11509,10 +11638,25 @@ client = OpenAI(
     base_url=GROK_API_URL,  # 官方提供的 API URL
 )
 
-def send_to_grok(user_id, message):
-    """發送使用者輸入到 Grok AI，並返回回應"""
+# 定義常用的模型 ID
+MODELS = {
+    "grok2": "grok-2-latest",
+    "grok3": "grok-3-latest"
+}
+
+def send_to_grok(user_id, message, model="grok2"):
+    """發送使用者輸入到 Grok AI，並返回回應
+    
+    Args:
+        user_id: 用戶ID
+        message: 使用者的信息
+        model: 使用的模型，可選值為 "grok2" 或 "grok3"，默認為 "grok2"
+    """
     try:
         chat_history = get_chat_history(user_id)
+
+        # 獲取模型 ID
+        model_id = MODELS.get(model, MODELS["grok2"])
 
         # 格式化對話內容
         messages = [{"role": "system", "content": "You are Grok, a chatbot inspired by the Hitchhiker's Guide to the Galaxy."}]
@@ -11521,7 +11665,7 @@ def send_to_grok(user_id, message):
 
         # 調用 Grok API
         completion = client.chat.completions.create(
-            model="grok-2-latest",
+            model=model_id,
             messages=messages,
         )
 
@@ -11534,6 +11678,28 @@ def send_to_grok(user_id, message):
         return ai_response
 
     except Exception as e:
+        return f"Error: {str(e)}"
+
+def send_to_model(messages, model="grok2"):
+    """透過指定模型發送消息
+    
+    Args:
+        messages: 消息列表
+        model: 使用的模型，可選值為 "grok2" 或 "grok3"，默認為 "grok2"
+    """
+    try:
+        # 獲取模型 ID
+        model_id = MODELS.get(model, MODELS["grok2"])
+        
+        # 調用 Grok API
+        completion = client.chat.completions.create(
+            model=model_id,
+            messages=messages,
+        )
+        
+        return completion.choices[0].message.content
+    except Exception as e:
+        print(f"調用模型 {model} 時出錯: {str(e)}")
         return f"Error: {str(e)}"
 
 ================
@@ -11954,6 +12120,43 @@ CREATE INDEX idx_interaction_notes_user_id ON interaction_notes(user_id);
 CREATE INDEX idx_interaction_notes_version ON interaction_notes(version);
 
 ================
+File: grok_chatbot/app/Scripts/reset-db-sequence.sh
+================
+#!/bin/bash
+
+# 设置数据库连接参数 - 这些可以从环境变量或.env文件获取
+DB_HOST=${DB_HOST:-localhost}
+DB_PORT=${DB_PORT:-5432}
+DB_NAME=${DB_NAME:-urdairy}
+DB_USER=${DB_USER:-dbuser}
+DB_PASS=${DB_PASS:-yourpassword}
+
+echo "开始重置数据库序列..."
+
+# 执行SQL脚本
+PGPASSWORD=$DB_PASS psql -h $DB_HOST -p $DB_PORT -U $DB_USER -d $DB_NAME -f "$(dirname "$0")/reset-sequence.sql"
+
+echo "数据库序列重置完成！"
+
+================
+File: grok_chatbot/app/Scripts/reset-sequence.sql
+================
+-- 首先确定diaries表中的最大ID值
+DO $$
+DECLARE
+    max_id INTEGER;
+BEGIN
+    -- 获取当前最大ID
+    SELECT COALESCE(MAX(id), 0) INTO max_id FROM diaries;
+    
+    -- 重置序列到最大ID+1
+    EXECUTE 'ALTER SEQUENCE diaries_id_seq RESTART WITH ' || (max_id + 1);
+    
+    -- 输出日志
+    RAISE NOTICE 'Diaries序列已重置，当前最大ID: %, 新序列起始值: %', max_id, (max_id + 1);
+END $$;
+
+================
 File: grok_chatbot/app/services/analytics_service.py
 ================
 # 在 services 目錄下創建 analytics_service.py
@@ -12020,7 +12223,7 @@ def analyze_emotion_trends(user_id: int, time_range: str = "month") -> Dict[str,
         """
         
         completion = client.chat.completions.create(
-            model="grok-2-latest",
+            model="grok-3-latest",
             messages=[
                 {"role": "system", "content": "你是一位情緒分析專家。"},
                 {"role": "user", "content": prompt}
@@ -12121,7 +12324,7 @@ def extract_key_themes(user_id: int) -> List[str]:
         """
         
         completion = client.chat.completions.create(
-            model="grok-2-latest",
+            model="grok-3-latest",
             messages=[
                 {"role": "system", "content": "你是一位主題分析專家。"},
                 {"role": "user", "content": prompt}
@@ -12291,7 +12494,7 @@ def save_diary_for_user(user_id: str, numeric_user_id: int) -> Dict[str, Any]:
 ================
 File: grok_chatbot/app/services/interaction_service.py
 ================
-from grok_client import client
+from grok_client import client, send_to_model, MODELS
 from memory_manager import get_chat_history
 from database import crud, SessionLocal
 from database.models import InteractionNote
@@ -12301,6 +12504,7 @@ import re
 import json
 import os
 from datetime import datetime
+from config import DEFAULT_MODEL
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PROMPTS_DIR = os.path.join(BASE_DIR, "services", "prompts")
@@ -12345,10 +12549,17 @@ def read_prompt_file(filename):
 def update_interaction_note(
     chat_history: list, 
     previous_note_content: Optional[str], 
-    today_diary: str
+    today_diary: str,
+    model: str = DEFAULT_MODEL
 ) -> str:
     """
     生成更新的互動筆記內容
+    
+    Args:
+        chat_history: 聊天歷史
+        previous_note_content: 前一個互動筆記內容
+        today_diary: 今日日記內容
+        model: 使用的模型，默認使用配置中的默認模型
     """
     # 讀取互動筆記提示詞
     prompt_template = read_prompt_file("interaction_note_prompt.txt")
@@ -12374,23 +12585,26 @@ def update_interaction_note(
     
     # 調用 Grok API
     try:
-        completion = client.chat.completions.create(
-            model="grok-2-latest",
-            messages=[
-                {"role": "system", "content": "你是一位專業的心理陪伴記錄員，負責整理客戶互動筆記。"},
-                {"role": "user", "content": prompt}
-            ]
-        )
+        messages = [
+            {"role": "system", "content": "你是一位專業的心理陪伴記錄員，負責整理客戶互動筆記。"},
+            {"role": "user", "content": prompt}
+        ]
         
-        return completion.choices[0].message.content
+        return send_to_model(messages, model)
         
     except Exception as e:
         print(f"更新互動筆記時發生錯誤: {str(e)}")
         return "無法生成互動筆記，請稍後再試。"
 
-def process_interaction_note_update(chat_id: str, numeric_user_id: int, today_diary: str) -> Dict[str, Any]:
+def process_interaction_note_update(chat_id: str, numeric_user_id: int, today_diary: str, model: str = DEFAULT_MODEL) -> Dict[str, Any]:
     """
     處理互動筆記更新流程
+    
+    Args:
+        chat_id: 聊天ID
+        numeric_user_id: 用戶數字ID
+        today_diary: 今日日記內容
+        model: 使用的模型，默認使用配置中的默認模型
     """
     db = SessionLocal()
     try:
@@ -12402,7 +12616,7 @@ def process_interaction_note_update(chat_id: str, numeric_user_id: int, today_di
         previous_content = latest_note.content if latest_note else None
         
         # 生成新的互動筆記
-        new_content = update_interaction_note(chat_history, previous_content, today_diary)
+        new_content = update_interaction_note(chat_history, previous_content, today_diary, model)
         
         # 保存新的互動筆記
         new_note = create_interaction_note(db, numeric_user_id, new_content)
@@ -12431,9 +12645,15 @@ def get_conversation_context(numeric_user_id: int) -> str:
     finally:
         db.close()
 
-def enhanced_chat_with_context(chat_id: str, numeric_user_id: int, message: str) -> str:
+def enhanced_chat_with_context(chat_id: str, numeric_user_id: int, message: str, model: str = DEFAULT_MODEL) -> str:
     """
     使用互動筆記增強對話體驗
+    
+    Args:
+        chat_id: 聊天ID
+        numeric_user_id: 用戶數字ID
+        message: 用戶消息
+        model: 使用的模型，默認使用配置中的默認模型
     """
     # 獲取互動筆記上下文
     interaction_context = get_conversation_context(numeric_user_id)
@@ -12460,12 +12680,7 @@ def enhanced_chat_with_context(chat_id: str, numeric_user_id: int, message: str)
     
     # 調用 Grok API
     try:
-        completion = client.chat.completions.create(
-            model="grok-2-latest",
-            messages=messages
-        )
-        
-        ai_response = completion.choices[0].message.content
+        ai_response = send_to_model(messages, model)
         
         # 關鍵修改：正確保存對話歷史
         # 新增：建立不包含系統消息的歷史記錄
@@ -12488,7 +12703,7 @@ def enhanced_chat_with_context(chat_id: str, numeric_user_id: int, message: str)
         print(f"增強對話時發生錯誤: {str(e)}")
         return "抱歉，我現在無法回應。請稍後再試。"
     
-def generate_enhanced_diary(chat_id: str, numeric_user_id: int, exclude_interaction_notes: bool = False) -> Tuple[str, Dict[str, float]]:
+def generate_enhanced_diary(chat_id: str, numeric_user_id: int, exclude_interaction_notes: bool = False, model: str = DEFAULT_MODEL) -> Tuple[str, Dict[str, float]]:
     """
     使用互動筆記增強日記生成
     
@@ -12496,6 +12711,7 @@ def generate_enhanced_diary(chat_id: str, numeric_user_id: int, exclude_interact
         chat_id: 用戶聊天ID
         numeric_user_id: 用戶數字ID
         exclude_interaction_notes: 是否排除互動筆記，如果為True，則不使用互動筆記
+        model: 使用的模型，默認使用配置中的默認模型
     
     Returns:
         生成的日記內容和情緒評分
@@ -12546,15 +12762,12 @@ def generate_enhanced_diary(chat_id: str, numeric_user_id: int, exclude_interact
     
     try:
         # 調用 Grok API
-        completion = client.chat.completions.create(
-            model="grok-2-latest",
-            messages=[
-                {"role": "system", "content": "你是一位能夠寫出溫暖、洞察力強的日記的助手。"},
-                {"role": "user", "content": prompt}
-            ]
-        )
+        messages = [
+            {"role": "system", "content": "你是一位能夠寫出溫暖、洞察力強的日記的助手。"},
+            {"role": "user", "content": prompt}
+        ]
         
-        diary_text = completion.choices[0].message.content
+        diary_text = send_to_model(messages, model)
         
         # 設置默認值
         emotion_scores = {"valence": 0.5, "arousal": 0.5}
@@ -13552,6 +13765,50 @@ if __name__ == "__main__":
     run_tests()
 
 ================
+File: grok_chatbot/app/utils/time_utils.py
+================
+from datetime import datetime, timedelta
+import pytz
+
+def get_diary_date():
+    """
+    获取日记日期，使用当地时间凌晨5点为界线
+    如果当前时间在凌晨5点前，则日记归属于前一天
+    """
+    # 使用台湾时区（或您的本地时区）
+    local_tz = pytz.timezone('Asia/Taipei')
+    
+    # 获取当前的UTC时间，然后转换到本地时区
+    utc_now = datetime.utcnow().replace(tzinfo=pytz.UTC)
+    local_now = utc_now.astimezone(local_tz)
+    
+    print(f"DEBUG: 当前UTC时间: {utc_now}, 本地时间: {local_now}, 本地小时: {local_now.hour}")
+    
+    # 如果当前时间在凌晨5点前，返回前一天的日期
+    if local_now.hour < 5:
+        return (local_now.date() - timedelta(days=1))
+    
+    # 否则返回当天日期
+    return local_now.date()
+
+def get_diary_datetime():
+    """
+    返回完整的日记日期时间对象，使用当地时间凌晨5点为界线
+    """
+    # 获取日记日期部分（考虑5点界限）
+    diary_date = get_diary_date()
+    
+    # 获取当前的本地时间
+    local_tz = pytz.timezone('Asia/Taipei')
+    utc_now = datetime.utcnow().replace(tzinfo=pytz.UTC)
+    local_now = utc_now.astimezone(local_tz)
+    
+    # 创建一个新的datetime对象，使用日记日期和当前时间
+    result = datetime.combine(diary_date, local_now.time())
+    # 确保结果是不带时区信息的naive datetime，因为SQLAlchemy默认使用naive datetime
+    return result
+
+================
 File: grok_chatbot/docker-compose.yml
 ================
 services:
@@ -14033,6 +14290,143 @@ if __name__ == "__main__":
     print("密鑰生成完成！")
 
 ================
+File: grok_chatbot/MODELS_GUIDE.md
+================
+# 使用多模型配置指南
+
+## 概述
+
+URDiary 現在支持多種 Grok 模型，包括 Grok 2 和 Grok 3。這個指南說明如何配置和使用這些模型。
+
+## 配置
+
+在 `.env` 文件中，添加以下配置：
+
+```
+# 模型設定
+DEFAULT_MODEL=grok3  # 可選值: grok2, grok3
+AUTO_USE_LATEST_MODEL=True  # 如果模型不可用，是否自動使用最新的可用模型
+```
+
+### 配置選項說明
+
+- `DEFAULT_MODEL`: 設定默認使用的模型，選項：
+  - `grok2`: 使用 grok-2-latest 模型
+  - `grok3`: 使用 grok-3-latest 模型
+  
+- `AUTO_USE_LATEST_MODEL`: 設定當指定模型不可用時，是否自動使用最新可用模型
+  - `True`: 自動使用最新可用模型
+  - `False`: 不自動切換，返回錯誤
+
+## API 使用方法
+
+現在所有的 API 端點都支持指定模型，通過添加 `model` 參數來實現：
+
+### 基本聊天 API
+
+```json
+POST /chat/
+
+{
+  "user_id": "your_user_id",
+  "message": "Your message",
+  "model": "grok3"  // 可選，不提供時使用 DEFAULT_MODEL
+}
+```
+
+### 增強聊天 API
+
+```json
+POST /chat/enhanced/
+
+{
+  "user_id": "your_user_id",
+  "numeric_user_id": 1,
+  "message": "Your message",
+  "model": "grok3"  // 可選，不提供時使用 DEFAULT_MODEL
+}
+```
+
+### 結束聊天並生成日記
+
+```json
+POST /chat/end/
+
+{
+  "user_id": "your_user_id",
+  "numeric_user_id": 1,
+  "exclude_interaction_notes": false,
+  "model": "grok3"  // 可選，不提供時使用 DEFAULT_MODEL
+}
+```
+
+## 響應格式
+
+所有 API 響應現在都會包含 `model_used` 字段，指示實際使用的模型：
+
+```json
+{
+  "response": "AI 回應內容",
+  "model_used": "grok3"
+}
+```
+
+## 實用提示
+
+1. Grok 3 模型提供更強的能力，但在某些情況下可能不如 Grok 2 穩定或可預測。
+2. 如果您的應用對模型特定行為有依賴，建議指定固定的模型而不是使用默認值。
+3. 在生產環境中，建議設置 `AUTO_USE_LATEST_MODEL=True` 以提高系統可用性。
+
+## 代碼示例
+
+### 前端 JavaScript 示例
+
+```javascript
+// 指定模型發送消息
+async function sendMessageWithModel(message, model) {
+  const response = await fetch('/api/chat/enhanced/', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      user_id: currentUserId,
+      numeric_user_id: numericUserId, 
+      message: message,
+      model: model // 指定使用 grok3 或 grok2
+    })
+  });
+  
+  const data = await response.json();
+  console.log(`使用的模型: ${data.model_used}`);
+  return data.response;
+}
+```
+
+### 後端 Python 示例
+
+```python
+from grok_client import send_to_model, MODELS
+from config import DEFAULT_MODEL
+
+# 靈活選擇模型
+def process_with_best_model(message, preferred_model=None):
+    model = preferred_model or DEFAULT_MODEL
+    
+    # 確保模型有效
+    if model not in MODELS:
+        model = DEFAULT_MODEL
+        
+    # 使用選定的模型
+    response = send_to_model([
+        {"role": "system", "content": "系統提示"},
+        {"role": "user", "content": message}
+    ], model)
+    
+    return response
+```
+
+================
 File: grok_chatbot/tests/__init__.py
 ================
 # tests包初始化文件
@@ -14417,9 +14811,114 @@ if __name__ == "__main__":
 ================
 File: grok_chatbot/tests/README.md
 ================
-# URDiary API 测试工具
+# URDiary API测试工具
 
-这个测试工具用于测试URDiary后端API的各个端点，帮助开发人员在修改后端代码后快速验证API功能是否正常。
+此目录包含用于测试URDiary API的脚本和工具。
+
+## 环境准备
+
+在运行测试之前，请确保安装了所需的依赖：
+
+```bash
+pip install -r requirements.txt
+```
+
+## 测试工具说明
+
+### api_test.py
+
+综合API测试工具，可以测试所有的API端点。
+
+使用方法：
+
+```bash
+python api_test.py --host http://localhost:8000 --verbose
+```
+
+参数说明：
+- `--host`: 指定API服务器地址 (默认: http://localhost:8000)
+- `--verbose`: 显示详细输出
+
+### test_api_directly.py
+
+简单的API直接测试工具，用于快速测试基本的API功能。
+
+使用方法：
+
+```bash
+python test_api_directly.py
+```
+
+此工具会测试三个主要端点：
+- 基本聊天API
+- 增强聊天API
+- 结束聊天API
+
+### test_multi_model.py
+
+多模型支持测试工具，用于测试是否正确实现了grok2和grok3的模型支持。
+
+使用方法：
+
+```bash
+python test_multi_model.py
+```
+
+此工具会自动测试：
+1. 使用默认模型的情况
+2. 使用grok2模型的情况
+3. 使用grok3模型的情况
+
+### test_model_cmd.py
+
+命令行模型测试工具，用于从命令行快速测试不同模型。
+
+使用方法：
+
+```bash
+# 使用默认模型测试基本聊天API
+python test_model_cmd.py
+
+# 指定使用grok2模型
+python test_model_cmd.py --model grok2
+
+# 指定使用grok3模型
+python test_model_cmd.py --model grok3
+
+# 测试增强聊天API
+python test_model_cmd.py --enhanced
+
+# 自定义测试消息
+python test_model_cmd.py --message "你支持哪些功能？" --model grok3
+```
+
+参数说明：
+- `--model`, `-m`: 指定要测试的模型 (可选值: grok2, grok3)
+- `--message`, `-t`: 指定测试消息内容 (默认: "你好，请告诉我你是哪个模型版本？")
+- `--enhanced`, `-e`: 使用增强聊天API进行测试
+- `--user-id`, `-u`: 指定用户ID (numeric_user_id, 默认为1)
+
+## 测试多模型功能
+
+要验证多模型支持是否正确实现，可以通过以下步骤进行测试：
+
+1. 首先运行完整的多模型测试：
+
+```bash
+python test_multi_model.py
+```
+
+2. 然后分别测试不同模型的响应：
+
+```bash
+# 测试 grok2
+python test_model_cmd.py --model grok2 --message "请告诉我你是哪个版本的模型"
+
+# 测试 grok3
+python test_model_cmd.py --model grok3 --message "请告诉我你是哪个版本的模型"
+```
+
+3. 检查响应中的 `model_used` 字段，确认是否与请求中指定的模型一致。
 
 ## 功能特点
 
@@ -14511,6 +15010,351 @@ File: grok_chatbot/tests/tempCodeRunnerFile.py
 test_username
 
 ================
+File: grok_chatbot/tests/test_api_directly.py
+================
+import requests
+import json
+
+def test_chat_api():
+    """Test the basic chat API"""
+    print("Testing basic chat API...")
+    try:
+        response = requests.post(
+            "http://localhost:8000/chat/",
+            json={"user_id": "test_user", "message": "Hello from test script"}
+        )
+        print(f"Status code: {response.status_code}")
+        try:
+            print(f"Response: {json.dumps(response.json(), indent=2)}")
+        except:
+            print(f"Raw response: {response.text}")
+    except Exception as e:
+        print(f"Error: {e}")
+
+def test_enhanced_chat_api():
+    """Test the enhanced chat API"""
+    print("\nTesting enhanced chat API...")
+    try:
+        response = requests.post(
+            "http://localhost:8000/chat/enhanced/",
+            json={
+                "user_id": "test_user", 
+                "numeric_user_id": 1, 
+                "message": "Hello from enhanced test"
+            }
+        )
+        print(f"Status code: {response.status_code}")
+        try:
+            print(f"Response: {json.dumps(response.json(), indent=2)}")
+        except:
+            print(f"Raw response: {response.text}")
+    except Exception as e:
+        print(f"Error: {e}")
+
+def test_end_chat_api():
+    """Test the end chat API"""
+    print("\nTesting end chat API...")
+    try:
+        response = requests.post(
+            "http://localhost:8000/chat/end/",
+            json={
+                "user_id": "test_user", 
+                "numeric_user_id": 1,
+                "exclude_interaction_notes": False
+            }
+        )
+        print(f"Status code: {response.status_code}")
+        try:
+            print(f"Response: {json.dumps(response.json(), indent=2)}")
+        except:
+            print(f"Raw response: {response.text}")
+    except Exception as e:
+        print(f"Error: {e}")
+
+if __name__ == "__main__":
+    print("=== Direct API Testing ===")
+    # Test the basic chat API
+    test_chat_api()
+    
+    # Test the enhanced chat API
+    test_enhanced_chat_api()
+    
+    # Test the end chat API
+    test_end_chat_api()
+    
+    print("\n=== Testing complete ===")
+
+================
+File: grok_chatbot/tests/test_model_cmd.py
+================
+#!/usr/bin/env python
+import sys
+import os
+import requests
+import json
+import argparse
+
+# 添加项目根目录到Python路径
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
+def test_chat(model, message):
+    """测试基本聊天API"""
+    print(f"使用模型 {model} 测试基本聊天API...")
+    try:
+        payload = {
+            "user_id": "test_user",
+            "message": message
+        }
+        
+        # 如果指定了模型，将其添加到请求中
+        if model:
+            payload["model"] = model
+            
+        response = requests.post(
+            "http://localhost:8000/chat/",
+            json=payload
+        )
+        
+        print(f"状态码: {response.status_code}")
+        
+        if response.status_code == 200:
+            result = response.json()
+            print(f"响应内容: {json.dumps(result, indent=2, ensure_ascii=False)}")
+            
+            # 输出使用的模型
+            if "model_used" in result:
+                print(f"\n实际使用的模型: {result['model_used']}")
+        else:
+            print(f"错误响应: {response.text}")
+    except Exception as e:
+        print(f"错误: {e}")
+
+def test_enhanced_chat(model, message, numeric_user_id=1):
+    """测试增强聊天API"""
+    print(f"\n使用模型 {model} 测试增强聊天API...")
+    try:
+        payload = {
+            "user_id": "test_user",
+            "numeric_user_id": numeric_user_id,
+            "message": message
+        }
+        
+        # 如果指定了模型，将其添加到请求中
+        if model:
+            payload["model"] = model
+            
+        response = requests.post(
+            "http://localhost:8000/chat/enhanced/",
+            json=payload
+        )
+        
+        print(f"状态码: {response.status_code}")
+        
+        if response.status_code == 200:
+            result = response.json()
+            print(f"响应内容: {json.dumps(result, indent=2, ensure_ascii=False)}")
+            
+            # 输出使用的模型
+            if "model_used" in result:
+                print(f"\n实际使用的模型: {result['model_used']}")
+        else:
+            print(f"错误响应: {response.text}")
+    except Exception as e:
+        print(f"错误: {e}")
+
+def main():
+    """主函数"""
+    parser = argparse.ArgumentParser(description='测试Grok多模型支持')
+    parser.add_argument('--model', '-m', choices=['grok2', 'grok3'], help='要测试的模型，不指定则使用默认模型')
+    parser.add_argument('--message', '-t', default="你好，请告诉我你是哪个模型版本？", help='测试消息内容')
+    parser.add_argument('--enhanced', '-e', action='store_true', help='是否使用增强聊天API')
+    parser.add_argument('--user-id', '-u', type=int, default=1, help='用户ID (numeric_user_id)')
+    args = parser.parse_args()
+    
+    # 打印测试信息
+    print("=" * 50)
+    print(f"模型选择测试工具")
+    print("=" * 50)
+    print(f"测试消息: {args.message}")
+    if args.model:
+        print(f"指定模型: {args.model}")
+    else:
+        print("使用默认模型")
+    
+    if args.enhanced:
+        test_enhanced_chat(args.model, args.message, args.user_id)
+    else:
+        test_chat(args.model, args.message)
+        
+    print("\n测试完成！")
+
+if __name__ == "__main__":
+    main()
+
+================
+File: grok_chatbot/tests/test_multi_model.py
+================
+import requests
+import json
+import sys
+import os
+import time
+from colorama import init, Fore, Style
+
+# 初始化colorama
+init()
+
+# 添加项目根目录到Python路径
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
+def print_success(message):
+    print(f"{Fore.GREEN}✅ {message}{Style.RESET_ALL}")
+
+def print_error(message):
+    print(f"{Fore.RED}❌ {message}{Style.RESET_ALL}")
+
+def print_info(message):
+    print(f"{Fore.CYAN}ℹ️ {message}{Style.RESET_ALL}")
+
+def print_header(message):
+    print(f"\n{Fore.BLUE}{'='*10} {message} {'='*10}{Style.RESET_ALL}")
+
+def test_model(model_name):
+    """测试特定模型"""
+    print_header(f"测试 {model_name} 模型")
+    
+    try:
+        # 测试基本聊天API
+        response = requests.post(
+            "http://localhost:8000/chat/",
+            json={
+                "user_id": "test_user",
+                "message": f"Hello, what model are you? This is a test for {model_name}",
+                "model": model_name
+            }
+        )
+        
+        if response.status_code == 200:
+            result = response.json()
+            print_success(f"基本聊天API成功 (状态码: {response.status_code})")
+            print(f"响应: {json.dumps(result, indent=2, ensure_ascii=False)}")
+            
+            # 验证模型是否正确
+            if result.get("model_used") == model_name:
+                print_success(f"模型验证成功: 使用了 {model_name}")
+            else:
+                print_error(f"模型验证失败: 预期 {model_name}, 实际 {result.get('model_used')}")
+        else:
+            print_error(f"请求失败 (状态码: {response.status_code})")
+            print(f"错误: {response.text}")
+    except Exception as e:
+        print_error(f"测试时出错: {e}")
+        return False
+    
+    try:
+        # 测试增强聊天API
+        print_info("\n测试增强聊天API...")
+        response = requests.post(
+            "http://localhost:8000/chat/enhanced/",
+            json={
+                "user_id": "test_user", 
+                "numeric_user_id": 1, 
+                "message": f"Tell me about your capabilities (testing {model_name})",
+                "model": model_name
+            }
+        )
+        
+        if response.status_code == 200:
+            result = response.json()
+            print_success(f"增强聊天API成功 (状态码: {response.status_code})")
+            print(f"响应: {json.dumps(result, indent=2, ensure_ascii=False)}")
+            
+            # 验证模型是否正确
+            if result.get("model_used") == model_name:
+                print_success(f"模型验证成功: 使用了 {model_name}")
+            else:
+                print_error(f"模型验证失败: 预期 {model_name}, 实际 {result.get('model_used')}")
+        else:
+            print_error(f"请求失败 (状态码: {response.status_code})")
+            print(f"错误: {response.text}")
+    except Exception as e:
+        print_error(f"测试时出错: {e}")
+        return False
+    
+    return True
+
+def test_default_model():
+    """测试默认模型配置"""
+    print_header("测试默认模型配置")
+    
+    try:
+        # 不指定模型，测试是否使用默认模型
+        response = requests.post(
+            "http://localhost:8000/chat/",
+            json={
+                "user_id": "test_user",
+                "message": "Hello, what model are you? This is a default model test."
+            }
+        )
+        
+        if response.status_code == 200:
+            result = response.json()
+            print_success(f"请求成功 (状态码: {response.status_code})")
+            print(f"响应: {json.dumps(result, indent=2, ensure_ascii=False)}")
+            
+            # 显示实际使用的模型
+            used_model = result.get("model_used")
+            if used_model:
+                print_info(f"使用的默认模型: {used_model}")
+            else:
+                print_error("响应中未找到模型信息")
+        else:
+            print_error(f"请求失败 (状态码: {response.status_code})")
+            print(f"错误: {response.text}")
+    except Exception as e:
+        print_error(f"测试时出错: {e}")
+        return False
+    
+    return True
+
+def run_all_tests():
+    """运行所有模型测试"""
+    start_time = time.time()
+    print_header("开始多模型支持测试")
+    
+    # 测试默认模型
+    default_result = test_default_model()
+    
+    # 测试Grok 2模型
+    grok2_result = test_model("grok2")
+    
+    # 测试Grok 3模型
+    grok3_result = test_model("grok3")
+    
+    # 打印总结
+    print_header("测试结果总结")
+    if default_result:
+        print_success("默认模型测试: 通过")
+    else:
+        print_error("默认模型测试: 失败")
+        
+    if grok2_result:
+        print_success("Grok 2模型测试: 通过")
+    else:
+        print_error("Grok 2模型测试: 失败")
+        
+    if grok3_result:
+        print_success("Grok 3模型测试: 通过")
+    else:
+        print_error("Grok 3模型测试: 失败")
+    
+    duration = time.time() - start_time
+    print_info(f"测试用时: {duration:.2f} 秒")
+
+if __name__ == "__main__":
+    run_all_tests()
+
+================
 File: README.md
 ================
 # URDairy – AI-Powered Emotional Support and Diary System
@@ -14522,7 +15366,7 @@ File: README.md
 ## Features
 - **Chat System**: Interact via text or voice with an empathetic AI companion.  
 - **Daily Diary**: Automatically generates a structured diary (400-600 words) from conversations, including events, emotions (with valence/arousal scores), reflections, and next steps.  
-- **Interaction Diary**: Tracks long-term insights like life domains (e.g., family, work), emotional patterns, and key events, akin to a counselor’s notes.  
+- **Interaction Diary**: Tracks long-term insights like life domains (e.g., family, work), emotional patterns, and key events, akin to a counselor's notes.  
 - **Privacy-First**: Daily diaries are stored locally, while interaction diaries reside on the server.  
 
 ## Tech Stack
@@ -14532,7 +15376,7 @@ File: README.md
 - **Deployment**: Docker-ready for easy setup  
 
 ## Diary Generation Flow
-URDairy’s diary generation process is a cyclical workflow that ensures continuity and personalization. Below is the flow represented in [Mermaid](https://mermaid-js.github.io/mermaid/#/) syntax:
+URDairy's diary generation process is a cyclical workflow that ensures continuity and personalization. Below is the flow represented in [Mermaid](https://mermaid-js.github.io/mermaid/#/) syntax:
 
 
 ```mermaid
@@ -14540,6 +15384,52 @@ graph TD
     A[Interaction Diary] -->|Input before chat to recall memory| B[Conversation]
     B -->|Update interaction diary| C[Today Diary]
     C --> D[New Interaction Diary]
+
+```
+
+## Multi-Model Support
+
+URDairy now supports multiple Grok AI models:
+
+- **Grok 2**: Original Grok model
+- **Grok 3**: New enhanced Grok model
+
+You can set the default model in the environment configuration or dynamically choose different models at runtime. For details, please refer to [grok_chatbot/MODELS_GUIDE.md](grok_chatbot/MODELS_GUIDE.md).
+
+## Development Environment Setup
+
+### Frontend (Electron)
+
+```bash
+cd desktop
+npm install
+npm start
+```
+
+### Backend (FastAPI)
+
+```bash
+cd grok_chatbot
+pip install -r requirements.txt
+python -m app.main
+```
+
+## Configuration
+
+Before running the application, the following configuration is required:
+
+1. Create `.env` file (reference `.env.example`)
+2. Add necessary API keys and configurations
+3. Configure database connection parameters
+
+## Special Thanks
+
+- xAI team for providing Grok API
+- All contributors and test users
+
+## License
+
+MIT License
 
 ================
 File: Test.py

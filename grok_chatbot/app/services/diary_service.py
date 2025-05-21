@@ -3,7 +3,12 @@ from memory_manager import get_chat_history
 from database import crud
 from database import SessionLocal
 import re
+import os
 from typing import List, Dict, Any, Tuple
+
+# 獲取提示詞目錄路徑
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+PROMPTS_DIR = os.path.join(BASE_DIR, "services", "prompts")
 
 # Sensitive words detection
 SENSITIVE_WORDS = [
@@ -25,6 +30,17 @@ SUPPORT_MESSAGE = """
 
 請記住，尋求幫助是勇氣和力量的表現，而不是軟弱。
 """
+
+def read_prompt_file(filename):
+    """安全讀取提示詞文件"""
+    try:
+        prompt_path = os.path.join(PROMPTS_DIR, filename)
+        with open(prompt_path, "r", encoding="utf-8") as f:
+            return f.read()
+    except Exception as e:
+        print(f"讀取提示詞文件 {filename} 時發生錯誤: {str(e)}")
+        # 返回一個簡單的備用提示詞
+        return "請根據對話歷史生成相應內容。"
 
 def check_sensitive_content(message: str) -> bool:
     """Check if message contains sensitive words related to self-harm or harm to others"""
@@ -58,33 +74,21 @@ def generate_diary_from_chat(user_id: str) -> Tuple[str, Dict[str, float]]:
     
     chat_content = "\n".join(formatted_history)
     
-    # Prompt for diary generation
-    diary_prompt = f"""
-    請根據以下對話歷史，以第一人稱（我）為使用者寫一篇今日日記。
-    日記應該總結使用者今天分享的重要事件、想法和感受。
-    日記風格應該溫暖、有同理心，但不要過於情緒化。
-    長度應在300-500字之間。
-    請不要直接引用對話內容，而是根據對話概括使用者的一天。
-    請不要提及這是AI生成的內容。
-
-    對話歷史：
-    {chat_content}
-
-    在日記後，請另外用JSON格式提供情緒評分：
-    {{
-        "valence": 0-1之間的數值（愉悅程度，0為非常負面，1為非常正面）,
-        "arousal": 0-1之間的數值（情緒激動程度，0為非常平靜，1為非常激動）
-    }}
+    # 讀取日記生成提示詞
+    prompt_template = read_prompt_file("daily_note_prompt.txt")
     
-    只返回日記內容和JSON格式的情緒評分，不要有多餘的說明。
-    """
+    # 準備提示詞
+    diary_prompt = prompt_template.format(
+        chat_history=chat_content,
+        interaction_note="請忽略此部分，專注於今日對話生成日記。"
+    )
     
     try:
         # Call Grok API to generate diary
         completion = client.chat.completions.create(
-            model="grok-2-latest",
+            model="grok-3-latest",
             messages=[
-                {"role": "system", "content": "You are a helpful, supportive diary writer."},
+                {"role": "system", "content": "你是一位溫暖且有洞察力的日記作者."},
                 {"role": "user", "content": diary_prompt}
             ]
         )

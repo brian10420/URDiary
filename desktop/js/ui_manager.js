@@ -674,6 +674,34 @@ const UIManager = (function() {
         }
     }
     
+    // 顯示帶有訊息的加載動畫
+    function showLoadingSpinner(message = '加載中...') {
+        if (elements.spinner) {
+            // 檢查是否有加載訊息元素
+            let messageElement = elements.spinner.querySelector('.loading-message');
+            
+            // 如果沒有訊息元素，則創建一個
+            if (!messageElement) {
+                messageElement = document.createElement('div');
+                messageElement.className = 'loading-message';
+                elements.spinner.appendChild(messageElement);
+            }
+            
+            // 設置訊息內容
+            messageElement.textContent = message;
+            
+            // 顯示加載動畫
+            elements.spinner.style.display = 'flex';
+        }
+    }
+    
+    // 隱藏加載動畫
+    function hideLoadingSpinner() {
+        if (elements.spinner) {
+            elements.spinner.style.display = 'none';
+        }
+    }
+    
     // 顯示提示消息
     function showToast(message, duration = 3000) {
         // 移除現有的提示
@@ -747,6 +775,8 @@ const UIManager = (function() {
         toggleTheme: handleThemeToggle,
         showSpinner,
         hideSpinner,
+        showLoadingSpinner,
+        hideLoadingSpinner,
         showToast,
         showError
     };

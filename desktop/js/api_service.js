@@ -680,9 +680,9 @@ const ApiService = (function() {
     }
     
     // 發送聊天消息
-    async function sendChatMessage(message) {
+    async function sendChatMessage(message, model = null) {
         try {
-            console.log('開始發送聊天消息:', message.substring(0, 50) + (message.length > 50 ? '...' : ''));
+            console.log(`開始發送聊天消息${model ? `(模型: ${model})` : ''}:`, message.substring(0, 50) + (message.length > 50 ? '...' : ''));
             
             // 檢查網絡連接
             if (!navigator.onLine) {
@@ -703,7 +703,8 @@ const ApiService = (function() {
                 body: {
                     user_id: currentUserId,
                     numeric_user_id: numericUserId,
-                    message: message
+                    message: message,
+                    model: model // 添加模型參數
                 }
             });
             
@@ -788,7 +789,8 @@ const ApiService = (function() {
                     message: responseMessage,
                     response: responseMessage,
                     is_mock: true,
-                    error_detail: errorDetail || error.message
+                    error_detail: errorDetail || error.message,
+                    model_used: model || 'mock'
                 };
             }
             
@@ -802,9 +804,9 @@ const ApiService = (function() {
     }
     
     // 結束聊天並生成日記
-    async function endChat() {
+    async function endChat(model = null) {
         try {
-            console.log('調用API結束聊天並生成日記');
+            console.log(`調用API結束聊天並生成日記${model ? `(模型: ${model})` : ''}`);
             
             // 檢查網絡連接
             if (!navigator.onLine) {
@@ -825,7 +827,8 @@ const ApiService = (function() {
                 body: {
                     user_id: currentUserId,
                     numeric_user_id: numericUserId,
-                    exclude_interaction_notes: true  // 添加參數，防止將互動筆記融入日記
+                    exclude_interaction_notes: true,  // 添加參數，防止將互動筆記融入日記
+                    model: model  // 添加模型參數
                 }
             });
             
@@ -888,6 +891,9 @@ const ApiService = (function() {
                     mockData.diary.content += errorNote;
                     mockData.error_detail = errorDetail;
                 }
+                
+                // 添加使用的模型信息
+                mockData.model_used = model || 'mock';
                 
                 return mockData;
             }

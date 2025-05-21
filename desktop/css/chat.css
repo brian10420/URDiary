@@ -37,6 +37,38 @@
     gap: var(--spacing-sm);
 }
 
+/* 模型選擇器 */
+.model-selector-container {
+    margin: 0 15px 10px;
+    text-align: right;
+    font-size: 12px;
+    color: #666;
+    display: flex;
+    justify-content: flex-end;
+    align-items: center;
+}
+
+#model-selector {
+    padding: 4px 8px;
+    border-radius: 4px;
+    border: 1px solid var(--border-color);
+    background-color: var(--bg-color);
+    color: var(--text-color);
+    font-size: 12px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+#model-selector:hover {
+    border-color: var(--primary-color);
+}
+
+#model-selector:focus {
+    outline: none;
+    border-color: var(--accent-color);
+    box-shadow: 0 0 0 2px rgba(var(--accent-color-rgb), 0.2);
+}
+
 /* 聊天消息區域 */
 .chat-messages {
     flex: 1;

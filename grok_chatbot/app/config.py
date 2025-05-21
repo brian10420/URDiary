@@ -20,6 +20,11 @@ TOKEN_EXPIRE_MINUTES = int(os.getenv("TOKEN_EXPIRE_MINUTES", "1440"))  # 默認2
 GROK_API_URL = os.getenv("GROK_API_URL", "https://api.x.ai/v1")
 XAI_API_KEY = os.getenv("XAI_API_KEY")
 
+# 默認模型設定
+DEFAULT_MODEL = os.getenv("DEFAULT_MODEL", "grok3")  # 可選值: grok2, grok3
+# 如果未指定模型，是否自動選擇最新版本
+AUTO_USE_LATEST_MODEL = os.getenv("AUTO_USE_LATEST_MODEL", "True").lower() in ("true", "1", "yes")
+
 # Redis 相關
 REDIS_HOST = os.getenv("REDIS_HOST", "redis")
 REDIS_PORT = int(os.getenv("REDIS_PORT", 6379))
@@ -64,6 +69,8 @@ def get_config():
         "ALGORITHM": ALGORITHM,
         "TOKEN_EXPIRE_MINUTES": TOKEN_EXPIRE_MINUTES,
         "GROK_API_URL": GROK_API_URL,
+        "DEFAULT_MODEL": DEFAULT_MODEL,
+        "AUTO_USE_LATEST_MODEL": AUTO_USE_LATEST_MODEL,
         "REDIS_HOST": REDIS_HOST,
         "REDIS_PORT": REDIS_PORT,
         "REDIS_DB": REDIS_DB,

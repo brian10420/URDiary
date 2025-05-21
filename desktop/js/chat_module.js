@@ -7,10 +7,11 @@ const ChatModule = (function() {
     let userAvatar = null;
     let botAvatar = 'assets/icon.jpg';
     let isProcessing = false;
+    let currentModel = null; // 當前使用的模型
     
     // DOM元素
     let chatContainer, chatMessagesContainer, userInputElement, 
-        sendButtonElement, endChatBtnElement, clearChatBtnElement;
+        sendButtonElement, endChatBtnElement, clearChatBtnElement, modelSelectorElement;
     
     // 初始化
     function init() {
@@ -42,6 +43,9 @@ const ChatModule = (function() {
         
         // 確保機器人頭像存在
         ensureBotAvatar();
+        
+        // 初始化模型選擇器
+        initModelSelector();
         
         // 綁定發送按鈕點擊事件
         if (sendButtonElement) {
@@ -85,6 +89,72 @@ const ChatModule = (function() {
         loadChatHistory();
         
         console.log('聊天模塊初始化完成');
+    }
+    
+    // 初始化模型選擇器
+    function initModelSelector() {
+        // 查找聊天行為區域，如果是input-wrapper，查找其父級
+        const inputArea = document.querySelector('.chat-input-area') || 
+                          document.querySelector('.chat-input-wrapper')?.parentElement;
+        
+        if (!inputArea) {
+            console.warn('無法找到聊天輸入區域，無法添加模型選擇器');
+            return;
+        }
+        
+        // 檢查是否已有模型選擇器
+        if (document.getElementById('model-selector')) {
+            modelSelectorElement = document.getElementById('model-selector');
+            console.log('模型選擇器已存在');
+            return;
+        }
+        
+        // 創建模型選擇器元素
+        const selectorDiv = document.createElement('div');
+        selectorDiv.className = 'model-selector-container';
+        selectorDiv.style.cssText = 'margin: 0 15px 10px; text-align: right; font-size: 12px; color: #666;';
+        
+        // 獲取可用模型
+        const availableModels = CONFIG?.MODELS?.AVAILABLE || ['grok2', 'grok3'];
+        const defaultModel = CONFIG?.MODELS?.DEFAULT || 'grok3';
+        
+        // 設置當前模型
+        currentModel = localStorage.getItem('urDiary_current_model') || defaultModel;
+        
+        // 創建選擇器HTML
+        selectorDiv.innerHTML = `
+            <label for="model-selector" style="margin-right: 5px;">模型: </label>
+            <select id="model-selector" style="padding: 4px 8px; border-radius: 4px; border: 1px solid #ddd;">
+                ${availableModels.map(model => {
+                    const displayName = CONFIG?.MODELS?.DISPLAY_NAMES?.[model] || model;
+                    return `<option value="${model}" ${model === currentModel ? 'selected' : ''}>${displayName}</option>`;
+                }).join('')}
+            </select>
+        `;
+        
+        // 如果有原有選擇器，則替換，否則插入到輸入區域前
+        const existingSelector = document.querySelector('.model-selector-container');
+        if (existingSelector) {
+            inputArea.replaceChild(selectorDiv, existingSelector);
+        } else {
+            inputArea.insertBefore(selectorDiv, inputArea.firstChild);
+        }
+        
+        // 獲取選擇器元素
+        modelSelectorElement = document.getElementById('model-selector');
+        
+        // 綁定變更事件
+        if (modelSelectorElement) {
+            modelSelectorElement.addEventListener('change', function(e) {
+                currentModel = e.target.value;
+                console.log(`模型已切換為: ${currentModel}`);
+                localStorage.setItem('urDiary_current_model', currentModel);
+                
+                // 添加系統提示消息
+                const displayName = CONFIG?.MODELS?.DISPLAY_NAMES?.[currentModel] || currentModel;
+                addSystemMessage(`已切換到模型: ${displayName}`);
+            });
+        }
     }
     
     // 載入用戶頭像
@@ -306,8 +376,12 @@ const ChatModule = (function() {
                 throw new Error('API服務不完整，缺少sendChatMessage方法');
             }
             
+            // 獲取當前選擇的模型
+            const selectedModel = currentModel || CONFIG?.MODELS?.DEFAULT || 'grok3';
+            console.log(`使用模型 ${selectedModel} 處理用戶輸入`);
+            
             // 調用API服務發送消息
-            const response = await ApiService.sendChatMessage(userInput);
+            const response = await ApiService.sendChatMessage(userInput, selectedModel);
             
             // 移除思考中消息
             const thinkingMessage = document.getElementById(thinkingMessageId);
@@ -334,8 +408,22 @@ const ChatModule = (function() {
                 messageContent = '抱歉，我無法理解您的請求。';
             }
             
+            // 添加模型信息到消息末尾（如果有）
+            const modelUsed = response.model_used || selectedModel;
+            if (modelUsed && typeof messageContent === 'string') {
+                const modelDisplayName = CONFIG?.MODELS?.DISPLAY_NAMES?.[modelUsed] || modelUsed;
+                messageContent = messageContent;
+            }
+            
             // 添加系統消息
             addSystemMessage(messageContent);
+            
+            // 如果響應中包含模型信息，但和當前選擇的不同，更新選擇器
+            if (response.model_used && response.model_used !== selectedModel && modelSelectorElement) {
+                modelSelectorElement.value = response.model_used;
+                currentModel = response.model_used;
+                localStorage.setItem('urDiary_current_model', currentModel);
+            }
             
             // 保存聊天歷史
             saveChatHistory();
@@ -496,127 +584,94 @@ const ChatModule = (function() {
                 return;
             }
             
+            // 獲取當前選擇的模型
+            const selectedModel = currentModel || CONFIG?.MODELS?.DEFAULT || 'grok3';
+            console.log(`使用模型 ${selectedModel} 結束聊天並生成日記`);
+            
             // 設置處理狀態
             isProcessing = true;
             
-            // 顯示加載動畫
-            if (typeof UIManager !== 'undefined' && UIManager.showSpinner) {
-                UIManager.showSpinner();
+            // 禁用輸入和按鈕
+            userInputElement.disabled = true;
+            if (endChatBtnElement) endChatBtnElement.disabled = true;
+            
+            // 顯示載入狀態
+            try {
+                UIManager.showLoadingSpinner('生成日記中...');
+            } catch (error) {
+                console.warn('無法顯示載入動畫:', error);
             }
             
-            // 保存當前聊天歷史
-            saveChatHistory();
-            console.log('聊天歷史已保存');
+            // 調用API服務結束聊天
+            const response = await ApiService.endChat(selectedModel);
             
-            try {
-                // 檢查ApiService是否存在
-                if (typeof ApiService === 'undefined') {
-                    console.error('ApiService未定義，無法結束聊天');
-                    throw new Error('API服務未初始化，無法生成日記');
-                }
-                
-                // 檢查endChat方法是否存在
-                if (typeof ApiService.endChat !== 'function') {
-                    console.error('ApiService.endChat方法未定義');
-                    throw new Error('API服務不完整，缺少endChat方法');
-                }
-                
-                // 調用API結束聊天並生成日記
-                console.log('調用API結束聊天');
-                const response = await ApiService.endChat();
-                console.log('聊天結束API響應:', response);
-                
-                // 顯示成功消息
-                if (typeof UIManager !== 'undefined' && UIManager.showToast) {
-                    UIManager.showToast('已生成日記');
-                }
-                
-                // 清空聊天記錄
-                chatHistory = [];
-                if (chatMessagesContainer) {
-                    chatMessagesContainer.innerHTML = '';
-                }
-                saveChatHistory();
-                
-                // 添加歡迎消息
-                addSystemMessage("感謝您的分享！我已經為您生成了一篇日記。您可以在「日記」頁面中查看。");
-                
-                // 自動切換到日記頁面
-                const shouldAutoSwitch = CONFIG && CONFIG.APP && 
-                    typeof CONFIG.APP.AUTO_SWITCH_TO_DIARY_AFTER_END !== 'undefined' ? 
-                    CONFIG.APP.AUTO_SWITCH_TO_DIARY_AFTER_END : true;
-                
-                if (shouldAutoSwitch && typeof UIManager !== 'undefined' && UIManager.switchView) {
-                    console.log('自動切換到日記頁面');
-                    setTimeout(() => {
-                        UIManager.switchView('diary');
+            // 處理響應
+            console.log('結束聊天API響應:', response);
+            
+            // 清空聊天歷史
+            chatHistory = [];
+            saveChatHistory();
+            
+            // 顯示日記已生成消息
+            const diaryMessage = response.message || '日記已生成，您可以在日記頁面查看。';
+            addSystemMessage(diaryMessage);
+            
+            // 檢查配置是否自動切換到日記視圖
+            if (CONFIG && CONFIG.APP.AUTO_SWITCH_TO_DIARY_AFTER_END) {
+                // 0.5秒後切換到日記頁面並刷新日記列表
+                setTimeout(() => {
+                    try {
+                        // 先刷新日記列表
+                        if (typeof DiaryModule !== 'undefined' && typeof DiaryModule.loadDiaries === 'function') {
+                            console.log('刷新日記列表');
+                            DiaryModule.loadDiaries();
+                        } else {
+                            console.warn('無法刷新日記列表: DiaryModule 未定義或缺少 loadDiaries 方法');
+                        }
                         
-                        // 在切换到日记页面后刷新日记列表
-                        setTimeout(() => {
-                            // 判断DiaryModule是否存在并包含必要的方法
-                            if (typeof DiaryModule !== 'undefined') {
-                                console.log('刷新日記列表');
-                                
-                                // 重新加载日记列表
-                                if (typeof DiaryModule.loadDiaries === 'function') {
-                                    DiaryModule.loadDiaries().then(() => {
-                                        console.log('日記列表已刷新');
-                                        
-                                        // 如果有日记ID，打开最新的日记
-                                        if (response && response.diary && response.diary.id) {
-                                            console.log('打開新生成的日記:', response.diary.id);
-                                            if (typeof DiaryModule.showDiaryDetails === 'function') {
-                                                DiaryModule.showDiaryDetails(response.diary.id);
-                                            }
-                                        }
-                                    }).catch(err => {
-                                        console.error('刷新日記列表失敗:', err);
-                                    });
-                                } else {
-                                    console.warn('DiaryModule.loadDiaries方法不存在');
-                                }
-                            } else {
-                                console.warn('DiaryModule未定義，無法刷新日記列表');
-                            }
-                        }, 500); // 等待视图切换完成后再刷新
-                    }, 1500);
-                }
-            } catch (error) {
-                console.error('結束聊天失敗:', error);
-                
-                // 顯示錯誤信息
-                if (typeof UIManager !== 'undefined' && UIManager.showError) {
-                    UIManager.showError('生成日記失敗', '無法結束對話並生成日記: ' + error.message);
-                } else {
-                    alert('生成日記失敗: ' + error.message);
-                }
-                
-                // 添加錯誤消息
-                addSystemMessage("抱歉，我在生成日記時遇到了問題: " + error.message);
-                
-                // 如果是API服務未定義的錯誤，添加更詳細的提示
-                if (error.message.includes('API服務未初始化')) {
-                    addSystemMessage("請檢查API服務是否正常運行，或嘗試重新載入應用程序。");
-                }
-            } finally {
-                // 恢復處理狀態
-                isProcessing = false;
-                
-                // 隱藏加載動畫
-                if (typeof UIManager !== 'undefined' && UIManager.hideSpinner) {
-                    UIManager.hideSpinner();
+                        // 然後點擊日記頁籤
+                        const diaryTabElement = document.querySelector('[data-view="diary"]');
+                        if (diaryTabElement) {
+                            diaryTabElement.click();
+                        }
+                    } catch (error) {
+                        console.warn('自動刷新日記列表失敗:', error);
+                    }
+                }, 500);
+            } else {
+                // 即使不自動切換到日記視圖，也刷新日記列表以保持數據最新
+                if (typeof DiaryModule !== 'undefined' && typeof DiaryModule.loadDiaries === 'function') {
+                    console.log('刷新日記列表');
+                    setTimeout(() => {
+                        DiaryModule.loadDiaries();
+                    }, 500);
                 }
             }
         } catch (error) {
-            console.error('結束聊天過程出錯:', error);
-            if (typeof UIManager !== 'undefined' && UIManager.showError) {
-                UIManager.showError('錯誤', '結束聊天過程中發生錯誤: ' + error.message);
-            } else {
-                alert('錯誤: 結束聊天過程中發生錯誤: ' + error.message);
+            console.error('結束聊天失敗:', error);
+            
+            // 顯示錯誤信息
+            let errorMessage = '生成日記時出錯: ' + error.message;
+            addSystemMessage(errorMessage);
+            
+            // 如果可能，添加一條更詳細的錯誤消息
+            if (typeof ErrorHandler !== 'undefined' && typeof ErrorHandler.getDetailedErrorMessage === 'function') {
+                const detailedMessage = ErrorHandler.getDetailedErrorMessage(error, '結束聊天');
+                if (detailedMessage) {
+                    addSystemMessage(detailedMessage);
+                }
             }
+        } finally {
+            // 恢復狀態
             isProcessing = false;
-            if (typeof UIManager !== 'undefined' && UIManager.hideSpinner) {
-                UIManager.hideSpinner();
+            userInputElement.disabled = false;
+            if (endChatBtnElement) endChatBtnElement.disabled = false;
+            
+            // 關閉載入動畫
+            try {
+                UIManager.hideLoadingSpinner();
+            } catch (error) {
+                console.warn('無法隱藏載入動畫:', error);
             }
         }
     }
