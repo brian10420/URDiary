@@ -6,28 +6,23 @@
     <title>URDiary - 您的情緒日記助手</title>
     <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <link rel="stylesheet" href="css/base.css">
-    <link rel="stylesheet" href="css/chat.css">
-    <link rel="stylesheet" href="css/diary.css">
-    <!-- 移除不需要的CSS引用 -->
+    <link rel="stylesheet" href="css/styles.css">
     
-    <!-- 配置 - 必須最先加載 -->
+    <!-- 1. 配置和核心服務 - 優先加載 -->
     <script src="js/config.js"></script>
-    
-    <!-- 錯誤日誌系統 - 第二優先加載 -->
     <script src="js/error_logger.js"></script>
-    
-    <!-- 工具和服務 -->
-    <script src="js/ui_manager.js"></script>
     <script src="js/api_service.js"></script>
-    <script src="js/error_handler.js"></script>
     <script src="js/password_manager.js"></script>
-    <!-- 移除系統日誌模塊 -->
     
-    <!-- 功能模塊 -->
+    <!-- 2. UI和錯誤處理 -->
+    <script src="js/ui_manager.js"></script>
+    <script src="js/error_handler.js"></script>
+    
+    <!-- 3. 功能模塊 - 最後加載 -->
     <script src="js/chat_module.js"></script>
     <script src="js/diary_module.js"></script>
-    <!-- 移除筆記模塊 -->
+    
+    <!-- 主程序入口 - 最後加載 -->
     <script src="js/main.js"></script>
 </head>
 <body>
@@ -53,7 +48,6 @@
             <nav class="app-nav">
                 <div class="nav-item active" data-view="chat">對話</div>
                 <div class="nav-item" data-view="diary">日記</div>
-                <!-- 移除筆記和系統日誌導航項 -->
             </nav>
             
             <div class="app-tools">
@@ -190,8 +184,6 @@
                     </div>
                 </div>
             </div>
-            
-            <!-- 移除筆記視圖和系統日誌視圖 -->
         </main>
         
         <!-- 頁面底部 -->
@@ -202,7 +194,7 @@
     
     <!-- 加載動畫 -->
     <div class="loading-spinner">
-        <div class="spinner"></div>
+        <div class="loading-message">生成日記中...</div>
     </div>
     
     <!-- 錯誤提示區域 -->

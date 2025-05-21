@@ -1,46 +1,123 @@
-version: "3.8"
 
 services:
   redis:
-    image: "redis:latest"
-    container_name: "redis-server"
-    restart: always
+    image: "redis:7.2.5-alpine"
+    container_name: "urdairy-redis"
+    restart: unless-stopped
+    command: [
+      "redis-server",
+      "--requirepass", "${REDIS_PASSWORD}",
+      "--maxmemory", "256mb",
+      "--maxmemory-policy", "allkeys-lru",
+      "--appendonly", "yes"
+    ]
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+    volumes:
+      - redis_data:/data
     ports:
-      - "6379:6379"
+      - "127.0.0.1:6379:6379"
+    networks:
+      - app_network
+    deploy:
+      resources:
+        limits:
+          cpus: '0.3'
+          memory: 384M
 
   db:
-    image: postgres:latest
-    container_name: "postgres-db"
-    restart: always
+    image: postgres:16.2-alpine
+    container_name: "urdairy-db"
+    restart: unless-stopped
     environment:
-      - POSTGRES_DB=mydb
-      - POSTGRES_USER=myuser
-      - POSTGRES_PASSWORD=mypassword
-    ports:
-      - "5432:5432"
+      - POSTGRES_DB=${DB_NAME:-urdairy}
+      - POSTGRES_USER=${DB_USER:-dbuser}
+      - POSTGRES_PASSWORD=${DB_PASS}
+      - POSTGRES_HOST_AUTH_METHOD=scram-sha-256
+      # 優化設置
+      - POSTGRES_SHARED_BUFFERS=64MB
+      - POSTGRES_EFFECTIVE_CACHE_SIZE=192MB
+      - POSTGRES_WORK_MEM=4MB
+      - POSTGRES_MAINTENANCE_WORK_MEM=32MB
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-dbuser} -d ${DB_NAME:-urdairy}"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
     volumes:
-      - ./postgres_data:/var/lib/postgresql/data
+      - postgres_data:/var/lib/postgresql/data
+      - ./scripts/init-db.sql:/docker-entrypoint-initdb.d/init.sql
+    ports:
+      - "127.0.0.1:5432:5432"
+    networks:
+      - app_network
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
 
   fastapi:
-    build: .
-    container_name: "fastapi-app"
-    restart: always
-    ports:
-      - "8000:8000"
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: "urdairy-api"
+    restart: unless-stopped
     depends_on:
       - redis
       - db
     env_file:
-      - .env 
+      - .env
     environment:
-      # Redis
-      - REDIS_HOST=redis
-      - REDIS_PORT=6379
-      # PostgreSQL
-      - DB_HOST=db
-      - DB_PORT=5432
-      - DB_USER=myuser
-      - DB_PASS=mypassword
-      - DB_NAME=mydb
+      - ENV=development
+      # 進程數和工作線程設置
+      - WORKERS=2
+      - WORKER_CONNECTIONS=100
+      # 連接池設置 - 與您現有代碼一致
+      - DB_POOL_SIZE=20
+      - DB_MAX_OVERFLOW=30
+      - DB_POOL_TIMEOUT=60
+      - DB_POOL_RECYCLE=3600
+    ports:
+      - "8000:8000"
     volumes:
+      # 開發模式: 代碼熱重載
       - ./app:/app
+      # 持久化日誌和上傳
+      - app_logs:/app/logs
+      - app_uploads:/app/uploads
+    networks:
+      - app_network
+    deploy:
+      resources:
+        limits:
+          cpus: '0.8'
+          memory: 768M
+      restart_policy:
+        condition: on-failure
+        max_attempts: 3
+        window: 120s
+    command: >
+      sh -c "mkdir -p /app/logs && 
+            chown -R appuser:appuser /app/logs && 
+            uvicorn main:app --host 0.0.0.0 --port 8000 --reload"
+            
+volumes:
+  postgres_data:
+    name: urdairy_postgres_data
+  redis_data:
+    name: urdairy_redis_data
+  app_logs:
+    name: urdairy_app_logs
+  app_uploads:
+    name: urdairy_app_uploads
+
+networks:
+  app_network:
+    name: urdairy_network
+    driver: bridge

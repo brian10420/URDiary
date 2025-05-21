@@ -14,6 +14,7 @@ from services.interaction_service import (
     process_interaction_note_update,
     get_latest_interaction_note
 )
+from services.analytics_service import analyze_emotion_trends
 
 router = APIRouter()
 
@@ -105,6 +106,32 @@ def get_diary(diary_id: int, db: Session = Depends(get_db)):
         "created_at": diary.created_at.isoformat()
     }
 
+@router.get("/analytics/emotion/{user_id}", response_model=Dict[str, Any],
+          summary="獲取情緒分析數據",
+          description="分析用戶日記中的情緒變化趨勢")
+def get_emotion_analytics(user_id: int, time_range: str = "month", db: Session = Depends(get_db)):
+    """獲取用戶情緒分析數據"""
+    # 先檢查用戶是否存在
+    user = crud.get_user(db, user_id)
+    if not user:
+        api_logger.warning(f"用戶不存在: user_id={user_id}")
+        raise NotFoundError(
+            error_code=ErrorCode.USER_NOT_FOUND,
+            detail="用戶不存在"
+        )
+    
+    api_logger.info(f"獲取情緒分析: user_id={user_id}, time_range={time_range}")
+    
+    try:
+        result = analyze_emotion_trends(user_id, time_range)
+        return result
+    except Exception as e:
+        log_error(e, {"user_id": user_id, "time_range": time_range, "action": "emotion_analytics"})
+        raise ServerError(
+            error_code=ErrorCode.OPERATION_FAILED,
+            detail=f"情緒分析生成失敗: {str(e)}"
+        )
+    
 @router.put("/{diary_id}", response_model=Dict[str, Any],
           summary="更新日記",
           description="更新指定日記的內容或情緒評分")

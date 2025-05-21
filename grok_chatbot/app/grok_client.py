@@ -9,10 +9,25 @@ client = OpenAI(
     base_url=GROK_API_URL,  # 官方提供的 API URL
 )
 
-def send_to_grok(user_id, message):
-    """發送使用者輸入到 Grok AI，並返回回應"""
+# 定義常用的模型 ID
+MODELS = {
+    "grok2": "grok-2-latest",
+    "grok3": "grok-3-latest"
+}
+
+def send_to_grok(user_id, message, model="grok3"):
+    """發送使用者輸入到 Grok AI，並返回回應
+    
+    Args:
+        user_id: 用戶ID
+        message: 使用者的信息
+        model: 使用的模型，可選值為 "grok2" 或 "grok3"，默認為 "grok3"
+    """
     try:
         chat_history = get_chat_history(user_id)
+
+        # 獲取模型 ID
+        model_id = MODELS.get(model, MODELS["grok3"])
 
         # 格式化對話內容
         messages = [{"role": "system", "content": "You are Grok, a chatbot inspired by the Hitchhiker's Guide to the Galaxy."}]
@@ -21,7 +36,7 @@ def send_to_grok(user_id, message):
 
         # 調用 Grok API
         completion = client.chat.completions.create(
-            model="grok-2-latest",
+            model=model_id,
             messages=messages,
         )
 
@@ -34,4 +49,26 @@ def send_to_grok(user_id, message):
         return ai_response
 
     except Exception as e:
+        return f"Error: {str(e)}"
+
+def send_to_model(messages, model="grok3"):
+    """透過指定模型發送消息
+    
+    Args:
+        messages: 消息列表
+        model: 使用的模型，可選值為 "grok2" 或 "grok3"，默認為 "grok3"
+    """
+    try:
+        # 獲取模型 ID
+        model_id = MODELS.get(model, MODELS["grok3"])
+        
+        # 調用 Grok API
+        completion = client.chat.completions.create(
+            model=model_id,
+            messages=messages,
+        )
+        
+        return completion.choices[0].message.content
+    except Exception as e:
+        print(f"調用模型 {model} 時出錯: {str(e)}")
         return f"Error: {str(e)}"

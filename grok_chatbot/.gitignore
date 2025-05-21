@@ -1,0 +1,39 @@
+# 環境變量文件
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# 數據庫文件
+postgres_data/
+
+# 日誌文件
+logs/
+*.log
+
+# IDE相關
+.idea/
+.vscode/
+*.swp
+*.swo 

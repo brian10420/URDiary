@@ -721,6 +721,74 @@ input:focus, textarea:focus, select:focus {
     visibility: hidden;
 }
 
+/* 在登入流程中的啟動畫面樣式 */
+.splash-screen.login-background {
+    opacity: 0.95;
+    z-index: 990; /* 低於登入對話框，但高於其他內容 */
+}
+
+/* 當啟動畫面活躍時，確保對話框樣式 */
+.splash-active .modal-content {
+    background-color: rgba(255, 255, 255, 0.95);
+    box-shadow: 0 5px 25px rgba(0, 0, 0, 0.3);
+    border: 1px solid var(--primary-dark);
+    color: var(--text-color);
+}
+
+.splash-active .modal-header {
+    background-color: var(--primary-dark);
+    color: white;
+    border-bottom: none;
+    border-radius: 8px 8px 0 0;
+}
+
+.splash-active .modal-header h3 {
+    font-weight: 500;
+}
+
+.splash-active .btn-close {
+    color: white;
+}
+
+.splash-active .form-control {
+    background-color: rgba(255, 255, 255, 0.95);
+    border: 1px solid var(--border-color);
+}
+
+.splash-active .user-item {
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius-md);
+    transition: all 0.2s ease;
+}
+
+.splash-active .user-item:hover {
+    background-color: var(--primary-light);
+    color: white;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+}
+
+.splash-active .user-item.active {
+    background-color: var(--primary-color);
+    color: white;
+    border-color: var(--primary-dark);
+}
+
+.splash-active .btn {
+    background-color: var(--primary-color);
+    color: white;
+    border: none;
+}
+
+.splash-active .btn:hover {
+    background-color: var(--primary-dark);
+    transform: translateY(-1px);
+}
+
+.splash-screen.fade-out {
+    opacity: 0;
+}
+
 .splash-content {
     text-align: center;
     color: white;

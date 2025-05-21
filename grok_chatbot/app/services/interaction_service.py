@@ -1,4 +1,4 @@
-from grok_client import client
+from grok_client import client, send_to_model, MODELS
 from memory_manager import get_chat_history
 from database import crud, SessionLocal
 from database.models import InteractionNote
@@ -8,6 +8,7 @@ import re
 import json
 import os
 from datetime import datetime
+from config import DEFAULT_MODEL
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PROMPTS_DIR = os.path.join(BASE_DIR, "services", "prompts")
@@ -52,10 +53,17 @@ def read_prompt_file(filename):
 def update_interaction_note(
     chat_history: list, 
     previous_note_content: Optional[str], 
-    today_diary: str
+    today_diary: str,
+    model: str = DEFAULT_MODEL
 ) -> str:
     """
     生成更新的互動筆記內容
+    
+    Args:
+        chat_history: 聊天歷史
+        previous_note_content: 前一個互動筆記內容
+        today_diary: 今日日記內容
+        model: 使用的模型，默認使用配置中的默認模型
     """
     # 讀取互動筆記提示詞
     prompt_template = read_prompt_file("interaction_note_prompt.txt")
@@ -71,33 +79,70 @@ def update_interaction_note(
     # 獲取今日日期，格式為YYYY-MM-DD
     today_date = datetime.now().strftime("%Y-%m-%d")
     
+    # 執行情緒分析
+    from .analytics_service import analyze_emotion_trends
+    emotion_analysis = {"theme_analysis": {"主要情緒主題": ["無資料"], "情緒變化模式": "無資料", "積極和消極因素": "無資料", "建議的關注點": "無資料"}}
+    
+    try:
+        # 使用臨時數據庫連接
+        db = SessionLocal()
+        user_id = None
+        
+        # 嘗試從聊天歷史中提取用戶ID
+        for msg in chat_history:
+            if msg.get("user_id"):
+                user_id = int(msg["user_id"])
+                break
+        
+        # 若能找到用戶ID，執行情緒分析
+        if user_id:
+            emotion_analysis = analyze_emotion_trends(user_id, "week")
+        
+        db.close()
+    except Exception as e:
+        print(f"分析情緒時發生錯誤: {str(e)}")
+    
+    # 提取情緒分析結果
+    emotion_themes = emotion_analysis.get("theme_analysis", {})
+    emotion_info = f"""
+情緒分析結果：
+- 主要情緒主題: {', '.join(emotion_themes.get('主要情緒主題', ['無資料']))}
+- 情緒變化模式: {emotion_themes.get('情緒變化模式', '無資料')}
+- 積極和消極因素: {emotion_themes.get('積極和消極因素', '無資料')}
+- 建議的關注點: {emotion_themes.get('建議的關注點', '無資料')}
+"""
+    
     # 準備提示詞
     prompt = prompt_template.format(
         previous_interaction_note=previous_note_content or "尚無互動筆記",
         chat_history=chat_content,
         todays_diary=today_diary,
-        today_date=today_date
+        today_date=today_date,
+        emotion_analysis=emotion_info
     )
     
     # 調用 Grok API
     try:
-        completion = client.chat.completions.create(
-            model="grok-2-latest",
-            messages=[
-                {"role": "system", "content": "你是一位專業的心理陪伴記錄員，負責整理客戶互動筆記。"},
-                {"role": "user", "content": prompt}
-            ]
-        )
+        messages = [
+            {"role": "system", "content": "你是一位專業的心理陪伴記錄員，負責整理客戶互動筆記。"},
+            {"role": "user", "content": prompt}
+        ]
         
-        return completion.choices[0].message.content
+        return send_to_model(messages, model)
         
     except Exception as e:
         print(f"更新互動筆記時發生錯誤: {str(e)}")
         return "無法生成互動筆記，請稍後再試。"
 
-def process_interaction_note_update(chat_id: str, numeric_user_id: int, today_diary: str) -> Dict[str, Any]:
+def process_interaction_note_update(chat_id: str, numeric_user_id: int, today_diary: str, model: str = DEFAULT_MODEL) -> Dict[str, Any]:
     """
     處理互動筆記更新流程
+    
+    Args:
+        chat_id: 聊天ID
+        numeric_user_id: 用戶數字ID
+        today_diary: 今日日記內容
+        model: 使用的模型，默認使用配置中的默認模型
     """
     db = SessionLocal()
     try:
@@ -109,7 +154,7 @@ def process_interaction_note_update(chat_id: str, numeric_user_id: int, today_di
         previous_content = latest_note.content if latest_note else None
         
         # 生成新的互動筆記
-        new_content = update_interaction_note(chat_history, previous_content, today_diary)
+        new_content = update_interaction_note(chat_history, previous_content, today_diary, model)
         
         # 保存新的互動筆記
         new_note = create_interaction_note(db, numeric_user_id, new_content)
@@ -138,9 +183,15 @@ def get_conversation_context(numeric_user_id: int) -> str:
     finally:
         db.close()
 
-def enhanced_chat_with_context(chat_id: str, numeric_user_id: int, message: str) -> str:
+def enhanced_chat_with_context(chat_id: str, numeric_user_id: int, message: str, model: str = DEFAULT_MODEL) -> str:
     """
     使用互動筆記增強對話體驗
+    
+    Args:
+        chat_id: 聊天ID
+        numeric_user_id: 用戶數字ID
+        message: 用戶消息
+        model: 使用的模型，默認使用配置中的默認模型
     """
     # 獲取互動筆記上下文
     interaction_context = get_conversation_context(numeric_user_id)
@@ -167,12 +218,7 @@ def enhanced_chat_with_context(chat_id: str, numeric_user_id: int, message: str)
     
     # 調用 Grok API
     try:
-        completion = client.chat.completions.create(
-            model="grok-2-latest",
-            messages=messages
-        )
-        
-        ai_response = completion.choices[0].message.content
+        ai_response = send_to_model(messages, model)
         
         # 關鍵修改：正確保存對話歷史
         # 新增：建立不包含系統消息的歷史記錄
@@ -195,7 +241,7 @@ def enhanced_chat_with_context(chat_id: str, numeric_user_id: int, message: str)
         print(f"增強對話時發生錯誤: {str(e)}")
         return "抱歉，我現在無法回應。請稍後再試。"
     
-def generate_enhanced_diary(chat_id: str, numeric_user_id: int, exclude_interaction_notes: bool = False) -> Tuple[str, Dict[str, float]]:
+def generate_enhanced_diary(chat_id: str, numeric_user_id: int, exclude_interaction_notes: bool = False, model: str = DEFAULT_MODEL) -> Tuple[str, Dict[str, float]]:
     """
     使用互動筆記增強日記生成
     
@@ -203,6 +249,7 @@ def generate_enhanced_diary(chat_id: str, numeric_user_id: int, exclude_interact
         chat_id: 用戶聊天ID
         numeric_user_id: 用戶數字ID
         exclude_interaction_notes: 是否排除互動筆記，如果為True，則不使用互動筆記
+        model: 使用的模型，默認使用配置中的默認模型
     
     Returns:
         生成的日記內容和情緒評分
@@ -253,15 +300,12 @@ def generate_enhanced_diary(chat_id: str, numeric_user_id: int, exclude_interact
     
     try:
         # 調用 Grok API
-        completion = client.chat.completions.create(
-            model="grok-2-latest",
-            messages=[
-                {"role": "system", "content": "你是一位能夠寫出溫暖、洞察力強的日記的助手。"},
-                {"role": "user", "content": prompt}
-            ]
-        )
+        messages = [
+            {"role": "system", "content": "你是一位能夠寫出溫暖、洞察力強的日記的助手。"},
+            {"role": "user", "content": prompt}
+        ]
         
-        diary_text = completion.choices[0].message.content
+        diary_text = send_to_model(messages, model)
         
         # 設置默認值
         emotion_scores = {"valence": 0.5, "arousal": 0.5}
