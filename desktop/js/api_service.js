@@ -109,27 +109,59 @@ const ApiService = (function() {
      * @returns {Promise<boolean>} 是否成功刷新
      */
     async function refreshToken() {
-        if (!accessToken) return false;
+        if (!accessToken) {
+            console.warn('沒有訪問令牌，無法刷新');
+            return false;
+        }
         
         try {
-            const response = await fetch(`${API_BASE_URL}/users/token/refresh`, {
+            console.log('嘗試刷新令牌...');
+            
+            // 優先從配置中取得 API URL
+            const baseUrl = CONFIG && CONFIG.API && CONFIG.API.BASE_URL ? 
+                CONFIG.API.BASE_URL : 'http://localhost:8000';
+            
+            const response = await fetch(`${baseUrl}/users/token/refresh`, {
                 method: 'POST',
                 headers: {
                     'Authorization': `Bearer ${accessToken}`,
                     'Content-Type': 'application/json'
-                }
+                },
+                // 增加超時處理
+                signal: AbortSignal.timeout(10000) // 10秒超時
             });
             
             if (!response.ok) {
-                console.warn('刷新令牌失敗:', response.status);
+                const errorText = await response.text().catch(() => '無法獲取錯誤詳情');
+                console.warn(`刷新令牌失敗: ${response.status} - ${errorText}`);
+                
+                // 如果是401錯誤，令牌可能已經過期太久
+                if (response.status === 401) {
+                    console.warn('令牌已過期且無法刷新，需要重新登入');
+                    clearAuthToken();
+                }
+                
                 return false;
             }
             
             const data = await response.json();
+            
+            if (!data.access_token) {
+                console.error('刷新令牌響應中缺少訪問令牌');
+                return false;
+            }
+            
+            // 保存新令牌
             setAuthToken(data.access_token, data.expires_in);
+            console.log('令牌刷新成功');
             return true;
+            
         } catch (error) {
-            console.error('刷新令牌出錯:', error);
+            if (error.name === 'TimeoutError') {
+                console.error('刷新令牌請求超時');
+            } else {
+                console.error('刷新令牌出錯:', error);
+            }
             return false;
         }
     }
@@ -1583,29 +1615,60 @@ const ApiService = (function() {
     
     // 自動登入流程
     async function autoLogin() {
-        // 如果已有令牌，嘗試使用它
-        if (accessToken) {
-            // 檢查令牌是否已過期
-            if (!isTokenExpiringSoon(60)) { // 如果令牌還有超過60分鐘有效
-                console.log('使用現有令牌');
-                return { success: true };
+        console.log('開始自動登入流程...');
+        
+        try {
+            // 如果已有令牌，嘗試使用它
+            if (accessToken) {
+                console.log('檢查現有令牌狀態...');
+                
+                // 檢查令牌是否還有較長時間有效（超過60分鐘）
+                if (!isTokenExpiringSoon(60)) {
+                    console.log('使用現有有效令牌');
+                    return { success: true };
+                }
+                
+                // 檢查令牌是否還沒完全過期（在5分鐘內）
+                if (!isTokenExpiringSoon(5)) {
+                    console.log('令牌即將過期但仍可使用');
+                    return { success: true };
+                }
+                
+                console.log('令牌即將過期，嘗試刷新...');
+                
+                // 嘗試刷新令牌
+                const refreshed = await refreshToken();
+                if (refreshed) {
+                    console.log('令牌刷新成功');
+                    return { success: true };
+                } else {
+                    console.warn('令牌刷新失敗，將嘗試重新登入');
+                    // 清除已過期的令牌
+                    clearAuthToken();
+                }
             }
             
-            // 嘗試刷新令牌
-            const refreshed = await refreshToken();
-            if (refreshed) {
-                console.log('令牌已刷新');
-                return { success: true };
+            // 如果沒有令牌或刷新失敗，嘗試用戶ID登入
+            if (currentUserId) {
+                console.log('嘗試使用現有用戶ID自動登入:', currentUserId);
+                
+                const loginResult = await login(currentUserId);
+                if (loginResult.success) {
+                    console.log('自動登入成功');
+                    return loginResult;
+                } else {
+                    console.warn('自動登入失敗:', loginResult.error);
+                    return { success: false, error: loginResult.error };
+                }
             }
+            
+            console.warn('無用戶信息可用於自動登入');
+            return { success: false, error: '無法自動登入：沒有保存的用戶信息' };
+            
+        } catch (error) {
+            console.error('自動登入過程發生錯誤:', error);
+            return { success: false, error: `自動登入失敗: ${error.message}` };
         }
-        
-        // 如果沒有令牌或刷新失敗，嘗試用戶ID登入
-        if (currentUserId) {
-            console.log('嘗試使用現有用戶ID自動登入');
-            return await login(currentUserId);
-        }
-        
-        return { success: false, error: '無法自動登入' };
     }
     
     /**

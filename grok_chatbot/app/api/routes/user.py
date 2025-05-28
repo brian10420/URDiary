@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Header
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 from typing import List, Dict, Any, Optional
@@ -39,6 +39,9 @@ class TokenResponse(BaseModel):
     access_token: str
     token_type: str
     expires_in: int
+
+class RefreshTokenRequest(BaseModel):
+    refresh_token: Optional[str] = None
 
 @router.post("/create", response_model=Dict[str, Any], 
             summary="創建新用戶",
@@ -116,19 +119,45 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = 
 
 @router.post("/token/refresh", response_model=TokenResponse,
            summary="刷新訪問令牌",
-           description="使用現有的有效令牌獲取新的訪問令牌")
-async def refresh_token(current_token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
+           description="使用刷新令牌或過期的訪問令牌獲取新的訪問令牌")
+async def refresh_token(
+    authorization: Optional[str] = Header(None),
+    refresh_request: Optional[RefreshTokenRequest] = None,
+    db: Session = Depends(get_db)
+):
     """刷新JWT令牌有效期，適用於長時間使用的日記應用"""
+    
+    current_token = None
+    
+    # 從 Authorization header 中提取令牌
+    if authorization and authorization.startswith("Bearer "):
+        current_token = authorization[7:]  # 移除 "Bearer " 前綴
+    elif refresh_request and refresh_request.refresh_token:
+        current_token = refresh_request.refresh_token
+    
+    if not current_token:
+        raise UnauthorizedError(
+            error_code=ErrorCode.UNAUTHORIZED,
+            detail="未提供令牌"
+        )
+    
     try:
-        # 解碼當前令牌
-        payload = jwt.decode(current_token, SECRET_KEY, algorithms=[ALGORITHM])
+        # 解碼令牌，即使過期也要能解碼（用於獲取用戶信息）
+        payload = jwt.decode(
+            current_token, 
+            SECRET_KEY, 
+            algorithms=[ALGORITHM],
+            # 允許解碼過期的令牌
+            options={"verify_exp": False}
+        )
+        
         username = payload.get("sub")
         user_id = payload.get("id")
         
         if username is None or user_id is None:
             raise UnauthorizedError(
                 error_code=ErrorCode.UNAUTHORIZED,
-                detail="無效的令牌"
+                detail="無效的令牌格式"
             )
             
         # 檢查用戶是否存在
@@ -139,6 +168,17 @@ async def refresh_token(current_token: str = Depends(oauth2_scheme), db: Session
                 detail="用戶不存在"
             )
             
+        # 檢查令牌是否過期太久（超過7天不允許刷新）
+        token_exp = payload.get("exp")
+        if token_exp:
+            exp_time = datetime.fromtimestamp(token_exp)
+            now = datetime.utcnow()
+            if (now - exp_time).days > 7:
+                raise UnauthorizedError(
+                    error_code=ErrorCode.UNAUTHORIZED,
+                    detail="令牌過期時間過長，請重新登入"
+                )
+        
         # 創建新令牌，有效期更長
         # 日記應用使用更長的過期時間
         access_token_expires = timedelta(days=7)  # 7天過期時間
@@ -153,10 +193,15 @@ async def refresh_token(current_token: str = Depends(oauth2_scheme), db: Session
             "expires_in": 7 * 24 * 60 * 60  # 7天的秒數
         }
         
-    except JWTError:
+    except JWTError as e:
         raise UnauthorizedError(
             error_code=ErrorCode.UNAUTHORIZED,
-            detail="無法刷新令牌"
+            detail=f"無法刷新令牌: {str(e)}"
+        )
+    except Exception as e:
+        raise UnauthorizedError(
+            error_code=ErrorCode.UNAUTHORIZED,
+            detail=f"刷新令牌時發生錯誤: {str(e)}"
         )
 
 # 简单令牌获取端点，用于 OAuth2PasswordBearer

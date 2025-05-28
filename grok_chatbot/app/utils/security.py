@@ -157,10 +157,15 @@ def decode_token(token: str):
         user_id = payload.get("id")
         
         if username is None or user_id is None:
+            log_error("JWT令牌格式無效", {"payload": payload})
             return None
             
         return TokenData(username=username, user_id=user_id)
-    except JWTError:
+    except jwt.ExpiredSignatureError:
+        log_error("JWT令牌已過期", {"token_prefix": token[:20] if token else "None"})
+        return None
+    except JWTError as e:
+        log_error("JWT解碼錯誤", {"error": str(e), "token_prefix": token[:20] if token else "None"})
         return None
 
 async def get_current_user(token: str, db: Session = Depends(get_db)):
