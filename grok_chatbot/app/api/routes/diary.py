@@ -8,7 +8,7 @@ from utils.api_exceptions import BadRequestError, NotFoundError, ServerError
 from utils.error_codes import ErrorCode
 from utils.logger import api_logger, log_error
 from database import crud, SessionLocal
-from services.diary_service import save_diary_for_user
+from services.diary_service import save_diary_for_user, generate_diary_title
 from services.interaction_service import (
     generate_enhanced_diary,
     process_interaction_note_update,
@@ -24,9 +24,16 @@ class UserDiaryCreate(BaseModel):
     exclude_interaction_notes: bool = False
 
 class DiaryUpdate(BaseModel):
+    title: Optional[str] = None
     content: Optional[str] = None
     valence: Optional[float] = None
     arousal: Optional[float] = None
+
+class InteractionNoteUpdate(BaseModel):
+    user_id: str
+    numeric_user_id: int
+    diary_id: int
+    content: str
 
 @router.post("/generate", response_model=Dict[str, Any],
             summary="生成日記",
@@ -70,6 +77,7 @@ def get_user_diaries(user_id: int, skip: int = 0, limit: int = 100, db: Session 
     for d in diaries:
         results.append({
             "diary_id": d.id,
+            "title": d.title,
             "content": d.content,
             "valence": d.valence,
             "arousal": d.arousal,
@@ -99,6 +107,7 @@ def get_diary(diary_id: int, db: Session = Depends(get_db)):
     return {
         "diary_id": diary.id,
         "user_id": diary.user_id,
+        "title": diary.title,
         "content": diary.content,
         "valence": diary.valence,
         "arousal": diary.arousal,
@@ -166,6 +175,7 @@ def update_diary(diary_id: int, diary_update: DiaryUpdate, db: Session = Depends
             "message": "日記更新成功",
             "diary": {
                 "diary_id": diary.id,
+                "title": diary.title,
                 "content": diary.content,
                 "valence": diary.valence,
                 "arousal": diary.arousal,
@@ -221,12 +231,16 @@ def generate_enhanced_diary_api(user_input: UserDiaryCreate):
             user_input.exclude_interaction_notes
         )
         
+        # 生成日記標題 (需要导入diary_service中的函数)
+        title = generate_diary_title(diary_content)
+        
         # 保存到數據庫
         db = SessionLocal()
         try:
             diary = crud.create_diary(
                 db=db,
                 user_id=user_input.numeric_user_id,
+                title=title,
                 content=diary_content,
                 valence=emotion_scores.get("valence"),
                 arousal=emotion_scores.get("arousal")
@@ -244,6 +258,7 @@ def generate_enhanced_diary_api(user_input: UserDiaryCreate):
                 "message": "增強版日記生成成功",
                 "diary": {
                     "diary_id": diary.id,
+                    "title": diary.title,
                     "content": diary.content,
                     "valence": diary.valence,
                     "arousal": diary.arousal,
@@ -296,29 +311,25 @@ def get_interaction_note(user_id: int, db: Session = Depends(get_db)):
 @router.post("/interaction-notes/update", response_model=Dict[str, Any],
             summary="更新互動筆記",
             description="根據今日日記更新互動筆記")
-def update_interaction_notes(user_input: UserDiaryCreate):
+def update_interaction_notes(update_request: InteractionNoteUpdate):
     """根據今日日記更新互動筆記"""
-    api_logger.info(f"開始更新互動筆記: user_id={user_input.user_id}")
+    api_logger.info(f"開始更新互動筆記: user_id={update_request.user_id}, diary_id={update_request.diary_id}")
     
     try:
-        # 先生成今日日記
-        diary_result = save_diary_for_user(user_input.user_id, user_input.numeric_user_id)
-        
-        # 基於今日日記更新互動筆記
+        # 基於提供的日記內容更新互動筆記
         note_result = process_interaction_note_update(
-            user_input.user_id, 
-            user_input.numeric_user_id,
-            diary_result["content"]
+            update_request.user_id, 
+            update_request.numeric_user_id,
+            update_request.content
         )
         
-        api_logger.info(f"互動筆記更新成功: user_id={user_input.user_id}")
+        api_logger.info(f"互動筆記更新成功: user_id={update_request.user_id}")
         return {
             "message": "互動筆記更新成功",
-            "diary": diary_result,
             "interaction_note": note_result
         }
     except Exception as e:
-        log_error(e, {"user_id": user_input.user_id, "action": "update_interaction_notes"})
+        log_error(e, {"user_id": update_request.user_id, "diary_id": update_request.diary_id, "action": "update_interaction_notes"})
         raise ServerError(
             error_code=ErrorCode.NOTE_UPDATE_FAILED,
             detail=f"互動筆記更新失敗: {str(e)}"

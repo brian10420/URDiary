@@ -634,12 +634,47 @@ const ApiService = (function() {
         }
 
         // 日記相關端點的模擬數據
-        if (endpoint.includes('/diary/')) {
-            if (endpoint.includes('/list')) {
+        if (endpoint.includes('/diary') || endpoint.includes('/diaries')) {
+            if (endpoint.includes('/list') || endpoint.match(/\/diaries\/\d+$/)) {
+                // 生成模擬日記列表
+                const mockDiaries = [
+                    {
+                        diary_id: 1,
+                        id: 1,
+                        title: "模擬日記標題 1",
+                        content: "這是第一篇模擬日記的內容。今天天氣很好，心情也不錯。",
+                        valence: 0.7,
+                        arousal: 0.5,
+                        diary_date: new Date(Date.now() - 86400000).toISOString(),
+                        created_at: new Date(Date.now() - 86400000).toISOString()
+                    },
+                    {
+                        diary_id: 2,
+                        id: 2,
+                        title: "模擬日記標題 2",
+                        content: "這是第二篇模擬日記的內容。今天工作有點忙碌，但還是完成了任務。",
+                        valence: 0.4,
+                        arousal: 0.6,
+                        diary_date: new Date(Date.now() - 172800000).toISOString(),
+                        created_at: new Date(Date.now() - 172800000).toISOString()
+                    },
+                    {
+                        diary_id: 3,
+                        id: 3,
+                        title: "模擬日記標題 3",
+                        content: "這是第三篇模擬日記的內容。週末和朋友聚會，度過了愉快的時光。",
+                        valence: 0.8,
+                        arousal: 0.7,
+                        diary_date: new Date(Date.now() - 259200000).toISOString(),
+                        created_at: new Date(Date.now() - 259200000).toISOString()
+                    }
+                ];
+                
                 return {
                     ...commonErrorInfo,
                     success: true,
-                    diaries: [],
+                    user_id: numericUserId,
+                    diaries: mockDiaries,
                     message: `模擬日記列表 ${message}`
                 };
             }
@@ -914,61 +949,37 @@ const ApiService = (function() {
             // 嘗試從 API 獲取
             try {
                 response = await fetchAPI(path, { method: 'GET' });
-                console.log('從 API 獲取日記成功');
+                console.log('從 API 獲取日記成功，響應:', response);
+                
+                // 直接返回響應，讓調用方處理數據格式
+                return response;
+                
             } catch (apiError) {
                 console.warn('從 API 獲取日記失敗:', apiError);
                 
-                if (CONFIG.USE_MOCK_DATA) {
+                if (CONFIG && CONFIG.USE_MOCK_DATA) {
                     console.log('使用模擬數據');
-                    response = getMockDataForEndpoint('/diaries/1');
+                    response = getMockDataForEndpoint(path, { errorType: 'server' });
+                    return response;
                 } else {
                     throw apiError;
                 }
             }
             
-            // 驗證響應格式
-            if (!response || !response.diaries || !Array.isArray(response.diaries)) {
-                console.error('日記數據格式不正確:', response);
-                
-                // 使用本地數據作為備份
-                const localData = getLocalData(path);
-                if (localData && localData.diaries && Array.isArray(localData.diaries)) {
-                    console.log('使用本地備份數據');
-                    return localData.diaries;
-                }
-                
-                // 如果還是失敗，使用模擬數據
-                if (CONFIG.USE_MOCK_DATA) {
-                    console.log('使用空模擬日記列表');
-                    return generateSampleDiaries();
-                }
-                
-                return [];
-            }
-            
-            // 轉換數據格式
-            const diaries = response.diaries.map(diary => ({
-                id: diary.diary_id || generateId(),
-                title: diary.title || '無標題日記',
-                content: diary.content || '',
-                date: diary.diary_date || new Date().toISOString(),
-                mood: getMoodFromValence(diary.valence),
-                valence: diary.valence || 0.5,
-                arousal: diary.arousal || 0.5
-            }));
-            
-            // 保存到本地存儲作為備份
-            saveLocalData(path, { diaries });
-            
-            console.log(`成功獲取 ${diaries.length} 條日記`);
-            return diaries;
         } catch (error) {
             console.error('獲取日記列表失敗:', error);
             
+            // 嘗試使用本地數據作為備份
+            const localData = getLocalData(`/diaries/${numericUserId}`);
+            if (localData && localData.diaries && Array.isArray(localData.diaries)) {
+                console.log('使用本地備份數據');
+                return localData;
+            }
+            
             // 使用模擬數據
-            if (CONFIG.USE_MOCK_DATA) {
+            if (CONFIG && CONFIG.USE_MOCK_DATA) {
                 console.log('使用模擬日記列表');
-                return generateSampleDiaries();
+                return getMockDataForEndpoint(`/diaries/${numericUserId}`, { errorType: 'fallback' });
             }
             
             throw new Error(`獲取日記失敗: ${error.message}`);
@@ -1651,29 +1662,75 @@ const ApiService = (function() {
         }
     }
     
+    // 更新日記
+    async function updateDiary(diaryId, updateData) {
+        try {
+            console.log(`更新日記: ID=${diaryId}`, updateData);
+            
+            const response = await fetchAPI(`/diary/${diaryId}`, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(updateData)
+            });
+            
+            console.log('日記更新成功:', response);
+            return response;
+        } catch (error) {
+            console.error('更新日記失敗:', error);
+            throw new Error(`更新日記失敗: ${error.message}`);
+        }
+    }
+    
+    // 更新互動筆記
+    async function updateInteractionNotes(diaryId, content) {
+        try {
+            console.log(`更新互動筆記: diaryId=${diaryId}`);
+            
+            const response = await fetchAPI('/diary/interaction-notes/update', {
+                method: 'POST',
+                body: {
+                    user_id: currentUserId,
+                    numeric_user_id: numericUserId,
+                    diary_id: parseInt(diaryId),
+                    content: content
+                }
+            });
+            
+            console.log('互動筆記更新成功:', response);
+            return response;
+        } catch (error) {
+            console.error('更新互動筆記失敗:', error);
+            throw new Error(`更新互動筆記失敗: ${error.message}`);
+        }
+    }
+
     // 導出API
     return {
         init,
         ensureInitialized,
         fetchAPI,
         sendChatMessage,
-        endChat: endChat,
-        getDiaries: getDiaries,
-        getDiaryById: getDiaryById,
-        getNotes: getNotes,
-        getNote: getNote,
-        saveNote: saveNote,
-        deleteNote: deleteNote,
-        getLocalData: getLocalData,
-        saveLocalData: saveLocalData,
-        setUserId: setUserId,
-        login: login,
-        autoLogin: autoLogin,
+        endChat,
+        getDiaries,
+        getDiaryById,
+        updateDiary,
+        updateInteractionNotes,
+        getNotes,
+        getNote,
+        saveNote,
+        deleteNote,
+        getLocalData,
+        saveLocalData,
+        setUserId,
+        login,
+        autoLogin,
         logout: clearAuthToken,
         isAuthenticated: () => !!accessToken && !isTokenExpiringSoon(60),
         generateMockData: getMockDataForEndpoint,
-        validateApiData: validateApiData,
-        fixDataFormat: fixDataFormat
+        validateApiData,
+        fixDataFormat
     };
 })();
 

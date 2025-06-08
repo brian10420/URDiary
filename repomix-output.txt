@@ -84,6 +84,7 @@ desktop/main.js
 desktop/package.json
 desktop/preload.js
 desktop/test_app.js
+FIXES_SUMMARY.md
 grok_chatbot/.env.example
 grok_chatbot/.gitignore
 grok_chatbot/app/api/__init__.py
@@ -95,6 +96,7 @@ grok_chatbot/app/api/routes/user.py
 grok_chatbot/app/config.py
 grok_chatbot/app/database/__init__.py
 grok_chatbot/app/database/crud.py
+grok_chatbot/app/database/migrate_add_title.py
 grok_chatbot/app/database/models.py
 grok_chatbot/app/grok_client.py
 grok_chatbot/app/main.py
@@ -102,6 +104,7 @@ grok_chatbot/app/memory_manager.py
 grok_chatbot/app/middleware/__init__.py
 grok_chatbot/app/middleware/error_handler.py
 grok_chatbot/app/middleware/exception_handlers.py
+grok_chatbot/app/Scripts/add_title_to_diaries.sql
 grok_chatbot/app/Scripts/health_check.py
 grok_chatbot/app/Scripts/init-db.sql
 grok_chatbot/app/Scripts/reset-db-sequence.sh
@@ -993,26 +996,39 @@ input:focus, textarea:focus, select:focus {
 
 /* 模態對話框 */
 .modal {
-    display: none;
     position: fixed;
     top: 0;
     left: 0;
     width: 100%;
     height: 100%;
     background-color: rgba(0, 0, 0, 0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
     z-index: 1000;
-    overflow: auto;
 }
 
 .modal-content {
-    background-color: var(--background-color);
-    margin: 10% auto;
-    padding: 0;
-    width: 60%;
+    background: var(--bg-color);
+    border-radius: var(--border-radius-lg);
+    box-shadow: var(--shadow-lg);
     max-width: 500px;
-    border-radius: 8px;
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+    width: 90%;
+    max-height: 80vh;
+    overflow-y: auto;
     position: relative;
+    animation: modalSlideIn 0.3s ease-out;
+}
+
+@keyframes modalSlideIn {
+    from {
+        opacity: 0;
+        transform: translateY(-50px) scale(0.9);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
 }
 
 .modal-header {
@@ -1778,6 +1794,43 @@ File: desktop/css/components.css
     display: block;
 }
 
+/* 全頁面載入動畫 */
+.loading-spinner {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.7);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 9999;
+    flex-direction: column;
+}
+
+.loading-spinner::after {
+    content: "";
+    width: 70px;
+    height: 70px;
+    margin-bottom: 20px;
+    border-radius: 50%;
+    border: 8px solid rgba(255, 255, 255, 0.3);
+    border-top-color: #ffffff;
+    display: block;
+    -webkit-animation: spin 1s linear infinite;
+    animation: spin 1s linear infinite;
+}
+
+.loading-message {
+    color: white;
+    margin-top: 20px;
+    font-size: 20px;
+    font-weight: 500;
+    text-align: center;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+}
+
 /* 卡片樣式 */
 .card {
     background: white;
@@ -1912,192 +1965,278 @@ File: desktop/css/diary.css
 
 /* 日記卡片 */
 .diary-card {
-    background-color: var(--card-background, white);
-    border-radius: 10px;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-    padding: 16px;
-    transition: all 0.3s ease;
+    background: #ffffff;  /* 明確設置為白色 */
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius-md);
+    padding: var(--spacing-md);
+    margin-bottom: var(--spacing-md);
     cursor: pointer;
-    display: flex;
-    flex-direction: column;
-    border: 1px solid var(--border-color, #eaeaea);
+    transition: all var(--transition-fast);
+    box-shadow: var(--shadow-sm);
 }
 
 .diary-card:hover {
-    transform: translateY(-3px);
-    box-shadow: 0 5px 15px rgba(0, 0, 0, 0.15);
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-md);
+    border-color: var(--primary-color);
+    background: #fafafa; /* 懸停時稍微暗一點的白色 */
 }
 
 .diary-card.active {
-    border-color: var(--primary-color, #4a6fa5);
-    box-shadow: 0 0 0 2px rgba(74, 111, 165, 0.3);
+    border-color: var(--primary-color);
+    background: var(--primary-color);
+    color: white;
 }
 
-/* 卡片頭部 */
-.card-header {
+.diary-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: var(--spacing-sm);
+}
+
+.diary-title {
+    font-size: var(--font-size-lg);
+    font-weight: 600;
+    margin: 0;
+    flex: 1;
+    color: inherit; /* 繼承父元素顏色 */
+}
+
+.diary-card.active .diary-title {
+    color: white; /* 當卡片被選中時，標題為白色 */
+}
+
+.diary-actions {
+    display: flex;
+    gap: var(--spacing-xs);
+    opacity: 0.7; /* 改為半透明顯示，而不是完全隱藏 */
+    transition: opacity var(--transition-fast);
+}
+
+.diary-card:hover .diary-actions {
+    opacity: 1;
+}
+
+.btn-icon {
+    background: none;
+    border: none;
+    padding: var(--spacing-xs);
+    border-radius: var(--border-radius-sm);
+    cursor: pointer;
+    color: var(--neutral-500);
+    transition: all var(--transition-fast);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+}
+
+.btn-icon:hover {
+    background: var(--primary-color);
+    color: white;
+    transform: scale(1.1);
+}
+
+/* 當卡片被激活時，圖標顏色也要調整 */
+.diary-card.active .btn-icon {
+    color: rgba(255, 255, 255, 0.8);
+}
+
+.diary-card.active .btn-icon:hover {
+    background: rgba(255, 255, 255, 0.2);
+    color: white;
+}
+
+.diary-excerpt {
+    color: var(--neutral-600);
+    font-size: var(--font-size-sm);
+    line-height: 1.5;
+    margin-bottom: var(--spacing-sm);
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+/* 激活狀態下的摘要顏色 */
+.diary-card.active .diary-excerpt {
+    color: rgba(255, 255, 255, 0.9);
+}
+
+.diary-meta {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 10px;
+    font-size: var(--font-size-xs);
+    color: var(--neutral-500);
 }
 
-.card-date {
-    font-size: 0.8rem;
-    color: var(--text-secondary, #666);
+/* 激活狀態下的元數據顏色 */
+.diary-card.active .diary-meta {
+    color: rgba(255, 255, 255, 0.8);
 }
 
-.mood-tag {
-    font-size: 0.75rem;
-    padding: 2px 8px;
-    border-radius: 12px;
-    color: white;
+.diary-date {
     font-weight: 500;
 }
 
-/* 卡片標題 */
-.card-title {
-    font-size: 1.1rem;
-    margin: 0 0 10px 0;
+.diary-mood {
     font-weight: 600;
-    color: var(--text-color, #333);
+    padding: 2px 8px;
+    border-radius: var(--border-radius-sm);
+    background: rgba(255, 255, 255, 0.1);
 }
 
-/* 卡片摘要 */
-.card-excerpt {
-    font-size: 0.9rem;
-    color: var(--text-secondary, #666);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    display: block;
-    line-height: 1.5;
-    flex: 1;
-    max-height: 4.5em; /* 3 lines * 1.5 line-height */
-    word-break: break-word;
-    position: relative;
-}
-
-.card-excerpt::after {
-    content: "...";
-    position: absolute;
-    bottom: 0;
-    right: 0;
-    padding-left: 40px;
-    background: linear-gradient(to right, transparent, var(--card-background, white) 55%);
-}
-
-/* 日記詳情 */
-.diary-detail {
-    background-color: var(--card-background, white);
-    border-radius: 10px;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-    padding: 20px;
-    flex: 0;
-    width: 0;
-    opacity: 0;
-    overflow: hidden;
-    display: none;
-    flex-direction: column;
-    overflow-y: auto;
-    border: 1px solid var(--border-color, #eaeaea);
-    transition: all 0.3s ease;
-}
-
+/* 日記詳情頁面樣式 */
 .detail-header {
     display: flex;
-    justify-content: space-between;
+    justify-content: flex-end;
     align-items: center;
-    padding-bottom: 16px;
-    border-bottom: 1px solid var(--border-color, #eaeaea);
-    margin-bottom: 16px;
+    margin-bottom: var(--spacing-md);
+    padding-bottom: var(--spacing-sm);
+    border-bottom: 1px solid var(--border-color);
+}
+
+.title-container {
+    width: 100%;
+    margin-bottom: var(--spacing-lg);
 }
 
 .detail-title {
-    font-size: 1.5rem;
-    margin: 0;
-    color: var(--text-color, #333);
+    font-size: 1.8rem;
     font-weight: 600;
+    margin: 0 0 var(--spacing-sm) 0;
+    padding: var(--spacing-xs);
+    border: 2px solid transparent;
+    border-radius: var(--border-radius-sm);
+    transition: all var(--transition-fast);
+    min-height: 2.5rem;
+    outline: none;
+    background: transparent; /* 確保背景透明 */
+    width: 100%;
+    display: block;
+}
+
+.detail-title:focus {
+    border-color: var(--primary-color);
+    background: rgba(139, 110, 99, 0.05); /* 使用具體的顏色值而不是CSS變量 */
+}
+
+.detail-title:empty:before {
+    content: attr(placeholder);
+    color: var(--neutral-400);
+    font-style: italic;
+}
+
+.edit-hint {
+    font-size: var(--font-size-xs);
+    color: var(--neutral-400);
+    margin-top: var(--spacing-xs);
+    display: block;
 }
 
 .detail-actions {
     display: flex;
-    gap: 8px;
+    gap: var(--spacing-sm);
+    flex-shrink: 0;
+}
+
+/* 日記詳情頁面整體容器 */
+.diary-detail {
+    background: #ffffff; /* 確保白色背景 */
+    border-radius: var(--border-radius-md);
+    box-shadow: var(--shadow-sm);
+    margin: var(--spacing-md);
+    padding: var(--spacing-lg);
+    display: none;
+    flex-direction: column;
+    overflow-y: auto;
+}
+
+.diary-detail.active {
+    display: flex;
 }
 
 .detail-content {
-    line-height: 1.6;
-    color: var(--text-color, #333);
-    flex: 1;
-    overflow-y: auto;
-    padding: 10px 0;
+    font-size: var(--font-size-md);
+    line-height: 1.7;
+    color: var(--text-color);
+    margin-bottom: var(--spacing-lg);
+    padding: var(--spacing-md);
+    border: 2px solid transparent;
+    border-radius: var(--border-radius-sm);
+    transition: all var(--transition-fast);
+    min-height: 200px;
+    outline: none;
+    background: #ffffff; /* 確保內容區域有白色背景 */
 }
 
-.detail-content p {
-    margin-bottom: 16px;
+.detail-content:focus {
+    border-color: var(--primary-color);
+    background: rgba(139, 110, 99, 0.05); /* 使用具體顏色值 */
+}
+
+.detail-content:empty:before {
+    content: attr(placeholder);
+    color: var(--neutral-400);
+    font-style: italic;
 }
 
 .detail-footer {
-    padding-top: 16px;
-    border-top: 1px solid var(--border-color, #eaeaea);
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    font-size: 0.9rem;
-    color: var(--text-secondary, #666);
+    padding-top: var(--spacing-md);
+    border-top: 1px solid var(--border-color);
 }
 
 .detail-meta {
     display: flex;
-    gap: 16px;
-}
-
-.detail-date, .detail-mood {
-    display: flex;
+    justify-content: space-between;
     align-items: center;
-    gap: 4px;
+    font-size: var(--font-size-sm);
+    color: var(--neutral-500);
 }
 
-/* 空狀態 */
+/* 空狀態樣式 */
 .empty-state {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    padding: 40px 20px;
     text-align: center;
-    color: var(--text-secondary, #666);
-    grid-column: 1 / -1;
-    height: 100%;
+    padding: var(--spacing-xl) var(--spacing-md);
+    color: var(--neutral-500);
 }
 
 .empty-icon {
-    font-size: 3rem;
-    margin-bottom: 16px;
-    opacity: 0.7;
+    font-size: 4rem;
+    margin-bottom: var(--spacing-md);
 }
 
 .empty-state h3 {
-    margin: 0 0 10px 0;
-    font-weight: 600;
-    color: var(--text-color, #333);
+    color: var(--neutral-600);
+    margin-bottom: var(--spacing-sm);
 }
 
 .empty-state p {
-    margin-bottom: 20px;
+    margin-bottom: var(--spacing-lg);
 }
 
 /* 響應式設計 */
 @media (max-width: 768px) {
-    .diary-container {
+    .diary-card-header {
         flex-direction: column;
+        gap: var(--spacing-sm);
     }
     
-    .diary-detail {
-        flex: 1;
-        max-height: calc(100vh - 250px);
+    .diary-actions {
+        opacity: 1;
+        align-self: flex-end;
     }
     
-    .diary-list {
-        max-height: initial;
+    .detail-header {
+        flex-direction: column;
+        gap: var(--spacing-md);
+    }
+    
+    .detail-actions {
+        align-self: stretch;
     }
 }
 
@@ -2122,6 +2261,115 @@ File: desktop/css/diary.css
 .view-container.active .diary-container {
     display: flex;
     flex-direction: row;
+}
+
+/* 模态框样式改进 */
+.modal {
+    display: none;
+    position: fixed;
+    z-index: 1000;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.5);
+    align-items: center;
+    justify-content: center;
+}
+
+.modal-content {
+    background-color: var(--card-background, white);
+    margin: 0;
+    padding: 0;
+    width: 90%;
+    max-width: 500px;
+    border-radius: 8px;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+    animation: modalFadeIn 0.3s ease;
+}
+
+@keyframes modalFadeIn {
+    from {
+        opacity: 0;
+        transform: scale(0.9) translateY(-20px);
+    }
+    to {
+        opacity: 1;
+        transform: scale(1) translateY(0);
+    }
+}
+
+.modal-header {
+    padding: 20px 20px 0 20px;
+    border-bottom: 1px solid var(--border-color, #eaeaea);
+}
+
+.modal-header h3 {
+    margin: 0 0 16px 0;
+    color: var(--text-color, #333);
+    font-size: 1.25rem;
+}
+
+.modal-body {
+    padding: 20px;
+    color: var(--text-color, #333);
+}
+
+.modal-body p {
+    margin: 0 0 12px 0;
+    line-height: 1.5;
+}
+
+.modal-footer {
+    padding: 0 20px 20px 20px;
+    display: flex;
+    gap: 12px;
+    justify-content: flex-end;
+}
+
+/* 按钮样式改进 */
+.btn {
+    padding: 8px 16px;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 500;
+    transition: all 0.2s ease;
+    text-decoration: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.btn-primary {
+    background-color: var(--primary-color, #4a6fa5);
+    color: white;
+}
+
+.btn-primary:hover:not(:disabled) {
+    background-color: var(--primary-dark, #3a5a95);
+    transform: translateY(-1px);
+}
+
+.btn-secondary {
+    background-color: var(--neutral-300, #c9c5b6);
+    color: var(--text-color, #333);
+}
+
+.btn-secondary:hover:not(:disabled) {
+    background-color: var(--neutral-400, #a8a295);
+}
+
+.btn-sm {
+    padding: 6px 12px;
+    font-size: 13px;
+}
+
+.btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+    transform: none !important;
 }
 
 ================
@@ -2884,9 +3132,7 @@ File: desktop/index.html
     <title>URDiary - 您的情緒日記助手</title>
     <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <link rel="stylesheet" href="css/base.css">
-    <link rel="stylesheet" href="css/chat.css">
-    <link rel="stylesheet" href="css/diary.css">
+    <link rel="stylesheet" href="css/styles.css">
     
     <!-- 1. 配置和核心服務 - 優先加載 -->
     <script src="js/config.js"></script>
@@ -3074,7 +3320,7 @@ File: desktop/index.html
     
     <!-- 加載動畫 -->
     <div class="loading-spinner">
-        <div class="spinner"></div>
+        <div class="loading-message">生成日記中...</div>
     </div>
     
     <!-- 錯誤提示區域 -->
@@ -3727,12 +3973,47 @@ const ApiService = (function() {
         }
 
         // 日記相關端點的模擬數據
-        if (endpoint.includes('/diary/')) {
-            if (endpoint.includes('/list')) {
+        if (endpoint.includes('/diary') || endpoint.includes('/diaries')) {
+            if (endpoint.includes('/list') || endpoint.match(/\/diaries\/\d+$/)) {
+                // 生成模擬日記列表
+                const mockDiaries = [
+                    {
+                        diary_id: 1,
+                        id: 1,
+                        title: "模擬日記標題 1",
+                        content: "這是第一篇模擬日記的內容。今天天氣很好，心情也不錯。",
+                        valence: 0.7,
+                        arousal: 0.5,
+                        diary_date: new Date(Date.now() - 86400000).toISOString(),
+                        created_at: new Date(Date.now() - 86400000).toISOString()
+                    },
+                    {
+                        diary_id: 2,
+                        id: 2,
+                        title: "模擬日記標題 2",
+                        content: "這是第二篇模擬日記的內容。今天工作有點忙碌，但還是完成了任務。",
+                        valence: 0.4,
+                        arousal: 0.6,
+                        diary_date: new Date(Date.now() - 172800000).toISOString(),
+                        created_at: new Date(Date.now() - 172800000).toISOString()
+                    },
+                    {
+                        diary_id: 3,
+                        id: 3,
+                        title: "模擬日記標題 3",
+                        content: "這是第三篇模擬日記的內容。週末和朋友聚會，度過了愉快的時光。",
+                        valence: 0.8,
+                        arousal: 0.7,
+                        diary_date: new Date(Date.now() - 259200000).toISOString(),
+                        created_at: new Date(Date.now() - 259200000).toISOString()
+                    }
+                ];
+                
                 return {
                     ...commonErrorInfo,
                     success: true,
-                    diaries: [],
+                    user_id: numericUserId,
+                    diaries: mockDiaries,
                     message: `模擬日記列表 ${message}`
                 };
             }
@@ -4007,61 +4288,37 @@ const ApiService = (function() {
             // 嘗試從 API 獲取
             try {
                 response = await fetchAPI(path, { method: 'GET' });
-                console.log('從 API 獲取日記成功');
+                console.log('從 API 獲取日記成功，響應:', response);
+                
+                // 直接返回響應，讓調用方處理數據格式
+                return response;
+                
             } catch (apiError) {
                 console.warn('從 API 獲取日記失敗:', apiError);
                 
-                if (CONFIG.USE_MOCK_DATA) {
+                if (CONFIG && CONFIG.USE_MOCK_DATA) {
                     console.log('使用模擬數據');
-                    response = getMockDataForEndpoint('/diaries/1');
+                    response = getMockDataForEndpoint(path, { errorType: 'server' });
+                    return response;
                 } else {
                     throw apiError;
                 }
             }
             
-            // 驗證響應格式
-            if (!response || !response.diaries || !Array.isArray(response.diaries)) {
-                console.error('日記數據格式不正確:', response);
-                
-                // 使用本地數據作為備份
-                const localData = getLocalData(path);
-                if (localData && localData.diaries && Array.isArray(localData.diaries)) {
-                    console.log('使用本地備份數據');
-                    return localData.diaries;
-                }
-                
-                // 如果還是失敗，使用模擬數據
-                if (CONFIG.USE_MOCK_DATA) {
-                    console.log('使用空模擬日記列表');
-                    return generateSampleDiaries();
-                }
-                
-                return [];
-            }
-            
-            // 轉換數據格式
-            const diaries = response.diaries.map(diary => ({
-                id: diary.diary_id || generateId(),
-                title: diary.title || '無標題日記',
-                content: diary.content || '',
-                date: diary.diary_date || new Date().toISOString(),
-                mood: getMoodFromValence(diary.valence),
-                valence: diary.valence || 0.5,
-                arousal: diary.arousal || 0.5
-            }));
-            
-            // 保存到本地存儲作為備份
-            saveLocalData(path, { diaries });
-            
-            console.log(`成功獲取 ${diaries.length} 條日記`);
-            return diaries;
         } catch (error) {
             console.error('獲取日記列表失敗:', error);
             
+            // 嘗試使用本地數據作為備份
+            const localData = getLocalData(`/diaries/${numericUserId}`);
+            if (localData && localData.diaries && Array.isArray(localData.diaries)) {
+                console.log('使用本地備份數據');
+                return localData;
+            }
+            
             // 使用模擬數據
-            if (CONFIG.USE_MOCK_DATA) {
+            if (CONFIG && CONFIG.USE_MOCK_DATA) {
                 console.log('使用模擬日記列表');
-                return generateSampleDiaries();
+                return getMockDataForEndpoint(`/diaries/${numericUserId}`, { errorType: 'fallback' });
             }
             
             throw new Error(`獲取日記失敗: ${error.message}`);
@@ -4744,29 +5001,78 @@ const ApiService = (function() {
         }
     }
     
+    // 更新日記
+    async function updateDiary(diaryId, updateData) {
+        try {
+            console.log(`更新日記: ID=${diaryId}`, updateData);
+            
+            const response = await fetchAPI(`/diary/${diaryId}`, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(updateData)
+            });
+            
+            console.log('日記更新成功:', response);
+            return response;
+        } catch (error) {
+            console.error('更新日記失敗:', error);
+            throw new Error(`更新日記失敗: ${error.message}`);
+        }
+    }
+    
+    // 更新互動筆記
+    async function updateInteractionNotes(diaryId, content) {
+        try {
+            console.log(`更新互動筆記: diaryId=${diaryId}`);
+            
+            const response = await fetchAPI('/diary/interaction-notes/update', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: {
+                    user_id: currentUserId,
+                    numeric_user_id: numericUserId,
+                    diary_id: diaryId,
+                    content: content
+                }
+            });
+            
+            console.log('互動筆記更新成功:', response);
+            return response;
+        } catch (error) {
+            console.error('更新互動筆記失敗:', error);
+            throw new Error(`更新互動筆記失敗: ${error.message}`);
+        }
+    }
+
     // 導出API
     return {
         init,
         ensureInitialized,
         fetchAPI,
         sendChatMessage,
-        endChat: endChat,
-        getDiaries: getDiaries,
-        getDiaryById: getDiaryById,
-        getNotes: getNotes,
-        getNote: getNote,
-        saveNote: saveNote,
-        deleteNote: deleteNote,
-        getLocalData: getLocalData,
-        saveLocalData: saveLocalData,
-        setUserId: setUserId,
-        login: login,
-        autoLogin: autoLogin,
+        endChat,
+        getDiaries,
+        getDiaryById,
+        updateDiary,
+        updateInteractionNotes,
+        getNotes,
+        getNote,
+        saveNote,
+        deleteNote,
+        getLocalData,
+        saveLocalData,
+        setUserId,
+        login,
+        autoLogin,
         logout: clearAuthToken,
         isAuthenticated: () => !!accessToken && !isTokenExpiringSoon(60),
         generateMockData: getMockDataForEndpoint,
-        validateApiData: validateApiData,
-        fixDataFormat: fixDataFormat
+        validateApiData,
+        fixDataFormat
     };
 })();
 
@@ -5667,17 +5973,34 @@ const ChatModule = (function() {
             
             // 檢查配置是否自動切換到日記視圖
             if (CONFIG && CONFIG.APP.AUTO_SWITCH_TO_DIARY_AFTER_END) {
-                // 0.5秒後切換到日記頁面
+                // 0.5秒後切換到日記頁面並刷新日記列表
                 setTimeout(() => {
                     try {
+                        // 先刷新日記列表
+                        if (typeof DiaryModule !== 'undefined' && typeof DiaryModule.loadDiaries === 'function') {
+                            console.log('刷新日記列表');
+                            DiaryModule.loadDiaries();
+                        } else {
+                            console.warn('無法刷新日記列表: DiaryModule 未定義或缺少 loadDiaries 方法');
+                        }
+                        
+                        // 然後點擊日記頁籤
                         const diaryTabElement = document.querySelector('[data-view="diary"]');
                         if (diaryTabElement) {
                             diaryTabElement.click();
                         }
                     } catch (error) {
-                        console.warn('無法自動切換到日記頁面:', error);
+                        console.warn('自動刷新日記列表失敗:', error);
                     }
                 }, 500);
+            } else {
+                // 即使不自動切換到日記視圖，也刷新日記列表以保持數據最新
+                if (typeof DiaryModule !== 'undefined' && typeof DiaryModule.loadDiaries === 'function') {
+                    console.log('刷新日記列表');
+                    setTimeout(() => {
+                        DiaryModule.loadDiaries();
+                    }, 500);
+                }
             }
         } catch (error) {
             console.error('結束聊天失敗:', error);
@@ -6034,12 +6357,17 @@ const DiaryModule = (function() {
                 console.log('創建日記詳情所需的子元素');
                 diaryDetailElement.innerHTML = `
                     <div class="detail-header">
-                        <h3 class="detail-title"></h3>
                         <div class="detail-actions">
+                            <button id="save-diary-btn" class="btn btn-sm btn-primary" style="display: none;">保存更改</button>
+                            <button id="cancel-edit-btn" class="btn btn-sm btn-secondary" style="display: none;">取消編輯</button>
                             <button id="back-to-list-btn" class="btn btn-sm">返回列表</button>
                         </div>
                     </div>
-                    <div class="detail-content"></div>
+                    <div class="title-container">
+                        <h3 class="detail-title" contenteditable="true" placeholder="點擊編輯標題..."></h3>
+                        <span class="edit-hint">點擊標題或內容進行編輯</span>
+                    </div>
+                    <div class="detail-content" contenteditable="true" placeholder="點擊編輯內容..."></div>
                     <div class="detail-footer">
                         <div class="detail-meta">
                             <span class="detail-date"></span>
@@ -6048,18 +6376,16 @@ const DiaryModule = (function() {
                     </div>
                 `;
                 
-                // 重新綁定返回按鈕事件
-                const backToListBtn = diaryDetailElement.querySelector('#back-to-list-btn');
-                if (backToListBtn) {
-                    backToListBtn.addEventListener('click', function() {
-                        hideDetails();
-                    });
-                }
+                // 重新綁定事件
+                bindDetailEvents();
             }
         }
         
         // 載入日記列表
         loadDiaries();
+        
+        // 綁定事件
+        bindDetailEvents();
         
         // 綁定返回按鈕事件
         const backToListBtn = document.getElementById('back-to-list-btn');
@@ -6107,16 +6433,98 @@ const DiaryModule = (function() {
             
             // 從API獲取日記列表
             console.log('向API請求日記數據');
-            diaries = await ApiService.getDiaries();
-            console.log(`成功獲取${diaries.length}條日記`);
+            const response = await ApiService.getDiaries();
+            console.log('API響應:', response);
             
-            // 檢查數據
-            if (!diaries || !Array.isArray(diaries)) {
-                console.error('獲取的日記數據無效:', diaries);
-                // 使用空數組作為後備
-                diaries = [];
-                console.log('使用空數組作為後備');
+            // 處理響應數據
+            let diariesArray = [];
+            
+            if (response && Array.isArray(response)) {
+                // 如果響應直接是數組
+                diariesArray = response;
+                console.log('響應是數組格式，直接使用');
+            } else if (response && response.diaries && Array.isArray(response.diaries)) {
+                // 如果響應包含diaries屬性
+                diariesArray = response.diaries;
+                console.log('從響應的diaries屬性獲取數據');
+            } else if (response && response.success && response.diaries && Array.isArray(response.diaries)) {
+                // 如果是模擬數據格式
+                diariesArray = response.diaries;
+                console.log('從模擬數據格式獲取日記列表');
+            } else if (response && typeof response === 'object') {
+                // 嘗試從其他可能的格式中提取數據
+                console.warn('響應格式不標準，嘗試提取數據:', response);
+                
+                // 檢查是否有其他可能的數據字段
+                const possibleArrays = Object.values(response).filter(value => Array.isArray(value));
+                if (possibleArrays.length > 0) {
+                    diariesArray = possibleArrays[0];
+                    console.log('從響應中找到數組數據');
+                } else {
+                    console.warn('無法從響應中提取日記數據，使用空數組');
+                    diariesArray = [];
+                }
+            } else {
+                console.warn('響應格式無效，使用空數組');
+                diariesArray = [];
             }
+            
+            // 轉換數據格式，確保每個日記項目都有必要的字段
+            diaries = diariesArray.map(diary => {
+                // 處理ID字段
+                const id = diary.diary_id || diary.id || generateId();
+                
+                // 處理標題字段 - 確保不是null或undefined
+                let title = diary.title;
+                if (!title || title === null || title === undefined || title.trim() === '') {
+                    // 如果沒有標題，根據內容或日期生成一個
+                    const dateStr = diary.diary_date || diary.date;
+                    if (dateStr) {
+                        try {
+                            const date = new Date(dateStr);
+                            title = `日記 - ${date.toLocaleDateString('zh-CN')}`;
+                        } catch (e) {
+                            title = '無標題日記';
+                        }
+                    } else {
+                        title = '無標題日記';
+                    }
+                }
+                
+                // 處理內容字段
+                let content = diary.content || '';
+                if (content === null || content === undefined) {
+                    content = '';
+                }
+                
+                // 處理日期字段
+                let date = diary.diary_date || diary.date || new Date().toISOString();
+                if (typeof date === 'string') {
+                    // 確保日期格式正確
+                    try {
+                        date = new Date(date).toISOString();
+                    } catch (e) {
+                        console.warn('日期格式錯誤，使用當前時間:', date);
+                        date = new Date().toISOString();
+                    }
+                }
+                
+                // 處理情緒值
+                const valence = parseFloat(diary.valence) || 0.5;
+                const arousal = parseFloat(diary.arousal) || 0.5;
+                
+                return {
+                    id: id,
+                    title: title,
+                    content: content,
+                    date: date,
+                    mood: getMoodFromValence(valence),
+                    valence: valence,
+                    arousal: arousal
+                };
+            });
+            
+            console.log(`成功處理${diaries.length}條日記數據`);
             
             // 渲染日記列表
             console.log('開始渲染日記列表');
@@ -6179,45 +6587,84 @@ const DiaryModule = (function() {
                     console.warn(`日記缺少ID，已生成新ID: ${diary.id}`);
                 }
                 
-                // 解析日期
-                const date = new Date(diary.date);
-                const formattedDate = formatDate(date);
+                const diaryCard = document.createElement('div');
+                diaryCard.className = 'diary-card';
+                diaryCard.setAttribute('data-id', diary.id);
                 
-                // 獲取情緒顯示名稱
-                const moodName = getMoodName(diary.mood);
-                
-                // 創建列表項
-                const listItem = document.createElement('div');
-                listItem.className = 'diary-card';
-                listItem.setAttribute('data-id', diary.id);
-                
-                // 設置HTML內容
-                listItem.innerHTML = `
-                    <div class="card-header">
-                        <div class="card-date">${formattedDate}</div>
-                        <div class="mood-tag" style="background-color: ${getMoodColor(diary.mood)}">
-                            ${moodName}
-                        </div>
-                    </div>
-                    <h3 class="card-title">${diary.title || '無標題日記'}</h3>
-                    <div class="card-excerpt">${getExcerpt(diary.content, 80)}</div>
-                `;
-                
-                // 添加點擊事件 - 使用外部函數封裝以避免閉包問題
-                const diaryId = diary.id; // 創建局部變量保存ID
-                listItem.addEventListener('click', function() {
-                    console.log(`日記卡片被點擊: ID=${diaryId}`);
-                    showDiaryDetails(diaryId);
+                // 格式化日期
+                const dateObj = new Date(diary.date);
+                const formattedDate = dateObj.toLocaleDateString('zh-CN', {
+                    month: 'short',
+                    day: 'numeric',
+                    hour: '2-digit',
+                    minute: '2-digit'
                 });
                 
-                // 添加到列表
-                diaryListElement.appendChild(listItem);
+                // 獲取摘要
+                const excerpt = getExcerpt(diary.content);
+                const moodColor = getMoodColor(diary.mood);
+                const moodName = getMoodName(diary.mood);
+                
+                diaryCard.innerHTML = `
+                    <div class="diary-card-header">
+                        <h3 class="diary-title">${diary.title}</h3>
+                        <div class="diary-actions">
+                            <button class="btn-icon edit-diary-btn" title="編輯日記" data-id="${diary.id}">
+                                <i class="fa fa-edit"></i>
+                            </button>
+                            <button class="btn-icon view-diary-btn" title="查看詳情" data-id="${diary.id}">
+                                <i class="fa fa-eye"></i>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="diary-excerpt">${excerpt}</div>
+                    <div class="diary-meta">
+                        <span class="diary-date">${formattedDate}</span>
+                        <span class="diary-mood" style="color: ${moodColor}">${moodName}</span>
+                    </div>
+                `;
+                
+                // 添加點擊事件 - 查看詳情
+                const viewBtn = diaryCard.querySelector('.view-diary-btn');
+                if (viewBtn) {
+                    viewBtn.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        showDiaryDetails(diary.id);
+                    });
+                }
+                
+                // 添加編輯按鈕事件
+                const editBtn = diaryCard.querySelector('.edit-diary-btn');
+                if (editBtn) {
+                    console.log(`為日記 ${diary.id} 綁定編輯按鈕事件`);
+                    editBtn.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        console.log(`點擊編輯按鈕: 日記ID=${diary.id}`);
+                        showDiaryDetails(diary.id);
+                        // 延遲一點時間確保詳情頁面已加載，然後自動進入編輯模式
+                        setTimeout(() => {
+                            const titleElement = diaryDetailElement?.querySelector('.detail-title');
+                            if (titleElement) {
+                                console.log('自動聚焦到標題元素');
+                                titleElement.focus();
+                            } else {
+                                console.warn('找不到標題元素，無法自動聚焦');
+                            }
+                        }, 100);
+                    });
+                } else {
+                    console.warn(`日記卡片 ${diary.id} 找不到編輯按鈕`);
+                }
+                
+                // 整個卡片點擊事件
+                diaryCard.addEventListener('click', () => {
+                    showDiaryDetails(diary.id);
+                });
+                
+                diaryListElement.appendChild(diaryCard);
                 console.log(`添加日記卡片: ID=${diary.id}, 標題=${diary.title}`);
             } catch (error) {
-                console.error(`創建日記卡片出錯: ${error.message}`);
-                if (diary && diary.id) {
-                    console.error(`問題日記ID: ${diary.id}`);
-                }
+                console.error(`創建日記卡片時出錯 (ID: ${diary.id}):`, error);
             }
         });
         
@@ -6293,8 +6740,16 @@ const DiaryModule = (function() {
                 moodElement: !!moodElement
             });
             
-            if (titleElement) titleElement.textContent = diary.title || '無標題日記';
-            if (contentElement) contentElement.innerHTML = formatContent(diary.content || '無內容');
+            if (titleElement) {
+                titleElement.textContent = diary.title || '無標題日記';
+                // 保存到編輯狀態變量
+                originalTitle = diary.title || '';
+            }
+            if (contentElement) {
+                contentElement.innerHTML = formatContent(diary.content || '無內容');
+                // 保存到編輯狀態變量
+                originalContent = formatContent(diary.content || '無內容');
+            }
             if (dateElement) dateElement.textContent = formattedDate;
             if (moodElement) moodElement.textContent = getMoodName(diary.mood);
             
@@ -6325,6 +6780,255 @@ const DiaryModule = (function() {
         UIManager.hideDiaryDetail();
         
         selectedDiaryId = null;
+    }
+    
+    // 绑定日记详情的所有事件
+    function bindDetailEvents() {
+        if (!diaryDetailElement) return;
+
+        // 返回按鈕
+        const backToListBtn = diaryDetailElement.querySelector('#back-to-list-btn');
+        if (backToListBtn) {
+            backToListBtn.addEventListener('click', hideDetails);
+        }
+
+        // 保存按鈕
+        const saveDiaryBtn = diaryDetailElement.querySelector('#save-diary-btn');
+        if (saveDiaryBtn) {
+            saveDiaryBtn.addEventListener('click', saveDiaryChanges);
+        }
+
+        // 取消編輯按鈕
+        const cancelEditBtn = diaryDetailElement.querySelector('#cancel-edit-btn');
+        if (cancelEditBtn) {
+            cancelEditBtn.addEventListener('click', cancelEdit);
+        }
+
+        // 標題編輯事件
+        const titleElement = diaryDetailElement.querySelector('.detail-title');
+        if (titleElement) {
+            titleElement.addEventListener('focus', onEditStart);
+            titleElement.addEventListener('blur', onTitleBlur);
+            titleElement.addEventListener('input', onContentChange);
+        }
+
+        // 內容編輯事件
+        const contentElement = diaryDetailElement.querySelector('.detail-content');
+        if (contentElement) {
+            contentElement.addEventListener('focus', onEditStart);
+            contentElement.addEventListener('blur', onContentBlur);
+            contentElement.addEventListener('input', onContentChange);
+        }
+    }
+
+    // 編輯狀態變量
+    let isEditing = false;
+    let originalTitle = '';
+    let originalContent = '';
+
+    // 開始編輯
+    function onEditStart() {
+        if (!isEditing) {
+            isEditing = true;
+            const titleElement = diaryDetailElement.querySelector('.detail-title');
+            const contentElement = diaryDetailElement.querySelector('.detail-content');
+            
+            // 保存原始內容
+            originalTitle = titleElement ? titleElement.textContent : '';
+            originalContent = contentElement ? contentElement.innerHTML : '';
+            
+            // 顯示保存和取消按鈕
+            showEditButtons();
+        }
+    }
+
+    // 內容改變
+    function onContentChange() {
+        if (isEditing) {
+            const titleElement = diaryDetailElement.querySelector('.detail-title');
+            const contentElement = diaryDetailElement.querySelector('.detail-content');
+            
+            const currentTitle = titleElement ? titleElement.textContent : '';
+            const currentContent = contentElement ? contentElement.innerHTML : '';
+            
+            // 檢查是否有更改
+            const hasChanges = currentTitle !== originalTitle || currentContent !== originalContent;
+            
+            // 更新保存按鈕狀態
+            const saveDiaryBtn = diaryDetailElement.querySelector('#save-diary-btn');
+            if (saveDiaryBtn) {
+                saveDiaryBtn.disabled = !hasChanges;
+            }
+        }
+    }
+
+    // 標題失去焦點
+    function onTitleBlur() {
+        // 可以在這裡添加標題格式化邏輯
+    }
+
+    // 內容失去焦點
+    function onContentBlur() {
+        // 可以在這裡添加內容格式化邏輯
+    }
+
+    // 顯示編輯按鈕
+    function showEditButtons() {
+        const saveDiaryBtn = diaryDetailElement.querySelector('#save-diary-btn');
+        const cancelEditBtn = diaryDetailElement.querySelector('#cancel-edit-btn');
+        const editHint = diaryDetailElement.querySelector('.edit-hint');
+        
+        if (saveDiaryBtn) saveDiaryBtn.style.display = 'inline-block';
+        if (cancelEditBtn) cancelEditBtn.style.display = 'inline-block';
+        if (editHint) editHint.style.display = 'none';
+    }
+
+    // 隱藏編輯按鈕
+    function hideEditButtons() {
+        const saveDiaryBtn = diaryDetailElement.querySelector('#save-diary-btn');
+        const cancelEditBtn = diaryDetailElement.querySelector('#cancel-edit-btn');
+        const editHint = diaryDetailElement.querySelector('.edit-hint');
+        
+        if (saveDiaryBtn) saveDiaryBtn.style.display = 'none';
+        if (cancelEditBtn) cancelEditBtn.style.display = 'none';
+        if (editHint) editHint.style.display = 'inline';
+    }
+
+    // 保存日記更改
+    async function saveDiaryChanges() {
+        if (!selectedDiaryId) {
+            UIManager.showError('錯誤', '沒有選中的日記');
+            return;
+        }
+
+        const titleElement = diaryDetailElement.querySelector('.detail-title');
+        const contentElement = diaryDetailElement.querySelector('.detail-content');
+        
+        if (!titleElement || !contentElement) {
+            UIManager.showError('錯誤', '無法獲取編輯內容');
+            return;
+        }
+
+        const newTitle = titleElement.textContent.trim();
+        const newContent = contentElement.innerHTML.trim();
+
+        // 檢查是否有更改
+        if (newTitle === originalTitle && newContent === originalContent) {
+            cancelEdit();
+            return;
+        }
+
+        try {
+            // 顯示載入狀態
+            UIManager.showLoading('保存中...');
+
+            // 調用API更新日記
+            const response = await ApiService.updateDiary(selectedDiaryId, {
+                title: newTitle || null,
+                content: newContent
+            });
+
+            // 更新本地數據
+            const diaryIndex = diaries.findIndex(d => String(d.id) === String(selectedDiaryId));
+            if (diaryIndex !== -1) {
+                diaries[diaryIndex].title = newTitle;
+                diaries[diaryIndex].content = newContent;
+            }
+
+            // 詢問是否更新互動筆記
+            const shouldUpdateInteraction = await showUpdateInteractionDialog(newTitle, newContent);
+            
+            if (shouldUpdateInteraction) {
+                try {
+                    // 調用API更新互動筆記
+                    await ApiService.updateInteractionNotes(selectedDiaryId, newContent);
+                    UIManager.showToast('日記和互動筆記已更新', 'success');
+                } catch (error) {
+                    console.warn('更新互動筆記失敗:', error);
+                    UIManager.showToast('日記已保存，但互動筆記更新失敗', 'warning');
+                }
+            } else {
+                UIManager.showToast('日記已保存', 'success');
+            }
+
+            // 重新渲染日記列表
+            renderDiaryList();
+
+            // 更新原始內容
+            originalTitle = newTitle;
+            originalContent = newContent;
+
+            // 隱藏編輯按鈕
+            isEditing = false;
+            hideEditButtons();
+
+        } catch (error) {
+            console.error('保存日記失敗:', error);
+            UIManager.showError('保存失敗', '保存日記時出錯: ' + error.message);
+        } finally {
+            UIManager.hideLoading();
+        }
+    }
+
+    // 取消編輯
+    function cancelEdit() {
+        const titleElement = diaryDetailElement.querySelector('.detail-title');
+        const contentElement = diaryDetailElement.querySelector('.detail-content');
+        
+        if (titleElement) titleElement.textContent = originalTitle;
+        if (contentElement) contentElement.innerHTML = originalContent;
+        
+        isEditing = false;
+        hideEditButtons();
+    }
+
+    // 顯示更新互動筆記對話框
+    function showUpdateInteractionDialog(title, content) {
+        return new Promise((resolve) => {
+            // 創建對話框
+            const dialog = document.createElement('div');
+            dialog.className = 'modal';
+            dialog.style.display = 'flex';
+            dialog.innerHTML = `
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h3>更新互動筆記</h3>
+                    </div>
+                    <div class="modal-body">
+                        <p>您已修改了日記「${title || '無標題日記'}」的內容。</p>
+                        <p>是否要根據修改後的內容更新互動筆記？</p>
+                        <div style="margin-top: 15px; font-size: 0.9em; color: #666;">
+                            <strong>說明：</strong>互動筆記會根據您的所有日記內容進行長期的個人資訊追蹤和更新。
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button id="confirm-update" class="btn btn-primary">是，更新互動筆記</button>
+                        <button id="skip-update" class="btn btn-secondary">否，僅保存日記</button>
+                    </div>
+                </div>
+            `;
+
+            document.body.appendChild(dialog);
+
+            // 绑定事件
+            dialog.querySelector('#confirm-update').addEventListener('click', () => {
+                document.body.removeChild(dialog);
+                resolve(true);
+            });
+
+            dialog.querySelector('#skip-update').addEventListener('click', () => {
+                document.body.removeChild(dialog);
+                resolve(false);
+            });
+
+            // 點擊背景關閉（默認為否）
+            dialog.addEventListener('click', (e) => {
+                if (e.target === dialog) {
+                    document.body.removeChild(dialog);
+                    resolve(false);
+                }
+            });
+        });
     }
     
     // 格式化日期
@@ -6372,6 +7076,19 @@ const DiaryModule = (function() {
         };
         
         return moodNames[mood] || '未知情緒';
+    }
+    
+    // 從情緒值獲取情緒標籤
+    function getMoodFromValence(valence) {
+        if (typeof valence !== 'number') {
+            return 'neutral';
+        }
+        
+        if (valence >= 0.7) return 'happy';
+        if (valence >= 0.4) return 'calm';
+        if (valence >= 0) return 'neutral';
+        if (valence >= -0.4) return 'sad';
+        return 'angry';
     }
     
     // 格式化內容，處理換行和特殊標記
@@ -8015,9 +8732,9 @@ document.addEventListener('DOMContentLoaded', function() {
     // 初始化用戶選擇功能
     initUserSelection();
     
-    // 隱藏啟動屏幕並顯示用戶選擇對話框
+    // 延長啟動畫面顯示時間，給用戶更好的體驗
     setTimeout(() => {
-        // 不完全隱藏啟動畫面，而是將其轉換為背景
+        // 保持啟動畫面作為背景
         const splashScreen = document.getElementById('splash-screen');
         if (splashScreen) {
             splashScreen.classList.add('login-background');
@@ -8027,16 +8744,28 @@ document.addEventListener('DOMContentLoaded', function() {
         setTimeout(() => {
             const userSelectDialog = document.getElementById('user-select-dialog');
             if (userSelectDialog) {
-                userSelectDialog.style.display = 'block';
-                // 確保對話框在啟動畫面上方
-                userSelectDialog.style.zIndex = '1000';
+                // 確保對話框正確顯示並置中
+                userSelectDialog.style.display = 'flex';
+                userSelectDialog.style.alignItems = 'center';
+                userSelectDialog.style.justifyContent = 'center';
+                userSelectDialog.style.position = 'fixed';
+                userSelectDialog.style.top = '0';
+                userSelectDialog.style.left = '0';
+                userSelectDialog.style.width = '100%';
+                userSelectDialog.style.height = '100%';
+                userSelectDialog.style.zIndex = '1001';
+                
                 // 載入用戶列表
                 if (typeof loadUserList === 'function') {
                     loadUserList();
+                } else {
+                    console.error('loadUserList函數未定義');
                 }
+            } else {
+                console.error('找不到用戶選擇對話框元素');
             }
-        }, 800);
-    }, 1000);
+        }, 500); // 減少延遲時間
+    }, 2000); // 延長啟動畫面顯示時間
     
     // 為視圖切換按鈕添加事件監聽器
     const navItems = document.querySelectorAll('.nav-item');
@@ -8419,9 +9148,16 @@ function initUserSelection() {
         // 隱藏用戶選擇對話框，顯示密碼驗證對話框
         if (userSelectDialog) userSelectDialog.style.display = 'none';
         if (passwordDialog) {
-            passwordDialog.style.display = 'block';
-            // 確保密碼對話框在啟動畫面上方
-            passwordDialog.style.zIndex = '1000';
+            // 確保密碼對話框正確顯示並置中
+            passwordDialog.style.display = 'flex';
+            passwordDialog.style.alignItems = 'center';
+            passwordDialog.style.justifyContent = 'center';
+            passwordDialog.style.position = 'fixed';
+            passwordDialog.style.top = '0';
+            passwordDialog.style.left = '0';
+            passwordDialog.style.width = '100%';
+            passwordDialog.style.height = '100%';
+            passwordDialog.style.zIndex = '1001';
         }
         
         // 聚焦到密碼輸入框
@@ -9854,6 +10590,34 @@ const UIManager = (function() {
         }
     }
     
+    // 顯示帶有訊息的加載動畫
+    function showLoadingSpinner(message = '加載中...') {
+        if (elements.spinner) {
+            // 檢查是否有加載訊息元素
+            let messageElement = elements.spinner.querySelector('.loading-message');
+            
+            // 如果沒有訊息元素，則創建一個
+            if (!messageElement) {
+                messageElement = document.createElement('div');
+                messageElement.className = 'loading-message';
+                elements.spinner.appendChild(messageElement);
+            }
+            
+            // 設置訊息內容
+            messageElement.textContent = message;
+            
+            // 顯示加載動畫
+            elements.spinner.style.display = 'flex';
+        }
+    }
+    
+    // 隱藏加載動畫
+    function hideLoadingSpinner() {
+        if (elements.spinner) {
+            elements.spinner.style.display = 'none';
+        }
+    }
+    
     // 顯示提示消息
     function showToast(message, duration = 3000) {
         // 移除現有的提示
@@ -9927,6 +10691,8 @@ const UIManager = (function() {
         toggleTheme: handleThemeToggle,
         showSpinner,
         hideSpinner,
+        showLoadingSpinner,
+        hideLoadingSpinner,
         showToast,
         showError
     };
@@ -10588,6 +11354,139 @@ window.fetch = async function(url, options) {
 console.log('测试环境准备完成，启动应用...');
 
 ================
+File: FIXES_SUMMARY.md
+================
+# URDiary v1.2.6 修復總結
+
+## 已修復的問題
+
+### 1. 日記編輯功能修復 ✅
+**問題**: 日記小卡上的編輯按鈕點擊無響應
+**解決方案**:
+- 修復了事件綁定邏輯
+- 添加了詳細的調試日誌
+- 確保編輯按鈕正確觸發 `showDiaryDetails()` 函數
+- 自動聚焦到標題元素進入編輯模式
+
+**代碼位置**: `desktop/js/diary_module.js` 第328-345行
+
+### 2. 日記卡片顏色問題修復 ✅
+**問題**: 日記小卡顏色與背景相同，看起來不舒服
+**解決方案**:
+- 將日記卡片背景明確設置為白色 (`#ffffff`)
+- 懸停時使用稍微暗一點的白色 (`#fafafa`)
+- 優化了激活狀態下的顏色對比度
+- 改善了按鈕的可見性（從完全隱藏改為半透明顯示）
+
+**代碼位置**: `desktop/css/diary.css` 第61-146行
+
+### 3. 日記詳情頁面背景修復 ✅
+**問題**: 日記詳情頁面背景不夠明顯
+**解決方案**:
+- 為日記詳情容器添加明確的白色背景
+- 為內容編輯區域添加白色背景
+- 優化了編輯時的視覺反饋
+
+**代碼位置**: `desktop/css/diary.css` 第226-250行
+
+### 4. 日記標題位置調整 ✅
+**問題**: 日記標題位置需要移動到詳情頁面上方
+**解決方案**:
+- 重新組織了日記詳情頁面的HTML結構
+- 將標題容器移動到詳情頁面頂部
+- 調整了相關的CSS布局
+
+**代碼位置**: `desktop/js/diary_module.js` 第42-60行
+
+### 5. 啟動動畫問題修復 ✅
+**問題**: 啟動應用程式後會快速顯示生成日記動畫，再迅速關閉
+**解決方案**:
+- 延長啟動畫面顯示時間（從1秒增加到2秒）
+- 優化了啟動流程的時序
+- 改善了用戶體驗
+
+**代碼位置**: `desktop/js/main.js` 第35-56行
+
+### 6. 登入界面布局修復 ✅
+**問題**: 選擇使用者後，密碼輸入界面會跳到左上角
+**解決方案**:
+- 為用戶選擇對話框添加了完整的置中樣式
+- 為密碼輸入對話框添加了置中布局
+- 確保所有對話框都正確顯示在螢幕中央
+
+**代碼位置**: `desktop/js/main.js` 第47-54行, 第447-465行
+
+### 7. 互動筆記更新API修復 ✅
+**問題**: 編輯日記後更新互動筆記的API調用格式不正確
+**解決方案**:
+- 在後端添加了新的請求模型 `InteractionNoteUpdate`
+- 修復了API端點以接受正確的請求格式
+- 更新了前端API調用以發送正確的數據格式
+
+**代碼位置**: 
+- 後端: `grok_chatbot/app/api/routes/diary.py` 第31-36行, 第315-334行
+- 前端: `desktop/js/api_service.js` 第1687-1704行
+
+## 功能說明
+
+### 編輯按鈕功能
+- **編輯按鈕** (鉛筆圖標): 點擊後進入編輯模式，自動聚焦到標題
+- **查看按鈕** (眼睛圖標): 點擊後僅查看日記詳情，不進入編輯模式
+
+### 編輯功能流程
+1. 點擊編輯按鈕或標題/內容區域
+2. 顯示保存和取消按鈕
+3. 編輯完成後點擊保存
+4. 系統詢問是否更新互動筆記
+5. 根據選擇更新相應的數據
+
+### 互動筆記功能
+- **互動筆記**: 長期用戶資訊追蹤，會根據每日日記內容持續更新
+- **今日日記**: 基於當日對話內容生成的日記
+- **增強式聊天**: 聊天時會參考互動筆記內容進行個性化回應
+
+## 技術改進
+
+### 代碼品質
+- 添加了詳細的調試日誌
+- 改善了錯誤處理機制
+- 優化了事件綁定邏輯
+- 提高了代碼的可維護性
+
+### 用戶體驗
+- 改善了視覺設計和顏色對比度
+- 優化了界面布局和響應性
+- 提供了更清晰的操作反饋
+- 改善了登入流程的用戶體驗
+
+### API設計
+- 標準化了API請求格式
+- 改善了錯誤處理和日誌記錄
+- 優化了數據傳輸效率
+
+## 測試建議
+
+1. **編輯功能測試**:
+   - 點擊編輯按鈕確認進入編輯模式
+   - 修改標題和內容後保存
+   - 測試互動筆記更新選項
+
+2. **界面測試**:
+   - 確認日記卡片顏色正常顯示
+   - 測試登入流程界面置中
+   - 驗證啟動動畫時序
+
+3. **API測試**:
+   - 測試日記更新API
+   - 測試互動筆記更新API
+   - 驗證錯誤處理機制
+
+## 版本信息
+- **版本**: v1.2.6
+- **修復日期**: 2025年1月
+- **主要改進**: 編輯功能、界面優化、API修復
+
+================
 File: grok_chatbot/.env.example
 ================
 # 數據庫設定
@@ -10860,7 +11759,7 @@ from utils.api_exceptions import BadRequestError, NotFoundError, ServerError
 from utils.error_codes import ErrorCode
 from utils.logger import api_logger, log_error
 from database import crud, SessionLocal
-from services.diary_service import save_diary_for_user
+from services.diary_service import save_diary_for_user, generate_diary_title
 from services.interaction_service import (
     generate_enhanced_diary,
     process_interaction_note_update,
@@ -10876,9 +11775,16 @@ class UserDiaryCreate(BaseModel):
     exclude_interaction_notes: bool = False
 
 class DiaryUpdate(BaseModel):
+    title: Optional[str] = None
     content: Optional[str] = None
     valence: Optional[float] = None
     arousal: Optional[float] = None
+
+class InteractionNoteUpdate(BaseModel):
+    user_id: str
+    numeric_user_id: int
+    diary_id: int
+    content: str
 
 @router.post("/generate", response_model=Dict[str, Any],
             summary="生成日記",
@@ -10922,6 +11828,7 @@ def get_user_diaries(user_id: int, skip: int = 0, limit: int = 100, db: Session 
     for d in diaries:
         results.append({
             "diary_id": d.id,
+            "title": d.title,
             "content": d.content,
             "valence": d.valence,
             "arousal": d.arousal,
@@ -10951,6 +11858,7 @@ def get_diary(diary_id: int, db: Session = Depends(get_db)):
     return {
         "diary_id": diary.id,
         "user_id": diary.user_id,
+        "title": diary.title,
         "content": diary.content,
         "valence": diary.valence,
         "arousal": diary.arousal,
@@ -11018,6 +11926,7 @@ def update_diary(diary_id: int, diary_update: DiaryUpdate, db: Session = Depends
             "message": "日記更新成功",
             "diary": {
                 "diary_id": diary.id,
+                "title": diary.title,
                 "content": diary.content,
                 "valence": diary.valence,
                 "arousal": diary.arousal,
@@ -11073,12 +11982,16 @@ def generate_enhanced_diary_api(user_input: UserDiaryCreate):
             user_input.exclude_interaction_notes
         )
         
+        # 生成日記標題 (需要导入diary_service中的函数)
+        title = generate_diary_title(diary_content)
+        
         # 保存到數據庫
         db = SessionLocal()
         try:
             diary = crud.create_diary(
                 db=db,
                 user_id=user_input.numeric_user_id,
+                title=title,
                 content=diary_content,
                 valence=emotion_scores.get("valence"),
                 arousal=emotion_scores.get("arousal")
@@ -11096,6 +12009,7 @@ def generate_enhanced_diary_api(user_input: UserDiaryCreate):
                 "message": "增強版日記生成成功",
                 "diary": {
                     "diary_id": diary.id,
+                    "title": diary.title,
                     "content": diary.content,
                     "valence": diary.valence,
                     "arousal": diary.arousal,
@@ -11148,29 +12062,25 @@ def get_interaction_note(user_id: int, db: Session = Depends(get_db)):
 @router.post("/interaction-notes/update", response_model=Dict[str, Any],
             summary="更新互動筆記",
             description="根據今日日記更新互動筆記")
-def update_interaction_notes(user_input: UserDiaryCreate):
+def update_interaction_notes(update_request: InteractionNoteUpdate):
     """根據今日日記更新互動筆記"""
-    api_logger.info(f"開始更新互動筆記: user_id={user_input.user_id}")
+    api_logger.info(f"開始更新互動筆記: user_id={update_request.user_id}, diary_id={update_request.diary_id}")
     
     try:
-        # 先生成今日日記
-        diary_result = save_diary_for_user(user_input.user_id, user_input.numeric_user_id)
-        
-        # 基於今日日記更新互動筆記
+        # 基於提供的日記內容更新互動筆記
         note_result = process_interaction_note_update(
-            user_input.user_id, 
-            user_input.numeric_user_id,
-            diary_result["content"]
+            update_request.user_id, 
+            update_request.numeric_user_id,
+            update_request.content
         )
         
-        api_logger.info(f"互動筆記更新成功: user_id={user_input.user_id}")
+        api_logger.info(f"互動筆記更新成功: user_id={update_request.user_id}")
         return {
             "message": "互動筆記更新成功",
-            "diary": diary_result,
             "interaction_note": note_result
         }
     except Exception as e:
-        log_error(e, {"user_id": user_input.user_id, "action": "update_interaction_notes"})
+        log_error(e, {"user_id": update_request.user_id, "diary_id": update_request.diary_id, "action": "update_interaction_notes"})
         raise ServerError(
             error_code=ErrorCode.NOTE_UPDATE_FAILED,
             detail=f"互動筆記更新失敗: {str(e)}"
@@ -11518,10 +12428,11 @@ def get_users(db: Session, skip: int = 0, limit: int = 100):
 
 # Diary CRUD operations
 def create_diary(db: Session, user_id: int, content: str, 
-                valence: Optional[float] = None, arousal: Optional[float] = None):
+                title: Optional[str] = None, valence: Optional[float] = None, arousal: Optional[float] = None):
     """Create a new diary entry for a user"""
     diary = models.Diary(
         user_id=user_id,
+        title=title,
         content=content,
         valence=valence,
         arousal=arousal,
@@ -11567,6 +12478,106 @@ def delete_diary(db: Session, diary_id: int):
     return True
 
 ================
+File: grok_chatbot/app/database/migrate_add_title.py
+================
+#!/usr/bin/env python3
+"""
+數據庫遷移腳本：為 diaries 表添加 title 列
+"""
+
+import sys
+import os
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from sqlalchemy import text, create_engine
+from sqlalchemy.orm import sessionmaker
+from urllib.parse import quote_plus
+import logging
+
+# 設置日誌
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+def migrate_add_title_column():
+    """添加 title 列到 diaries 表"""
+    
+    # 直接使用 localhost 連接（容器外運行）
+    DB_HOST = "localhost"
+    DB_PORT = "5432"
+    DB_USER = "myuser"
+    DB_PASS = "Ligtace760123@"
+    DB_NAME = "mydb"
+    
+    # 對密碼進行URL編碼
+    encoded_pass = quote_plus(DB_PASS)
+    DB_URL = f"postgresql://{DB_USER}:{encoded_pass}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
+    
+    # 創建引擎和會話
+    engine = create_engine(DB_URL, echo=False)
+    SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+    
+    db = SessionLocal()
+    try:
+        # 檢查 title 列是否已存在
+        check_column_query = text("""
+            SELECT column_name 
+            FROM information_schema.columns 
+            WHERE table_name = 'diaries' AND column_name = 'title'
+        """)
+        
+        result = db.execute(check_column_query).fetchone()
+        
+        if result:
+            logger.info("title 列已存在，無需添加")
+            return True
+            
+        # 添加 title 列
+        logger.info("開始添加 title 列到 diaries 表")
+        add_column_query = text("""
+            ALTER TABLE diaries 
+            ADD COLUMN title VARCHAR(255)
+        """)
+        
+        db.execute(add_column_query)
+        db.commit()
+        logger.info("成功添加 title 列")
+        
+        # 為現有記錄生成標題
+        logger.info("開始為現有記錄生成標題")
+        update_titles_query = text("""
+            UPDATE diaries 
+            SET title = CASE 
+                WHEN LENGTH(content) > 20 THEN 
+                    SUBSTRING(content FROM 1 FOR 20) || '...'
+                ELSE 
+                    COALESCE(content, '無標題日記')
+            END
+            WHERE title IS NULL OR title = ''
+        """)
+        
+        result = db.execute(update_titles_query)
+        db.commit()
+        logger.info(f"成功更新 {result.rowcount} 條記錄的標題")
+        
+        return True
+        
+    except Exception as e:
+        logger.error(f"遷移失敗: {str(e)}")
+        db.rollback()
+        return False
+    finally:
+        db.close()
+
+if __name__ == "__main__":
+    success = migrate_add_title_column()
+    if success:
+        print("遷移成功完成")
+        sys.exit(0)
+    else:
+        print("遷移失敗")
+        sys.exit(1)
+
+================
 File: grok_chatbot/app/database/models.py
 ================
 # app/database/models.py
@@ -11592,6 +12603,7 @@ class Diary(Base):
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     
+    title = Column(String(255), nullable=True)
     diary_date = Column(DateTime, default=datetime.utcnow)
     content = Column(Text, nullable=False)
 
@@ -11644,19 +12656,19 @@ MODELS = {
     "grok3": "grok-3-latest"
 }
 
-def send_to_grok(user_id, message, model="grok2"):
+def send_to_grok(user_id, message, model="grok3"):
     """發送使用者輸入到 Grok AI，並返回回應
     
     Args:
         user_id: 用戶ID
         message: 使用者的信息
-        model: 使用的模型，可選值為 "grok2" 或 "grok3"，默認為 "grok2"
+        model: 使用的模型，可選值為 "grok2" 或 "grok3"，默認為 "grok3"
     """
     try:
         chat_history = get_chat_history(user_id)
 
         # 獲取模型 ID
-        model_id = MODELS.get(model, MODELS["grok2"])
+        model_id = MODELS.get(model, MODELS["grok3"])
 
         # 格式化對話內容
         messages = [{"role": "system", "content": "You are Grok, a chatbot inspired by the Hitchhiker's Guide to the Galaxy."}]
@@ -11680,16 +12692,16 @@ def send_to_grok(user_id, message, model="grok2"):
     except Exception as e:
         return f"Error: {str(e)}"
 
-def send_to_model(messages, model="grok2"):
+def send_to_model(messages, model="grok3"):
     """透過指定模型發送消息
     
     Args:
         messages: 消息列表
-        model: 使用的模型，可選值為 "grok2" 或 "grok3"，默認為 "grok2"
+        model: 使用的模型，可選值為 "grok2" 或 "grok3"，默認為 "grok3"
     """
     try:
         # 獲取模型 ID
-        model_id = MODELS.get(model, MODELS["grok2"])
+        model_id = MODELS.get(model, MODELS["grok3"])
         
         # 調用 Grok API
         completion = client.chat.completions.create(
@@ -12053,6 +13065,11 @@ def register_exception_handlers(app: FastAPI):
         )
 
 ================
+File: grok_chatbot/app/Scripts/add_title_to_diaries.sql
+================
+
+
+================
 File: grok_chatbot/app/Scripts/health_check.py
 ================
 #!/usr/bin/env python3
@@ -12096,6 +13113,7 @@ CREATE TABLE users (
 CREATE TABLE diaries (
     id SERIAL PRIMARY KEY,
     user_id INTEGER REFERENCES users(id) NOT NULL,
+    title VARCHAR(255),
     diary_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     content TEXT NOT NULL,
     valence FLOAT,
@@ -12169,6 +13187,22 @@ import matplotlib.pyplot as plt
 from datetime import datetime, timedelta
 import io
 import base64
+import os
+
+# 獲取提示詞目錄路徑
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+PROMPTS_DIR = os.path.join(BASE_DIR, "services", "prompts")
+
+def read_prompt_file(filename):
+    """安全讀取提示詞文件"""
+    try:
+        prompt_path = os.path.join(PROMPTS_DIR, filename)
+        with open(prompt_path, "r", encoding="utf-8") as f:
+            return f.read()
+    except Exception as e:
+        print(f"讀取提示詞文件 {filename} 時發生錯誤: {str(e)}")
+        # 返回一個簡單的備用提示詞
+        return "請根據提供的內容進行分析。"
 
 def analyze_emotion_trends(user_id: int, time_range: str = "month") -> Dict[str, Any]:
     """
@@ -12208,19 +13242,10 @@ def analyze_emotion_trends(user_id: int, time_range: str = "month") -> Dict[str,
         
         # 使用 Grok 分析情緒主題
         recent_contents = "\n\n".join([d["content"] for d in data[-5:]])
-        prompt = f"""
-        分析以下一系列日記中的情緒主題和模式：
         
-        {recent_contents}
-        
-        請提供：
-        1. 主要情緒主題 (列出3-5個)
-        2. 情緒變化模式
-        3. 積極和消極因素
-        4. 建議的關注點
-        
-        以JSON格式回應，包含這四個字段。
-        """
+        # 讀取情緒分析提示詞
+        prompt_template = read_prompt_file("emotion_analysis_prompt.txt")
+        prompt = prompt_template.format(recent_contents=recent_contents)
         
         completion = client.chat.completions.create(
             model="grok-3-latest",
@@ -12314,19 +13339,14 @@ def extract_key_themes(user_id: int) -> List[str]:
         if not latest_note:
             return []
             
-        # 分析互動筆記內容
-        prompt = f"""
-        從以下互動筆記中提取5-7個關鍵主題或關注點：
-        
-        {latest_note.content}
-        
-        只返回關鍵主題列表，無需其他解釋。每個主題控制在3-5個字。
-        """
+        # 讀取主題提取提示詞
+        prompt_template = read_prompt_file("theme_extraction_prompt.txt")
+        prompt = prompt_template.format(interaction_note_content=latest_note.content)
         
         completion = client.chat.completions.create(
             model="grok-3-latest",
             messages=[
-                {"role": "system", "content": "你是一位主題分析專家。"},
+                {"role": "system", "content": "你是一位心靈事件主題分析專家。"},
                 {"role": "user", "content": prompt}
             ]
         )
@@ -12347,7 +13367,12 @@ from memory_manager import get_chat_history
 from database import crud
 from database import SessionLocal
 import re
+import os
 from typing import List, Dict, Any, Tuple
+
+# 獲取提示詞目錄路徑
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+PROMPTS_DIR = os.path.join(BASE_DIR, "services", "prompts")
 
 # Sensitive words detection
 SENSITIVE_WORDS = [
@@ -12369,6 +13394,17 @@ SUPPORT_MESSAGE = """
 
 請記住，尋求幫助是勇氣和力量的表現，而不是軟弱。
 """
+
+def read_prompt_file(filename):
+    """安全讀取提示詞文件"""
+    try:
+        prompt_path = os.path.join(PROMPTS_DIR, filename)
+        with open(prompt_path, "r", encoding="utf-8") as f:
+            return f.read()
+    except Exception as e:
+        print(f"讀取提示詞文件 {filename} 時發生錯誤: {str(e)}")
+        # 返回一個簡單的備用提示詞
+        return "請根據對話歷史生成相應內容。"
 
 def check_sensitive_content(message: str) -> bool:
     """Check if message contains sensitive words related to self-harm or harm to others"""
@@ -12402,33 +13438,21 @@ def generate_diary_from_chat(user_id: str) -> Tuple[str, Dict[str, float]]:
     
     chat_content = "\n".join(formatted_history)
     
-    # Prompt for diary generation
-    diary_prompt = f"""
-    請根據以下對話歷史，以第一人稱（我）為使用者寫一篇今日日記。
-    日記應該總結使用者今天分享的重要事件、想法和感受。
-    日記風格應該溫暖、有同理心，但不要過於情緒化。
-    長度應在300-500字之間。
-    請不要直接引用對話內容，而是根據對話概括使用者的一天。
-    請不要提及這是AI生成的內容。
-
-    對話歷史：
-    {chat_content}
-
-    在日記後，請另外用JSON格式提供情緒評分：
-    {{
-        "valence": 0-1之間的數值（愉悅程度，0為非常負面，1為非常正面）,
-        "arousal": 0-1之間的數值（情緒激動程度，0為非常平靜，1為非常激動）
-    }}
+    # 讀取日記生成提示詞
+    prompt_template = read_prompt_file("daily_note_prompt.txt")
     
-    只返回日記內容和JSON格式的情緒評分，不要有多餘的說明。
-    """
+    # 準備提示詞
+    diary_prompt = prompt_template.format(
+        chat_history=chat_content,
+        interaction_note="請忽略此部分，專注於今日對話生成日記。"
+    )
     
     try:
         # Call Grok API to generate diary
         completion = client.chat.completions.create(
-            model="grok-2-latest",
+            model="grok-3-latest",
             messages=[
-                {"role": "system", "content": "You are a helpful, supportive diary writer."},
+                {"role": "system", "content": "你是一位溫暖且有洞察力的日記作者."},
                 {"role": "user", "content": diary_prompt}
             ]
         )
@@ -12470,12 +13494,16 @@ def save_diary_for_user(user_id: str, numeric_user_id: int) -> Dict[str, Any]:
     """
     diary_content, emotion_scores = generate_diary_from_chat(user_id)
     
+    # 生成日记标题
+    title = generate_diary_title(diary_content)
+    
     # Save to database
     db = SessionLocal()
     try:
         diary = crud.create_diary(
             db=db,
             user_id=numeric_user_id,
+            title=title,
             content=diary_content,
             valence=emotion_scores.get("valence"),
             arousal=emotion_scores.get("arousal")
@@ -12483,6 +13511,7 @@ def save_diary_for_user(user_id: str, numeric_user_id: int) -> Dict[str, Any]:
         
         return {
             "diary_id": diary.id,
+            "title": diary.title,
             "content": diary.content,
             "valence": diary.valence,
             "arousal": diary.arousal,
@@ -12490,6 +13519,33 @@ def save_diary_for_user(user_id: str, numeric_user_id: int) -> Dict[str, Any]:
         }
     finally:
         db.close()
+
+def generate_diary_title(content: str) -> str:
+    """
+    Generate a title for the diary based on its content
+    """
+    if not content:
+        return "今日日記"
+    
+    # 简单的标题生成逻辑
+    lines = content.split('\n')
+    first_meaningful_line = ""
+    
+    for line in lines:
+        clean_line = line.strip()
+        if clean_line and len(clean_line) > 5:
+            first_meaningful_line = clean_line
+            break
+    
+    if not first_meaningful_line:
+        return "今日日記"
+    
+    # 取前20个字符作为标题
+    title = first_meaningful_line[:20]
+    if len(first_meaningful_line) > 20:
+        title += "..."
+    
+    return title
 
 ================
 File: grok_chatbot/app/services/interaction_service.py
@@ -12575,12 +13631,46 @@ def update_interaction_note(
     # 獲取今日日期，格式為YYYY-MM-DD
     today_date = datetime.now().strftime("%Y-%m-%d")
     
+    # 執行情緒分析
+    from .analytics_service import analyze_emotion_trends
+    emotion_analysis = {"theme_analysis": {"主要情緒主題": ["無資料"], "情緒變化模式": "無資料", "積極和消極因素": "無資料", "建議的關注點": "無資料"}}
+    
+    try:
+        # 使用臨時數據庫連接
+        db = SessionLocal()
+        user_id = None
+        
+        # 嘗試從聊天歷史中提取用戶ID
+        for msg in chat_history:
+            if msg.get("user_id"):
+                user_id = int(msg["user_id"])
+                break
+        
+        # 若能找到用戶ID，執行情緒分析
+        if user_id:
+            emotion_analysis = analyze_emotion_trends(user_id, "week")
+        
+        db.close()
+    except Exception as e:
+        print(f"分析情緒時發生錯誤: {str(e)}")
+    
+    # 提取情緒分析結果
+    emotion_themes = emotion_analysis.get("theme_analysis", {})
+    emotion_info = f"""
+情緒分析結果：
+- 主要情緒主題: {', '.join(emotion_themes.get('主要情緒主題', ['無資料']))}
+- 情緒變化模式: {emotion_themes.get('情緒變化模式', '無資料')}
+- 積極和消極因素: {emotion_themes.get('積極和消極因素', '無資料')}
+- 建議的關注點: {emotion_themes.get('建議的關注點', '無資料')}
+"""
+    
     # 準備提示詞
     prompt = prompt_template.format(
         previous_interaction_note=previous_note_content or "尚無互動筆記",
         chat_history=chat_content,
         todays_diary=today_diary,
-        today_date=today_date
+        today_date=today_date,
+        emotion_analysis=emotion_info
     )
     
     # 調用 Grok API

@@ -27,10 +27,11 @@ def get_users(db: Session, skip: int = 0, limit: int = 100):
 
 # Diary CRUD operations
 def create_diary(db: Session, user_id: int, content: str, 
-                valence: Optional[float] = None, arousal: Optional[float] = None):
+                title: Optional[str] = None, valence: Optional[float] = None, arousal: Optional[float] = None):
     """Create a new diary entry for a user"""
     diary = models.Diary(
         user_id=user_id,
+        title=title,
         content=content,
         valence=valence,
         arousal=arousal,

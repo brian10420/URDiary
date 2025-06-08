@@ -37,9 +37,9 @@ document.addEventListener('DOMContentLoaded', function() {
     // 初始化用戶選擇功能
     initUserSelection();
     
-    // 隱藏啟動屏幕並顯示用戶選擇對話框
+    // 延長啟動畫面顯示時間，給用戶更好的體驗
     setTimeout(() => {
-        // 不完全隱藏啟動畫面，而是將其轉換為背景
+        // 保持啟動畫面作為背景
         const splashScreen = document.getElementById('splash-screen');
         if (splashScreen) {
             splashScreen.classList.add('login-background');
@@ -49,16 +49,28 @@ document.addEventListener('DOMContentLoaded', function() {
         setTimeout(() => {
             const userSelectDialog = document.getElementById('user-select-dialog');
             if (userSelectDialog) {
-                userSelectDialog.style.display = 'block';
-                // 確保對話框在啟動畫面上方
-                userSelectDialog.style.zIndex = '1000';
+                // 確保對話框正確顯示並置中
+                userSelectDialog.style.display = 'flex';
+                userSelectDialog.style.alignItems = 'center';
+                userSelectDialog.style.justifyContent = 'center';
+                userSelectDialog.style.position = 'fixed';
+                userSelectDialog.style.top = '0';
+                userSelectDialog.style.left = '0';
+                userSelectDialog.style.width = '100%';
+                userSelectDialog.style.height = '100%';
+                userSelectDialog.style.zIndex = '1001';
+                
                 // 載入用戶列表
                 if (typeof loadUserList === 'function') {
                     loadUserList();
+                } else {
+                    console.error('loadUserList函數未定義');
                 }
+            } else {
+                console.error('找不到用戶選擇對話框元素');
             }
-        }, 800);
-    }, 1000);
+        }, 500); // 減少延遲時間
+    }, 2000); // 延長啟動畫面顯示時間
     
     // 為視圖切換按鈕添加事件監聽器
     const navItems = document.querySelectorAll('.nav-item');
@@ -441,9 +453,16 @@ function initUserSelection() {
         // 隱藏用戶選擇對話框，顯示密碼驗證對話框
         if (userSelectDialog) userSelectDialog.style.display = 'none';
         if (passwordDialog) {
-            passwordDialog.style.display = 'block';
-            // 確保密碼對話框在啟動畫面上方
-            passwordDialog.style.zIndex = '1000';
+            // 確保密碼對話框正確顯示並置中
+            passwordDialog.style.display = 'flex';
+            passwordDialog.style.alignItems = 'center';
+            passwordDialog.style.justifyContent = 'center';
+            passwordDialog.style.position = 'fixed';
+            passwordDialog.style.top = '0';
+            passwordDialog.style.left = '0';
+            passwordDialog.style.width = '100%';
+            passwordDialog.style.height = '100%';
+            passwordDialog.style.zIndex = '1001';
         }
         
         // 聚焦到密碼輸入框

@@ -703,7 +703,7 @@ const UIManager = (function() {
     }
     
     // 顯示提示消息
-    function showToast(message, duration = 3000) {
+    function showToast(message, type = 'info', duration = 3000) {
         // 移除現有的提示
         const existingToast = document.querySelector('.toast-message');
         if (existingToast) {
@@ -712,8 +712,26 @@ const UIManager = (function() {
         
         // 創建新的提示元素
         const toast = document.createElement('div');
-        toast.className = 'toast-message';
+        toast.className = `toast-message toast-${type}`;
         toast.textContent = message;
+        
+        // 根據類型添加圖標
+        let icon = '';
+        switch(type) {
+            case 'success':
+                icon = '<i class="fa fa-check-circle"></i>';
+                break;
+            case 'warning':
+                icon = '<i class="fa fa-exclamation-triangle"></i>';
+                break;
+            case 'error':
+                icon = '<i class="fa fa-times-circle"></i>';
+                break;
+            default:
+                icon = '<i class="fa fa-info-circle"></i>';
+        }
+        
+        toast.innerHTML = `${icon}<span>${message}</span>`;
         
         // 添加到文檔
         document.body.appendChild(toast);

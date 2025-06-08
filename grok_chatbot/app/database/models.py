@@ -21,6 +21,7 @@ class Diary(Base):
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     
+    title = Column(String(255), nullable=True)
     diary_date = Column(DateTime, default=datetime.utcnow)
     content = Column(Text, nullable=False)
 

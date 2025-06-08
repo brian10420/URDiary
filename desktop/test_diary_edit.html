@@ -1,0 +1,442 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>日記編輯功能測試</title>
+    <link rel="stylesheet" href="css/base.css">
+    <link rel="stylesheet" href="css/diary.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <style>
+        body {
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .test-container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .test-header {
+            text-align: center;
+            margin-bottom: 30px;
+            padding-bottom: 20px;
+            border-bottom: 2px solid #eee;
+        }
+        .test-section {
+            margin-bottom: 30px;
+        }
+        .test-section h3 {
+            color: #333;
+            margin-bottom: 15px;
+            padding: 10px;
+            background: #f8f9fa;
+            border-left: 4px solid #007bff;
+        }
+        .diary-container {
+            display: flex;
+            gap: 20px;
+            min-height: 500px;
+        }
+        .diary-list {
+            flex: 1;
+            max-width: 400px;
+        }
+        .diary-detail {
+            flex: 1;
+            display: none;
+        }
+        .diary-detail.active {
+            display: flex;
+        }
+        .test-controls {
+            margin-bottom: 20px;
+            padding: 15px;
+            background: #e9ecef;
+            border-radius: 5px;
+        }
+        .test-controls button {
+            margin-right: 10px;
+            margin-bottom: 5px;
+        }
+        .status-indicator {
+            padding: 10px;
+            border-radius: 5px;
+            margin-bottom: 15px;
+            font-weight: bold;
+        }
+        .status-success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        .status-error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        .status-info {
+            background: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #bee5eb;
+        }
+    </style>
+</head>
+<body>
+    <div class="test-container">
+        <div class="test-header">
+            <h1><i class="fa fa-edit"></i> 日記編輯功能測試</h1>
+            <p>測試日記的編輯、保存和互動筆記更新功能</p>
+        </div>
+
+        <div class="test-section">
+            <h3><i class="fa fa-cogs"></i> 測試控制</h3>
+            <div class="test-controls">
+                <button class="btn btn-primary" onclick="initializeTest()">
+                    <i class="fa fa-play"></i> 初始化測試
+                </button>
+                <button class="btn btn-secondary" onclick="loadMockDiaries()">
+                    <i class="fa fa-database"></i> 載入模擬日記
+                </button>
+                <button class="btn btn-accent" onclick="testEditMode()">
+                    <i class="fa fa-edit"></i> 測試編輯模式
+                </button>
+                <button class="btn btn-outline" onclick="clearTest()">
+                    <i class="fa fa-trash"></i> 清除測試
+                </button>
+            </div>
+            <div id="test-status" class="status-indicator status-info">
+                <i class="fa fa-info-circle"></i> 點擊"初始化測試"開始測試
+            </div>
+        </div>
+
+        <div class="test-section">
+            <h3><i class="fa fa-book"></i> 日記管理界面</h3>
+            <div class="diary-container">
+                <div class="diary-list">
+                    <!-- 日記列表將在這裡動態生成 -->
+                </div>
+                <div class="diary-detail">
+                    <div class="detail-header">
+                        <div class="detail-actions">
+                            <button id="save-diary-btn" class="btn btn-sm btn-primary" style="display: none;">保存更改</button>
+                            <button id="cancel-edit-btn" class="btn btn-sm btn-secondary" style="display: none;">取消編輯</button>
+                            <button id="back-to-list-btn" class="btn btn-sm">返回列表</button>
+                        </div>
+                    </div>
+                    <div class="title-container">
+                        <h3 class="detail-title" contenteditable="false" placeholder="點擊編輯標題...">選擇一篇日記查看詳情</h3>
+                        <span class="edit-hint">點擊標題或內容進行編輯</span>
+                    </div>
+                    <div class="detail-content" contenteditable="false" placeholder="點擊編輯內容...">請從左側選擇一篇日記</div>
+                    <div class="detail-footer">
+                        <div class="detail-meta">
+                            <span class="detail-date">-</span>
+                            <span class="detail-mood">-</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="test-section">
+            <h3><i class="fa fa-terminal"></i> 測試日誌</h3>
+            <div id="test-log" style="background: #f8f9fa; padding: 15px; border-radius: 5px; font-family: monospace; max-height: 300px; overflow-y: auto;">
+                測試日誌將在這裡顯示...
+            </div>
+        </div>
+    </div>
+
+    <!-- 載入動畫 -->
+    <div class="loading-spinner">
+        <div class="spinner"></div>
+        <div class="loading-message">載入中...</div>
+    </div>
+
+    <!-- 載入必要的腳本 -->
+    <script src="js/config.js"></script>
+    <script src="js/error_logger.js"></script>
+    <script src="js/ui_manager.js"></script>
+    <script src="js/api_service.js"></script>
+    <script src="js/diary_module.js"></script>
+
+    <script>
+        // 測試腳本
+        let testLog = [];
+        
+        function log(message, type = 'info') {
+            const timestamp = new Date().toLocaleTimeString();
+            const logEntry = `[${timestamp}] ${message}`;
+            testLog.push(logEntry);
+            
+            const logElement = document.getElementById('test-log');
+            logElement.innerHTML = testLog.join('\n');
+            logElement.scrollTop = logElement.scrollHeight;
+            
+            console.log(logEntry);
+        }
+        
+        function updateStatus(message, type = 'info') {
+            const statusElement = document.getElementById('test-status');
+            statusElement.className = `status-indicator status-${type}`;
+            statusElement.innerHTML = `<i class="fa fa-${type === 'success' ? 'check' : type === 'error' ? 'times' : 'info'}-circle"></i> ${message}`;
+        }
+        
+        function initializeTest() {
+            log('開始初始化測試環境');
+            updateStatus('正在初始化...', 'info');
+            
+            try {
+                // 初始化各個模組
+                if (typeof UIManager !== 'undefined') {
+                    UIManager.init();
+                    log('UI管理器初始化成功');
+                } else {
+                    throw new Error('UIManager未定義');
+                }
+                
+                if (typeof ApiService !== 'undefined') {
+                    ApiService.init();
+                    log('API服務初始化成功');
+                } else {
+                    throw new Error('ApiService未定義');
+                }
+                
+                if (typeof DiaryModule !== 'undefined') {
+                    DiaryModule.init();
+                    log('日記模組初始化成功');
+                } else {
+                    throw new Error('DiaryModule未定義');
+                }
+                
+                updateStatus('測試環境初始化成功', 'success');
+                log('測試環境初始化完成');
+                
+            } catch (error) {
+                log(`初始化失敗: ${error.message}`, 'error');
+                updateStatus('初始化失敗', 'error');
+            }
+        }
+        
+        function loadMockDiaries() {
+            log('載入模擬日記數據');
+            
+            const mockDiaries = [
+                {
+                    id: 'test_diary_1',
+                    title: '測試日記 1',
+                    content: '這是第一篇測試日記的內容。今天天氣很好，心情也不錯。',
+                    date: new Date().toISOString(),
+                    mood: 'happy',
+                    valence: 0.8,
+                    arousal: 0.6
+                },
+                {
+                    id: 'test_diary_2',
+                    title: '測試日記 2',
+                    content: '這是第二篇測試日記的內容。今天工作有點忙碌，但還是完成了任務。',
+                    date: new Date(Date.now() - 86400000).toISOString(),
+                    mood: 'neutral',
+                    valence: 0.5,
+                    arousal: 0.7
+                }
+            ];
+            
+            // 直接操作DOM來顯示模擬數據
+            const diaryList = document.querySelector('.diary-list');
+            diaryList.innerHTML = '';
+            
+            mockDiaries.forEach(diary => {
+                const diaryCard = document.createElement('div');
+                diaryCard.className = 'diary-card';
+                diaryCard.setAttribute('data-id', diary.id);
+                
+                const dateObj = new Date(diary.date);
+                const formattedDate = dateObj.toLocaleDateString('zh-CN', {
+                    month: 'short',
+                    day: 'numeric',
+                    hour: '2-digit',
+                    minute: '2-digit'
+                });
+                
+                diaryCard.innerHTML = `
+                    <div class="diary-card-header">
+                        <h3 class="diary-title">${diary.title}</h3>
+                        <div class="diary-actions">
+                            <button class="btn-icon edit-diary-btn" title="編輯日記" data-id="${diary.id}">
+                                <i class="fa fa-edit"></i>
+                            </button>
+                            <button class="btn-icon view-diary-btn" title="查看詳情" data-id="${diary.id}">
+                                <i class="fa fa-eye"></i>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="diary-excerpt">${diary.content.substring(0, 100)}...</div>
+                    <div class="diary-meta">
+                        <span class="diary-date">${formattedDate}</span>
+                        <span class="diary-mood" style="color: #FFD700">喜悅</span>
+                    </div>
+                `;
+                
+                // 綁定點擊事件
+                diaryCard.addEventListener('click', () => showTestDiaryDetails(diary));
+                
+                diaryList.appendChild(diaryCard);
+            });
+            
+            log(`載入了 ${mockDiaries.length} 篇模擬日記`);
+            updateStatus('模擬日記載入成功', 'success');
+        }
+        
+        function showTestDiaryDetails(diary) {
+            log(`顯示日記詳情: ${diary.title}`);
+            
+            const diaryDetail = document.querySelector('.diary-detail');
+            const titleElement = diaryDetail.querySelector('.detail-title');
+            const contentElement = diaryDetail.querySelector('.detail-content');
+            const dateElement = diaryDetail.querySelector('.detail-date');
+            const moodElement = diaryDetail.querySelector('.detail-mood');
+            
+            titleElement.textContent = diary.title;
+            contentElement.innerHTML = diary.content;
+            dateElement.textContent = new Date(diary.date).toLocaleDateString('zh-CN');
+            moodElement.textContent = '喜悅';
+            
+            // 重置編輯狀態
+            titleElement.setAttribute('contenteditable', 'false');
+            contentElement.setAttribute('contenteditable', 'false');
+            titleElement.classList.remove('editing');
+            contentElement.classList.remove('editing');
+            
+            // 隱藏編輯按鈕
+            document.getElementById('save-diary-btn').style.display = 'none';
+            document.getElementById('cancel-edit-btn').style.display = 'none';
+            
+            diaryDetail.classList.add('active');
+            diaryDetail.style.display = 'flex';
+            
+            // 綁定編輯事件
+            bindEditEvents(diary);
+            
+            log('日記詳情顯示成功');
+        }
+        
+        function bindEditEvents(diary) {
+            const titleElement = document.querySelector('.detail-title');
+            const contentElement = document.querySelector('.detail-content');
+            
+            // 移除舊的事件監聽器
+            titleElement.removeEventListener('focus', startEdit);
+            contentElement.removeEventListener('focus', startEdit);
+            
+            // 添加新的事件監聽器
+            titleElement.addEventListener('focus', startEdit);
+            contentElement.addEventListener('focus', startEdit);
+            
+            // 綁定保存和取消按鈕
+            document.getElementById('save-diary-btn').onclick = () => saveTestDiary(diary);
+            document.getElementById('cancel-edit-btn').onclick = cancelEdit;
+        }
+        
+        function startEdit() {
+            log('開始編輯模式');
+            
+            const titleElement = document.querySelector('.detail-title');
+            const contentElement = document.querySelector('.detail-content');
+            
+            titleElement.setAttribute('contenteditable', 'true');
+            contentElement.setAttribute('contenteditable', 'true');
+            titleElement.classList.add('editing');
+            contentElement.classList.add('editing');
+            
+            document.getElementById('save-diary-btn').style.display = 'inline-block';
+            document.getElementById('cancel-edit-btn').style.display = 'inline-block';
+            
+            updateStatus('進入編輯模式', 'info');
+        }
+        
+        function saveTestDiary(diary) {
+            log('保存日記更改');
+            updateStatus('正在保存...', 'info');
+            
+            const titleElement = document.querySelector('.detail-title');
+            const contentElement = document.querySelector('.detail-content');
+            
+            const newTitle = titleElement.textContent.trim();
+            const newContent = contentElement.innerHTML.trim();
+            
+            // 模擬API調用
+            setTimeout(() => {
+                log(`日記已保存: 標題="${newTitle}"`);
+                
+                // 模擬詢問是否更新互動筆記
+                if (confirm('日記已保存成功！是否要更新互動筆記？')) {
+                    log('用戶選擇更新互動筆記');
+                    setTimeout(() => {
+                        log('互動筆記更新成功');
+                        updateStatus('日記和互動筆記已更新', 'success');
+                        exitEditMode();
+                    }, 1000);
+                } else {
+                    log('用戶選擇不更新互動筆記');
+                    updateStatus('日記已保存', 'success');
+                    exitEditMode();
+                }
+            }, 1000);
+        }
+        
+        function cancelEdit() {
+            log('取消編輯');
+            exitEditMode();
+            updateStatus('已取消編輯', 'info');
+        }
+        
+        function exitEditMode() {
+            const titleElement = document.querySelector('.detail-title');
+            const contentElement = document.querySelector('.detail-content');
+            
+            titleElement.setAttribute('contenteditable', 'false');
+            contentElement.setAttribute('contenteditable', 'false');
+            titleElement.classList.remove('editing');
+            contentElement.classList.remove('editing');
+            
+            document.getElementById('save-diary-btn').style.display = 'none';
+            document.getElementById('cancel-edit-btn').style.display = 'none';
+        }
+        
+        function testEditMode() {
+            log('測試編輯模式功能');
+            
+            if (document.querySelector('.diary-detail.active')) {
+                const titleElement = document.querySelector('.detail-title');
+                titleElement.focus();
+                log('已聚焦到標題元素，應該進入編輯模式');
+            } else {
+                log('請先載入並選擇一篇日記');
+                updateStatus('請先載入並選擇一篇日記', 'error');
+            }
+        }
+        
+        function clearTest() {
+            log('清除測試環境');
+            
+            document.querySelector('.diary-list').innerHTML = '';
+            document.querySelector('.diary-detail').classList.remove('active');
+            document.querySelector('.diary-detail').style.display = 'none';
+            
+            testLog = [];
+            document.getElementById('test-log').innerHTML = '測試日誌已清除...';
+            updateStatus('測試環境已清除', 'info');
+        }
+        
+        // 頁面載入完成後自動初始化
+        document.addEventListener('DOMContentLoaded', function() {
+            log('頁面載入完成');
+            updateStatus('頁面已載入，請點擊初始化測試', 'info');
+        });
+    </script>
+</body>
+</html> 

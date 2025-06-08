@@ -130,12 +130,16 @@ def save_diary_for_user(user_id: str, numeric_user_id: int) -> Dict[str, Any]:
     """
     diary_content, emotion_scores = generate_diary_from_chat(user_id)
     
+    # 生成日记标题
+    title = generate_diary_title(diary_content)
+    
     # Save to database
     db = SessionLocal()
     try:
         diary = crud.create_diary(
             db=db,
             user_id=numeric_user_id,
+            title=title,
             content=diary_content,
             valence=emotion_scores.get("valence"),
             arousal=emotion_scores.get("arousal")
@@ -143,6 +147,7 @@ def save_diary_for_user(user_id: str, numeric_user_id: int) -> Dict[str, Any]:
         
         return {
             "diary_id": diary.id,
+            "title": diary.title,
             "content": diary.content,
             "valence": diary.valence,
             "arousal": diary.arousal,
@@ -150,3 +155,30 @@ def save_diary_for_user(user_id: str, numeric_user_id: int) -> Dict[str, Any]:
         }
     finally:
         db.close()
+
+def generate_diary_title(content: str) -> str:
+    """
+    Generate a title for the diary based on its content
+    """
+    if not content:
+        return "今日日記"
+    
+    # 简单的标题生成逻辑
+    lines = content.split('\n')
+    first_meaningful_line = ""
+    
+    for line in lines:
+        clean_line = line.strip()
+        if clean_line and len(clean_line) > 5:
+            first_meaningful_line = clean_line
+            break
+    
+    if not first_meaningful_line:
+        return "今日日記"
+    
+    # 取前20个字符作为标题
+    title = first_meaningful_line[:20]
+    if len(first_meaningful_line) > 20:
+        title += "..."
+    
+    return title

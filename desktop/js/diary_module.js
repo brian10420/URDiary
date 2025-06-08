@@ -5,6 +5,9 @@ const DiaryModule = (function() {
     // 私有變量
     let diaries = [];
     let selectedDiaryId = null;
+    let isEditing = false;
+    let originalTitle = '';
+    let originalContent = '';
     
     // DOM元素 - 初始化為null，將在init函數中獲取
     let diaryListElement = null;
@@ -45,17 +48,15 @@ const DiaryModule = (function() {
         
         // 確保日記詳情元素有所需的子元素
         if (diaryDetailElement) {
-            // 檢查是否有必要的子元素
+            // 檢查是否有必要的子元素，如果沒有則創建基本結構
             if (!diaryDetailElement.querySelector('.detail-title')) {
-                console.log('創建日記詳情所需的子元素');
+                console.log('創建日記詳情所需的基本子元素');
                 diaryDetailElement.innerHTML = `
-                    <div class="detail-header">
-                        <h3 class="detail-title"></h3>
-                        <div class="detail-actions">
-                            <button id="back-to-list-btn" class="btn btn-sm">返回列表</button>
-                        </div>
+                    <div class="title-container">
+                        <h3 class="detail-title" contenteditable="false" placeholder="點擊編輯標題..."></h3>
+                        <span class="edit-hint">點擊標題或內容進行編輯</span>
                     </div>
-                    <div class="detail-content"></div>
+                    <div class="detail-content" contenteditable="false" placeholder="點擊編輯內容..."></div>
                     <div class="detail-footer">
                         <div class="detail-meta">
                             <span class="detail-date"></span>
@@ -63,19 +64,20 @@ const DiaryModule = (function() {
                         </div>
                     </div>
                 `;
-                
-                // 重新綁定返回按鈕事件
-                const backToListBtn = diaryDetailElement.querySelector('#back-to-list-btn');
-                if (backToListBtn) {
-                    backToListBtn.addEventListener('click', function() {
-                        hideDetails();
-                    });
-                }
             }
+            
+            // 確保編輯按鈕存在
+            ensureEditButtonsExist();
+            
+            // 重新綁定事件
+            bindDetailEvents();
         }
         
         // 載入日記列表
         loadDiaries();
+        
+        // 綁定事件
+        bindDetailEvents();
         
         // 綁定返回按鈕事件
         const backToListBtn = document.getElementById('back-to-list-btn');
@@ -123,16 +125,98 @@ const DiaryModule = (function() {
             
             // 從API獲取日記列表
             console.log('向API請求日記數據');
-            diaries = await ApiService.getDiaries();
-            console.log(`成功獲取${diaries.length}條日記`);
+            const response = await ApiService.getDiaries();
+            console.log('API響應:', response);
             
-            // 檢查數據
-            if (!diaries || !Array.isArray(diaries)) {
-                console.error('獲取的日記數據無效:', diaries);
-                // 使用空數組作為後備
-                diaries = [];
-                console.log('使用空數組作為後備');
+            // 處理響應數據
+            let diariesArray = [];
+            
+            if (response && Array.isArray(response)) {
+                // 如果響應直接是數組
+                diariesArray = response;
+                console.log('響應是數組格式，直接使用');
+            } else if (response && response.diaries && Array.isArray(response.diaries)) {
+                // 如果響應包含diaries屬性
+                diariesArray = response.diaries;
+                console.log('從響應的diaries屬性獲取數據');
+            } else if (response && response.success && response.diaries && Array.isArray(response.diaries)) {
+                // 如果是模擬數據格式
+                diariesArray = response.diaries;
+                console.log('從模擬數據格式獲取日記列表');
+            } else if (response && typeof response === 'object') {
+                // 嘗試從其他可能的格式中提取數據
+                console.warn('響應格式不標準，嘗試提取數據:', response);
+                
+                // 檢查是否有其他可能的數據字段
+                const possibleArrays = Object.values(response).filter(value => Array.isArray(value));
+                if (possibleArrays.length > 0) {
+                    diariesArray = possibleArrays[0];
+                    console.log('從響應中找到數組數據');
+                } else {
+                    console.warn('無法從響應中提取日記數據，使用空數組');
+                    diariesArray = [];
+                }
+            } else {
+                console.warn('響應格式無效，使用空數組');
+                diariesArray = [];
             }
+            
+            // 轉換數據格式，確保每個日記項目都有必要的字段
+            diaries = diariesArray.map(diary => {
+                // 處理ID字段
+                const id = diary.diary_id || diary.id || generateId();
+                
+                // 處理標題字段 - 確保不是null或undefined
+                let title = diary.title;
+                if (!title || title === null || title === undefined || title.trim() === '') {
+                    // 如果沒有標題，根據內容或日期生成一個
+                    const dateStr = diary.diary_date || diary.date;
+                    if (dateStr) {
+                        try {
+                            const date = new Date(dateStr);
+                            title = `日記 - ${date.toLocaleDateString('zh-CN')}`;
+                        } catch (e) {
+                            title = '無標題日記';
+                        }
+                    } else {
+                        title = '無標題日記';
+                    }
+                }
+                
+                // 處理內容字段
+                let content = diary.content || '';
+                if (content === null || content === undefined) {
+                    content = '';
+                }
+                
+                // 處理日期字段
+                let date = diary.diary_date || diary.date || new Date().toISOString();
+                if (typeof date === 'string') {
+                    // 確保日期格式正確
+                    try {
+                        date = new Date(date).toISOString();
+                    } catch (e) {
+                        console.warn('日期格式錯誤，使用當前時間:', date);
+                        date = new Date().toISOString();
+                    }
+                }
+                
+                // 處理情緒值
+                const valence = parseFloat(diary.valence) || 0.5;
+                const arousal = parseFloat(diary.arousal) || 0.5;
+                
+                return {
+                    id: id,
+                    title: title,
+                    content: content,
+                    date: date,
+                    mood: getMoodFromValence(valence),
+                    valence: valence,
+                    arousal: arousal
+                };
+            });
+            
+            console.log(`成功處理${diaries.length}條日記數據`);
             
             // 渲染日記列表
             console.log('開始渲染日記列表');
@@ -195,45 +279,78 @@ const DiaryModule = (function() {
                     console.warn(`日記缺少ID，已生成新ID: ${diary.id}`);
                 }
                 
-                // 解析日期
-                const date = new Date(diary.date);
-                const formattedDate = formatDate(date);
+                const diaryCard = document.createElement('div');
+                diaryCard.className = 'diary-card';
+                diaryCard.setAttribute('data-id', diary.id);
                 
-                // 獲取情緒顯示名稱
-                const moodName = getMoodName(diary.mood);
-                
-                // 創建列表項
-                const listItem = document.createElement('div');
-                listItem.className = 'diary-card';
-                listItem.setAttribute('data-id', diary.id);
-                
-                // 設置HTML內容
-                listItem.innerHTML = `
-                    <div class="card-header">
-                        <div class="card-date">${formattedDate}</div>
-                        <div class="mood-tag" style="background-color: ${getMoodColor(diary.mood)}">
-                            ${moodName}
-                        </div>
-                    </div>
-                    <h3 class="card-title">${diary.title || '無標題日記'}</h3>
-                    <div class="card-excerpt">${getExcerpt(diary.content, 80)}</div>
-                `;
-                
-                // 添加點擊事件 - 使用外部函數封裝以避免閉包問題
-                const diaryId = diary.id; // 創建局部變量保存ID
-                listItem.addEventListener('click', function() {
-                    console.log(`日記卡片被點擊: ID=${diaryId}`);
-                    showDiaryDetails(diaryId);
+                // 格式化日期
+                const dateObj = new Date(diary.date);
+                const formattedDate = dateObj.toLocaleDateString('zh-CN', {
+                    month: 'short',
+                    day: 'numeric',
+                    hour: '2-digit',
+                    minute: '2-digit'
                 });
                 
-                // 添加到列表
-                diaryListElement.appendChild(listItem);
+                // 獲取摘要
+                const excerpt = getExcerpt(diary.content);
+                const moodColor = getMoodColor(diary.mood);
+                const moodName = getMoodName(diary.mood);
+                
+                diaryCard.innerHTML = `
+                    <div class="diary-card-header">
+                        <h3 class="diary-title">${diary.title}</h3>
+                        <div class="diary-actions">
+                            <button class="btn-icon edit-diary-btn" title="編輯日記" data-id="${diary.id}">
+                                <i class="fa fa-edit"></i>
+                            </button>
+                            <button class="btn-icon view-diary-btn" title="查看詳情" data-id="${diary.id}">
+                                <i class="fa fa-eye"></i>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="diary-excerpt">${excerpt}</div>
+                    <div class="diary-meta">
+                        <span class="diary-date">${formattedDate}</span>
+                        <span class="diary-mood" style="color: ${moodColor}">${moodName}</span>
+                    </div>
+                `;
+                
+                // 添加點擊事件 - 查看詳情
+                const viewBtn = diaryCard.querySelector('.view-diary-btn');
+                if (viewBtn) {
+                    viewBtn.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        showDiaryDetails(diary.id);
+                    });
+                }
+                
+                // 添加編輯按鈕事件
+                const editBtn = diaryCard.querySelector('.edit-diary-btn');
+                if (editBtn) {
+                    console.log(`為日記 ${diary.id} 綁定編輯按鈕事件`);
+                    editBtn.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        console.log(`點擊編輯按鈕: 日記ID=${diary.id}`);
+                        showDiaryDetails(diary.id);
+                        // 延遲一點時間確保詳情頁面已加載，然後自動進入編輯模式
+                        setTimeout(() => {
+                            enableEditMode();  // 這裡應該調用 enableEditMode() 而不是聚焦
+                        }, 100);
+                    });
+                } else {
+                    console.warn(`日記卡片 ${diary.id} 找不到編輯按鈕`);
+                }
+                
+                // 整個卡片點擊事件
+                diaryCard.addEventListener('click', () => {
+                    showDiaryDetails(diary.id);
+                });
+                
+                diaryListElement.appendChild(diaryCard);
                 console.log(`添加日記卡片: ID=${diary.id}, 標題=${diary.title}`);
             } catch (error) {
-                console.error(`創建日記卡片出錯: ${error.message}`);
-                if (diary && diary.id) {
-                    console.error(`問題日記ID: ${diary.id}`);
-                }
+                console.error(`創建日記卡片時出錯 (ID: ${diary.id}):`, error);
             }
         });
         
@@ -269,6 +386,11 @@ const DiaryModule = (function() {
             
             // 記錄選中的日記ID
             selectedDiaryId = diaryId;
+            
+            // 重置編輯狀態
+            isEditing = false;
+            originalTitle = '';
+            originalContent = '';
             
             // 通知UI管理器顯示日記詳情視圖
             UIManager.showDiaryDetail();
@@ -309,10 +431,27 @@ const DiaryModule = (function() {
                 moodElement: !!moodElement
             });
             
-            if (titleElement) titleElement.textContent = diary.title || '無標題日記';
-            if (contentElement) contentElement.innerHTML = formatContent(diary.content || '無內容');
+            if (titleElement) {
+                titleElement.textContent = diary.title || '無標題日記';
+                // 確保元素不在編輯模式
+                titleElement.setAttribute('contenteditable', 'false');
+                titleElement.classList.remove('editing');
+                // 保存到編輯狀態變量
+                originalTitle = diary.title || '';
+            }
+            if (contentElement) {
+                contentElement.innerHTML = formatContent(diary.content || '無內容');
+                // 確保元素不在編輯模式
+                contentElement.setAttribute('contenteditable', 'false');
+                contentElement.classList.remove('editing');
+                // 保存到編輯狀態變量
+                originalContent = formatContent(diary.content || '無內容');
+            }
             if (dateElement) dateElement.textContent = formattedDate;
             if (moodElement) moodElement.textContent = getMoodName(diary.mood);
+            
+            // 隱藏編輯按鈕
+            hideEditButtons();
             
             // 高亮選中的日記卡片
             const cards = document.querySelectorAll('.diary-card');
@@ -335,12 +474,582 @@ const DiaryModule = (function() {
         }
     }
     
+    function enableEditMode() {
+        console.log('進入編輯模式');
+        
+        if (!diaryDetailElement) {
+            console.error('日記詳情元素不存在');
+            return;
+        }
+        
+        // 確保按鈕存在
+        ensureEditButtonsExist();
+        
+        const titleElement = diaryDetailElement.querySelector('.detail-title');
+        const contentElement = diaryDetailElement.querySelector('.detail-content');
+        
+        if (!titleElement || !contentElement) {
+            console.error('找不到標題或內容元素');
+            return;
+        }
+        
+        // 保存原始內容
+        originalTitle = titleElement.textContent;
+        originalContent = contentElement.innerHTML;
+        
+        // 設置為可編輯
+        titleElement.setAttribute('contenteditable', 'true');
+        contentElement.setAttribute('contenteditable', 'true');
+        
+        // 添加編輯樣式
+        titleElement.classList.add('editing');
+        contentElement.classList.add('editing');
+        
+        // 顯示編輯按鈕
+        showEditButtons();
+        
+        // 設置編輯狀態
+        isEditing = true;
+        
+        // 聚焦到標題
+        titleElement.focus();
+        
+        // 選中全部文字（可選）
+        const range = document.createRange();
+        range.selectNodeContents(titleElement);
+        const selection = window.getSelection();
+        selection.removeAllRanges();
+        selection.addRange(range);
+    }
     // 隱藏詳情視圖
     function hideDetails() {
         // 通知UI管理器隱藏日記詳情
         UIManager.hideDiaryDetail();
         
         selectedDiaryId = null;
+    }
+    
+    // 綁定詳情頁面事件
+    function bindDetailEvents() {
+        if (!diaryDetailElement) return;
+        
+        // 確保按鈕存在
+        ensureEditButtonsExist();
+        
+        const titleElement = diaryDetailElement.querySelector('.detail-title');
+        const contentElement = diaryDetailElement.querySelector('.detail-content');
+        const saveBtnElement = document.getElementById('save-diary-btn');
+        const cancelBtnElement = document.getElementById('cancel-edit-btn');
+        
+        // 綁定標題和內容的編輯事件
+        if (titleElement) {
+            // 移除舊事件監聽器，避免重複綁定
+            titleElement.removeEventListener('focus', onEditStart);
+            titleElement.removeEventListener('input', onContentChange);
+            titleElement.removeEventListener('blur', onTitleBlur);
+            
+            // 重新綁定事件
+            titleElement.addEventListener('focus', onEditStart);
+            titleElement.addEventListener('input', onContentChange);
+            titleElement.addEventListener('blur', onTitleBlur);
+        }
+        
+        if (contentElement) {
+            // 移除舊事件監聽器，避免重複綁定
+            contentElement.removeEventListener('focus', onEditStart);
+            contentElement.removeEventListener('input', onContentChange);
+            contentElement.removeEventListener('blur', onContentBlur);
+            
+            // 重新綁定事件
+            contentElement.addEventListener('focus', onEditStart);
+            contentElement.addEventListener('input', onContentChange);
+            contentElement.addEventListener('blur', onContentBlur);
+        }
+        
+        // 綁定保存和取消按鈕（這些在 ensureEditButtonsExist 中已經綁定過了）
+        if (saveBtnElement) {
+            console.log('保存按鈕已找到並可用');
+        } else {
+            console.warn('保存按鈕在綁定事件時未找到');
+        }
+        
+        if (cancelBtnElement) {
+            console.log('取消按鈕已找到並可用');
+        } else {
+            console.warn('取消按鈕在綁定事件時未找到');
+        }
+    }
+
+    // 開始編輯事件處理
+    function onEditStart() {
+        if (!isEditing) {
+            console.log('開始編輯模式');
+            isEditing = true;
+            
+            // 保存原始內容
+            const titleElement = diaryDetailElement.querySelector('.detail-title');
+            const contentElement = diaryDetailElement.querySelector('.detail-content');
+            
+            if (titleElement && contentElement) {
+                originalTitle = titleElement.textContent || '';
+                originalContent = contentElement.innerHTML || '';
+                
+                // 添加編輯樣式
+                titleElement.classList.add('editing');
+                contentElement.classList.add('editing');
+                
+                // 顯示編輯按鈕
+                showEditButtons();
+            }
+        }
+    }
+
+    // 內容變化事件處理
+    function onContentChange() {
+        if (isEditing) {
+            // 檢查內容是否有變化
+            const titleElement = diaryDetailElement.querySelector('.detail-title');
+            const contentElement = diaryDetailElement.querySelector('.detail-content');
+            
+            if (titleElement && contentElement) {
+                const currentTitle = titleElement.textContent || '';
+                const currentContent = contentElement.innerHTML || '';
+                
+                // 如果內容有變化，確保按鈕顯示
+                if (currentTitle !== originalTitle || currentContent !== originalContent) {
+                    showEditButtons();
+                }
+            }
+        }
+    }
+
+    // 標題失去焦點
+    function onTitleBlur() {
+        // 可以在這裡添加標題格式化邏輯
+    }
+
+    // 內容失去焦點
+    function onContentBlur() {
+        // 可以在這裡添加內容格式化邏輯
+    }
+
+    // 顯示編輯按鈕
+    function showEditButtons() {
+        console.log('顯示編輯按鈕');
+        
+        if (!diaryDetailElement) {
+            console.error('日記詳情元素不存在');
+            return;
+        }
+        
+        // 首先確保必要的 DOM 結構存在
+        ensureEditButtonsExist();
+        
+        const saveDiaryBtn = diaryDetailElement.querySelector('#save-diary-btn');
+        const cancelEditBtn = diaryDetailElement.querySelector('#cancel-edit-btn');
+        const editHint = diaryDetailElement.querySelector('.edit-hint');
+        
+        console.log('按鈕元素檢查:', {
+            saveDiaryBtn: !!saveDiaryBtn,
+            cancelEditBtn: !!cancelEditBtn,
+            editHint: !!editHint
+        });
+        
+        if (saveDiaryBtn) {
+            saveDiaryBtn.style.display = 'inline-block';
+            console.log('保存按鈕已顯示');
+        } else {
+            console.error('找不到保存按鈕元素');
+        }
+        
+        if (cancelEditBtn) {
+            cancelEditBtn.style.display = 'inline-block';
+            console.log('取消按鈕已顯示');
+        } else {
+            console.error('找不到取消按鈕元素');
+        }
+        
+        if (editHint) {
+            editHint.style.display = 'none';
+        }
+    }
+
+    // 確保編輯按鈕存在
+    function ensureEditButtonsExist() {
+        if (!diaryDetailElement) {
+            console.error('日記詳情元素不存在，無法創建編輯按鈕');
+            return;
+        }
+        
+        // 檢查是否已有按鈕
+        let detailHeader = diaryDetailElement.querySelector('.detail-header');
+        let detailActions = diaryDetailElement.querySelector('.detail-actions');
+        
+        // 如果沒有 header，創建它
+        if (!detailHeader) {
+            console.log('創建缺失的 detail-header');
+            detailHeader = document.createElement('div');
+            detailHeader.className = 'detail-header';
+            
+            // 將其插入到詳情元素的開頭
+            diaryDetailElement.insertBefore(detailHeader, diaryDetailElement.firstChild);
+        }
+        
+        // 如果沒有 actions 容器，創建它
+        if (!detailActions) {
+            console.log('創建缺失的 detail-actions');
+            detailActions = document.createElement('div');
+            detailActions.className = 'detail-actions';
+            detailHeader.appendChild(detailActions);
+        }
+        
+        // 檢查並創建保存按鈕
+        let saveDiaryBtn = document.getElementById('save-diary-btn');
+        if (!saveDiaryBtn) {
+            console.log('創建缺失的保存按鈕');
+            saveDiaryBtn = document.createElement('button');
+            saveDiaryBtn.id = 'save-diary-btn';
+            saveDiaryBtn.className = 'btn btn-sm btn-primary';
+            saveDiaryBtn.style.display = 'none';
+            saveDiaryBtn.textContent = '保存更改';
+            detailActions.appendChild(saveDiaryBtn);
+            
+            // 綁定事件
+            saveDiaryBtn.addEventListener('click', saveDiaryChanges);
+        }
+        
+        // 檢查並創建取消按鈕
+        let cancelEditBtn = document.getElementById('cancel-edit-btn');
+        if (!cancelEditBtn) {
+            console.log('創建缺失的取消按鈕');
+            cancelEditBtn = document.createElement('button');
+            cancelEditBtn.id = 'cancel-edit-btn';
+            cancelEditBtn.className = 'btn btn-sm btn-secondary';
+            cancelEditBtn.style.display = 'none';
+            cancelEditBtn.textContent = '取消編輯';
+            detailActions.appendChild(cancelEditBtn);
+            
+            // 綁定事件
+            cancelEditBtn.addEventListener('click', cancelEdit);
+        }
+        
+        // 檢查並創建返回按鈕（如果不存在）
+        let backToListBtn = document.getElementById('back-to-list-btn');
+        if (!backToListBtn) {
+            console.log('創建缺失的返回按鈕');
+            backToListBtn = document.createElement('button');
+            backToListBtn.id = 'back-to-list-btn';
+            backToListBtn.className = 'btn btn-sm';
+            backToListBtn.textContent = '返回列表';
+            detailActions.appendChild(backToListBtn);
+            
+            // 綁定事件
+            backToListBtn.addEventListener('click', hideDetails);
+        }
+        
+        console.log('編輯按鈕檢查和創建完成');
+    }
+
+    // 隱藏編輯按鈕
+    function hideEditButtons() {
+        console.log('隱藏編輯按鈕');
+        
+        if (!diaryDetailElement) {
+            console.error('日記詳情元素不存在');
+            return;
+        }
+        
+        const saveDiaryBtn = diaryDetailElement.querySelector('#save-diary-btn');
+        const cancelEditBtn = diaryDetailElement.querySelector('#cancel-edit-btn');
+        const editHint = diaryDetailElement.querySelector('.edit-hint');
+        
+        if (saveDiaryBtn) {
+            saveDiaryBtn.style.display = 'none';
+        }
+        
+        if (cancelEditBtn) {
+            cancelEditBtn.style.display = 'none';
+        }
+        
+        if (editHint) {
+            editHint.style.display = 'inline';
+        }
+    }
+
+    // 保存日記變更
+    async function saveDiaryChanges() {
+        if (!selectedDiaryId) {
+            UIManager.showError('錯誤', '沒有選中的日記');
+            return;
+        }
+
+        const titleElement = diaryDetailElement.querySelector('.detail-title');
+        const contentElement = diaryDetailElement.querySelector('.detail-content');
+        
+        if (!titleElement || !contentElement) {
+            UIManager.showError('錯誤', '無法獲取編輯內容');
+            return;
+        }
+
+        const newTitle = titleElement.textContent.trim();
+        const newContent = contentElement.innerHTML.trim();
+
+        // 檢查是否有更改
+        if (newTitle === originalTitle && newContent === originalContent) {
+            console.log('內容無變化，退出編輯模式');
+            cancelEdit();
+            return;
+        }
+
+        try {
+            // 顯示載入狀態
+            UIManager.showSpinner();
+            const loadingMessage = document.querySelector('.loading-message');
+            if (loadingMessage) {
+                loadingMessage.textContent = '保存中...';
+            }
+
+            // 調用API更新日記
+            const response = await ApiService.updateDiary(selectedDiaryId, {
+                title: newTitle || null,
+                content: newContent
+            });
+
+            console.log('日記更新響應:', response);
+
+            // 檢查是否為模擬響應
+            const isMockResponse = response && response._mock === true;
+            const errorType = response && response._error;
+            
+            if (response && (response.diary || response.message || response.success)) {
+                // 更新本地數據
+                const diaryIndex = diaries.findIndex(d => String(d.id) === String(selectedDiaryId));
+                if (diaryIndex !== -1) {
+                    diaries[diaryIndex].title = newTitle;
+                    diaries[diaryIndex].content = newContent;
+                    console.log('本地數據已更新');
+                }
+
+                // 隱藏載入動畫
+                UIManager.hideSpinner();
+
+                // 提供狀態反饋
+                let statusMessage = '';
+                if (isMockResponse) {
+                    if (errorType === 'api' && response._status === '404') {
+                        statusMessage = '⚠️ 伺服器暫時不可用，日記已本地保存。請稍後重試以同步到伺服器。';
+                    } else {
+                        statusMessage = '⚠️ 使用離線模式保存日記。';
+                    }
+                    UIManager.showToast(statusMessage, 'warning');
+                }
+
+                // 詢問是否更新互動筆記
+                const shouldUpdateInteraction = await showUpdateInteractionDialog(newTitle, newContent, isMockResponse);
+                
+                if (shouldUpdateInteraction) {
+                    try {
+                        UIManager.showSpinner();
+                        if (loadingMessage) {
+                            loadingMessage.textContent = '更新互動筆記...';
+                        }
+                        
+                        // 確保傳遞最新的內容
+                        console.log('準備更新互動筆記，使用最新內容:', {
+                            diaryId: selectedDiaryId,
+                            title: newTitle,
+                            content: newContent,
+                            contentLength: newContent.length
+                        });
+                        
+                        // 調用API更新互動筆記 - 傳遞最新的完整內容
+                        const interactionResponse = await ApiService.updateInteractionNotes(selectedDiaryId, newContent);
+                        
+                        UIManager.hideSpinner();
+                        
+                        // 檢查互動筆記更新是否為模擬響應
+                        const isInteractionMock = interactionResponse && interactionResponse._mock === true;
+                        
+                        if (isInteractionMock) {
+                            if (isMockResponse) {
+                                UIManager.showToast('⚠️ 日記和互動筆記已本地保存，但無法同步到伺服器', 'warning');
+                            } else {
+                                UIManager.showToast('⚠️ 日記已保存到伺服器，但互動筆記更新失敗', 'warning');
+                            }
+                        } else {
+                            if (isMockResponse) {
+                                UIManager.showToast('⚠️ 日記本地保存，互動筆記已更新', 'warning');
+                            } else {
+                                UIManager.showToast('✅ 日記和互動筆記已成功更新', 'success');
+                            }
+                        }
+                    } catch (error) {
+                        console.warn('更新互動筆記失敗:', error);
+                        UIManager.hideSpinner();
+                        UIManager.showToast('⚠️ 日記已保存，但互動筆記更新失敗', 'warning');
+                    }
+                } else {
+                    if (isMockResponse) {
+                        UIManager.showToast('⚠️ 日記已本地保存', 'warning');
+                    } else {
+                        UIManager.showToast('✅ 日記已保存', 'success');
+                    }
+                }
+
+                // 重新渲染日記列表
+                renderDiaryList();
+                
+                // 重新顯示該日記的詳情（使用最新數據）
+                showDiaryDetails(selectedDiaryId);
+
+                // 退出編輯模式
+                exitEditMode();
+
+            } else {
+                throw new Error('API響應格式錯誤或無有效數據');
+            }
+
+        } catch (error) {
+            console.error('保存日記失敗:', error);
+            UIManager.hideSpinner();
+            
+            // 改進錯誤訊息
+            let errorMessage = '保存日記時出錯';
+            if (error.message.includes('404')) {
+                errorMessage = '伺服器端點不存在 (404)，請檢查後端是否正常運行';
+            } else if (error.message.includes('500')) {
+                errorMessage = '伺服器內部錯誤，請稍後重試';
+            } else if (error.message.includes('網絡')) {
+                errorMessage = '網絡連接失敗，請檢查網絡狀態';
+            }
+            
+            UIManager.showError('保存失敗', errorMessage + ': ' + error.message);
+        }
+    }
+
+    // 退出編輯模式
+    function exitEditMode() {
+        const titleElement = diaryDetailElement.querySelector('.detail-title');
+        const contentElement = diaryDetailElement.querySelector('.detail-content');
+        
+        if (titleElement) {
+            titleElement.setAttribute('contenteditable', 'false');
+            titleElement.classList.remove('editing');
+        }
+        
+        if (contentElement) {
+            contentElement.setAttribute('contenteditable', 'false');
+            contentElement.classList.remove('editing');
+        }
+        
+        isEditing = false;
+        hideEditButtons();
+        
+        // 清除原始內容記錄
+        originalTitle = '';
+        originalContent = '';
+    }
+
+    // 取消編輯
+    function cancelEdit() {
+        const titleElement = diaryDetailElement.querySelector('.detail-title');
+        const contentElement = diaryDetailElement.querySelector('.detail-content');
+        
+        if (titleElement) {
+            titleElement.textContent = originalTitle;
+        }
+        
+        if (contentElement) {
+            contentElement.innerHTML = originalContent;
+        }
+        
+        exitEditMode();
+    }
+
+    // 顯示更新互動筆記對話框
+    function showUpdateInteractionDialog(title, content, isMockResponse = false) {
+        return new Promise((resolve) => {
+            // 創建對話框
+            const dialog = document.createElement('div');
+            dialog.className = 'modal';
+            dialog.style.display = 'flex';
+            
+            // 根據是否為模擬響應調整提示內容
+            let statusInfo = '';
+            let statusClass = '';
+            
+            if (isMockResponse) {
+                statusInfo = `
+                    <div class="status-info warning">
+                        <i class="fa fa-exclamation-triangle"></i>
+                        <span>⚠️ 當前為離線模式，互動筆記將無法同步到伺服器</span>
+                    </div>
+                `;
+                statusClass = 'mock-mode';
+            } else {
+                statusInfo = `
+                    <div class="status-info success">
+                        <i class="fa fa-check-circle"></i>
+                        <span>✅ 日記已成功保存到伺服器</span>
+                    </div>
+                `;
+                statusClass = 'online-mode';
+            }
+            
+            dialog.innerHTML = `
+                <div class="modal-content ${statusClass}">
+                    <div class="modal-header">
+                        <h3>更新互動筆記</h3>
+                    </div>
+                    <div class="modal-body">
+                        ${statusInfo}
+                        <p>您已修改了日記「${title || '無標題日記'}」的內容。</p>
+                        <p>是否要根據修改後的內容更新互動筆記？</p>
+                        <div class="content-preview">
+                            <h4>修改後的內容摘要：</h4>
+                            <div class="content-excerpt">${getExcerpt(content, 150)}</div>
+                        </div>
+                        <div class="info-box">
+                            <i class="fa fa-info-circle"></i>
+                            <span>互動筆記會根據您的所有日記內容進行長期的個人資訊追蹤和更新。</span>
+                        </div>
+                        ${isMockResponse ? `
+                        <div class="warning-box">
+                            <i class="fa fa-exclamation-triangle"></i>
+                            <span>注意：由於伺服器不可用，互動筆記更新將僅在本地保存，無法同步到伺服器。</span>
+                        </div>
+                        ` : ''}
+                    </div>
+                    <div class="modal-footer">
+                        <button id="confirm-update" class="btn btn-primary">
+                            ${isMockResponse ? '是，本地更新互動筆記' : '是，更新互動筆記'}
+                        </button>
+                        <button id="skip-update" class="btn btn-secondary">否，僅保存日記</button>
+                    </div>
+                </div>
+            `;
+
+            document.body.appendChild(dialog);
+
+            // 绑定事件
+            dialog.querySelector('#confirm-update').addEventListener('click', () => {
+                document.body.removeChild(dialog);
+                resolve(true);
+            });
+
+            dialog.querySelector('#skip-update').addEventListener('click', () => {
+                document.body.removeChild(dialog);
+                resolve(false);
+            });
+
+            // 點擊背景關閉（默認為否）
+            dialog.addEventListener('click', (e) => {
+                if (e.target === dialog) {
+                    document.body.removeChild(dialog);
+                    resolve(false);
+                }
+            });
+        });
     }
     
     // 格式化日期
@@ -388,6 +1097,19 @@ const DiaryModule = (function() {
         };
         
         return moodNames[mood] || '未知情緒';
+    }
+    
+    // 從情緒值獲取情緒標籤
+    function getMoodFromValence(valence) {
+        if (typeof valence !== 'number') {
+            return 'neutral';
+        }
+        
+        if (valence >= 0.7) return 'happy';
+        if (valence >= 0.4) return 'calm';
+        if (valence >= 0) return 'neutral';
+        if (valence >= -0.4) return 'sad';
+        return 'angry';
     }
     
     // 格式化內容，處理換行和特殊標記

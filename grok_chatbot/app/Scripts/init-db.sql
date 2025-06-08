@@ -17,6 +17,7 @@ CREATE TABLE users (
 CREATE TABLE diaries (
     id SERIAL PRIMARY KEY,
     user_id INTEGER REFERENCES users(id) NOT NULL,
+    title VARCHAR(255),
     diary_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     content TEXT NOT NULL,
     valence FLOAT,
