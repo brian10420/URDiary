@@ -1,0 +1,18 @@
+[project]
+name = "urdiary"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.10.10"
+dependencies = [
+    "fastapi==0.115.0",        # 後端 API 框架
+    "uvicorn==0.30.6",         # ASGI 伺服器
+    "sqlalchemy==2.0.35",      # 資料庫 ORM
+    "psycopg2-binary==2.9.9",  # PostgreSQL 適配器
+    "redis==5.0.8",            # Redis 客戶端
+    "openai==1.46.1",         # OpenAI API 用於 Grok 客戶端
+    "python-dotenv==1.0.1",    # 環境變數管理
+    "requests==2.32.3",        # HTTP 請求
+    "colorama==0.4.6",         # 測試中的彩色輸出
+    "schedule==1.2.2",         # 定時任務
+]
