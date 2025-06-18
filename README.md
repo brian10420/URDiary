@@ -1,6 +1,6 @@
 # URDairy – AI-Powered Emotional Support and Diary System
 
-![URDairy Logo](https://via.placeholder.com/150) <!-- Replace with actual logo if available -->
+![URDairy Logo](desktop/assets/default-avatar.png) <!-- Replace with actual logo if available -->
 
 **URDairy** is an innovative project that combines artificial intelligence (AI) and psychological principles to create a conversational companion. It provides emotional support and generates structured diaries to help users reflect on their daily experiences and foster self-growth. Built with a modern tech stack, URDairy leverages an Electron frontend, FastAPI backend, and a dual-memory system (Redis and PostgreSQL) to deliver a seamless experience.
 
