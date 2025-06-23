@@ -117,9 +117,14 @@ def end_chat_session(user_input: UserDiaryCreate):
         # 2. 保存日記到數據庫
         db = SessionLocal()
         try:
+            # 生成日記標題
+            from services.diary_service import generate_diary_title
+            diary_title = generate_diary_title(diary_content)
+            
             diary = crud.create_diary(
                 db=db,
                 user_id=user_input.numeric_user_id,
+                title=diary_title,
                 content=diary_content,
                 valence=emotion_scores.get("valence"),
                 arousal=emotion_scores.get("arousal")

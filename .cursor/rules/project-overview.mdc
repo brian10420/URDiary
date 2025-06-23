@@ -1,0 +1,25 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
+# URDiary 專案概述
+版本：v1.2.6 - AI聊天筆記生成軟體
+
+## 核心架構
+- **前端**：Electron + JavaScript + CSS (desktop/)
+- **後端**：FastAPI + PostgreSQL + Redis + Docker (grok_chatbot/)
+- **AI服務**：Grok API
+
+## 核心功能
+1. **互動筆記**：長期用戶資訊追蹤
+2. **今日日記**：基於對話生成的日記
+3. **增強式聊天**：參考互動筆記的智能對話
+4. **日記編輯**：支援標題和內容編輯
+
+## 開發原則
+- 結構化功能撰寫（高內聚、低耦合）
+- 服務層是核心業務邏輯所在
+- 統一錯誤處理機制
+- 娛樂性質，非醫療用途
+

@@ -1,0 +1,54 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
+# UI/UX 開發模式
+
+## 用戶反饋機制
+```javascript
+// ✅ Toast通知
+const ToastManager = {
+    show(message, type = 'info', duration = 3000) {
+        const toast = document.createElement('div');
+        toast.className = `toast toast-${type}`;
+        toast.textContent = message;
+        document.body.appendChild(toast);
+        
+        setTimeout(() => {
+            toast.classList.remove('toast-show');
+            setTimeout(() => toast.remove(), 300);
+        }, duration);
+    }
+};
+
+// ✅ 載入狀態
+const LoadingManager = {
+    show(message = '載入中...') {
+        // 顯示載入動畫
+    },
+    hide() {
+        // 隱藏載入動畫
+    }
+};
+```
+
+## 響應式設計
+```css
+/* 基礎響應式佈局 */
+.container {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 0 20px;
+}
+
+@media (max-width: 768px) {
+    .container { padding: 0 10px; }
+}
+```
+
+## 無障礙支援
+- 使用適當的aria-label屬性
+- 確保鍵盤導航支援
+- 提供替代文字
+

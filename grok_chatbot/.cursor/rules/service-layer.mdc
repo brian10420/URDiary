@@ -1,0 +1,58 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
+# 服務層開發規範
+
+## 核心原則
+服務層是業務邏輯的核心，必須：
+- 高內聚、低耦合
+- 完整的類型提示
+- 詳細的錯誤處理
+- 充分的日誌記錄
+
+## 標準服務類結構
+```python
+class DiaryService:
+    """日記業務服務"""
+    
+    def __init__(self, grok_client=None, memory_manager=None):
+        self.grok_client = grok_client or GrokClient()
+        self.memory_manager = memory_manager or MemoryManager()
+    
+    async def generate_enhanced_diary(
+        self,
+        user_id: str,
+        numeric_user_id: int,
+        exclude_interaction_notes: bool = False,
+        model: Optional[str] = None,
+        db: Session = None
+    ) -> Dict[str, Any]:
+        """核心業務邏輯方法"""
+        try:
+            # 1. 參數驗證
+            self._validate_params(user_id, numeric_user_id)
+            
+            # 2. 業務邏輯處理
+            result = await self._process_business_logic()
+            
+            return result
+        except ValueError:
+            raise  # 重新拋出業務異常
+        except Exception as e:
+            app_logger.error(f"Service error: {str(e)}", exc_info=True)
+            raise RuntimeError("Service temporarily unavailable") from e
+```
+
+## 參數驗證模式
+```python
+def _validate_params(self, user_id: str, numeric_user_id: int) -> None:
+    """參數驗證，失敗時拋出ValueError"""
+    if not user_id or not isinstance(user_id, str):
+        raise ValueError("用戶ID必須是非空字符串")
+    
+    if not isinstance(numeric_user_id, int) or numeric_user_id <= 0:
+        raise ValueError("數字用戶ID必須是正整數")
+```
+

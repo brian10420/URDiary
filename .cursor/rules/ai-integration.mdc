@@ -1,0 +1,42 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
+# AI整合規範 - Grok API
+
+## 核心原則
+- 模型選擇：預設使用DEFAULT_MODEL，支援模型切換
+- 提示詞管理：集中存放在`services/prompts/`目錄
+- 敏感內容檢測：使用check_sensitive_content()函數
+
+## Grok API調用模式
+```python
+# ✅ 標準AI服務調用
+try:
+    response = await grok_client.generate_completion(
+        prompt=prompt,
+        model=model or "grok-3-latest",
+        max_tokens=1500,
+        temperature=0.7
+    )
+    return self._parse_response(response)
+except Exception as e:
+    app_logger.error(f"AI service error: {str(e)}")
+    raise AIServiceUnavailableError("AI服務暫時不可用") from e
+```
+
+## 敏感內容處理
+```python
+# ✅ 敏感內容檢測與處理
+if check_sensitive_content(message):
+    support_message = get_support_message()
+    ai_response = send_to_grok(user_id, message, model)
+    return {"response": f"{ai_response}\n\n{support_message}", "model_used": model}
+```
+
+## 提示詞結構
+- 使用結構化提示詞模板
+- 包含情緒分析要求（valence, arousal）
+- 明確輸出格式要求
+

@@ -1,0 +1,41 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
+# 錯誤處理規範
+
+## 後端錯誤處理
+```python
+# ✅ 正確的異常處理
+try:
+    result = await service_function()
+    return result
+except ValueError as e:
+    # 重新拋出業務異常
+    raise
+except Exception as e:
+    app_logger.error(f"Service error: {str(e)}", exc_info=True)
+    raise RuntimeError("Service temporarily unavailable") from e
+```
+
+## 前端錯誤處理
+```javascript
+// ✅ API調用錯誤處理
+try {
+    const response = await ApiService.fetchAPI(endpoint, data);
+    return response;
+} catch (error) {
+    if (error.message === 'OFFLINE_MODE') {
+        UIManager.showToast('目前離線，使用本地數據');
+        return getLocalData(endpoint);
+    }
+    ErrorHandler.handleError(error, 'API調用失敗');
+    throw error;
+}
+```
+
+## 統一錯誤響應格式
+- 成功：`{"response": "...", "model_used": "..."}`
+- 錯誤：`{"error": "...", "detail": "...", "request_id": "...", "code": "..."}`
+

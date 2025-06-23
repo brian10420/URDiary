@@ -1,0 +1,39 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
+# 前端架構規範
+
+## 模組化設計
+- 使用IIFE包裹模組：`const ModuleName = (function() { ... })()`
+- 避免全局變數污染
+- 明確的接口設計
+
+## 標準模組結構
+```javascript
+const ChatModule = (function() {
+    'use strict';
+    
+    let isInitialized = false;
+    
+    async function init() {
+        if (isInitialized) return;
+        try {
+            await setupEventListeners();
+            isInitialized = true;
+        } catch (error) {
+            ErrorHandler.handleError(error, 'ChatModule.init');
+            throw error;
+        }
+    }
+    
+    return { init }; // 只暴露必要的公共方法
+})();
+```
+
+## 異步處理
+- 優先使用async/await語法
+- API調用必須包含錯誤處理
+- 實現重試機制處理網路問題
+

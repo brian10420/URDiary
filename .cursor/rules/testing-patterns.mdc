@@ -1,0 +1,70 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
+# 測試開發規範
+
+## 測試金字塔
+```
+    E2E Tests (端到端測試)
+         ↑
+   Integration Tests (整合測試)
+         ↑
+    Unit Tests (單元測試)
+```
+
+## Python測試模式
+```python
+import pytest
+from unittest.mock import Mock, patch, AsyncMock
+
+class TestDiaryService:
+    @pytest.fixture
+    def mock_db(self):
+        return Mock(spec=Session)
+    
+    @pytest.fixture
+    def diary_service(self):
+        return DiaryService(grok_client=AsyncMock())
+    
+    @pytest.mark.asyncio
+    async def test_generate_diary_success(self, diary_service, mock_db):
+        """測試成功場景"""
+        # Arrange
+        user_id = "test_user"
+        expected_result = {"message": "success"}
+        
+        # Act
+        result = await diary_service.generate_diary(user_id, mock_db)
+        
+        # Assert
+        assert result["message"] == "success"
+    
+    @pytest.mark.asyncio
+    async def test_generate_diary_validation_error(self, diary_service, mock_db):
+        """測試驗證錯誤"""
+        with pytest.raises(ValueError, match="用戶ID不能為空"):
+            await diary_service.generate_diary("", mock_db)
+```
+
+## JavaScript測試模式
+```javascript
+describe('ChatModule', () => {
+    beforeEach(() => {
+        ChatModule.reset();
+    });
+    
+    test('should validate empty message', () => {
+        expect(() => {
+            ChatModule.validateMessage('');
+        }).toThrow('訊息不能為空');
+    });
+});
+```
+
+## 測試覆蓋率目標
+- 單元測試：≥80%
+- 關鍵業務邏輯：≥95%
+- API端點：≥90%
+
