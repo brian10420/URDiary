@@ -330,7 +330,7 @@ def format_memories(snapshots: list) -> str:
 def backfill_embeddings() -> None:
     """為所有缺 embedding 的日記補索引：python -m services.memory_retrieval --backfill
 
-    (以 grok_chatbot/app 為工作目錄執行)
+    (以 backend/app 為工作目錄執行)
     """
     if not _fastembed_installed():
         print("fastembed 未安裝，無法 backfill。請先: pip install fastembed")

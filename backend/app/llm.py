@@ -17,7 +17,7 @@ def default_config() -> LLMConfig:
     if not XAI_API_KEY:
         raise LLMError(
             "未提供 LLM 供應商設定。請在前端「設定」面板選擇供應商並填入 API Key"
-            "（或於 grok_chatbot/.env 設定 XAI_API_KEY 作為 Grok 後備）。"
+            "（或於 backend/.env 設定 XAI_API_KEY 作為 Grok 後備）。"
         )
     return LLMConfig(provider="grok", model=FALLBACK_GROK_MODEL, api_key=XAI_API_KEY)
 

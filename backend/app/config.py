@@ -4,7 +4,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 import secrets
 
-# 讀取 .env 文件 - 以本檔案位置解析，與啟動目錄無關 (app/config.py -> grok_chatbot/.env)
+# 讀取 .env 文件 - 以本檔案位置解析，與啟動目錄無關 (app/config.py -> backend/.env)
 load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 # 環境設定
 ENV = os.getenv("ENV", "development")
@@ -12,7 +12,7 @@ ENV = os.getenv("ENV", "development")
 # -----------------------
 # 本地資料目錄 (SQLite 資料庫 + 自動生成的金鑰)
 # -----------------------
-# 預設放在專案根目錄 data/ (app/config.py -> grok_chatbot/ -> 專案根)。
+# 預設放在專案根目錄 data/ (app/config.py -> backend/ -> 專案根)。
 # 使用者備份日記 = 備份這個資料夾。config 是最早被 import 的模組，
 # 因此目錄建立放在這裡，後續模組可以直接假設它存在。
 _REPO_ROOT = Path(__file__).resolve().parent.parent.parent
