@@ -68,24 +68,24 @@ const ErrorHandler = (function() {
     
     // 顯示用戶友好的錯誤信息
     function showUserFriendlyError(errorInfo) {
-        let userMessage = '應用發生錯誤';
+        let userMessage = I18N.t('errors.appError');
         
         // 根據錯誤類型提供不同的錯誤消息
         switch (errorInfo.type) {
             case ERROR_TYPES.VALIDATION:
-                userMessage = `驗證錯誤: ${errorInfo.message}`;
+                userMessage = I18N.t('errors.validation', { message: errorInfo.message });
                 break;
             case ERROR_TYPES.API:
-                userMessage = '網絡請求失敗，請稍後再試';
+                userMessage = I18N.t('errors.network');
                 break;
             case ERROR_TYPES.UI:
-                userMessage = '界面操作錯誤，請刷新頁面';
+                userMessage = I18N.t('errors.uiError');
                 break;
             case ERROR_TYPES.DATA:
-                userMessage = '數據處理錯誤，請確認數據格式';
+                userMessage = I18N.t('errors.dataError');
                 break;
             default:
-                userMessage = '應用發生未知錯誤';
+                userMessage = I18N.t('errors.unknown');
         }
         
         // 使用UI管理器顯示toast

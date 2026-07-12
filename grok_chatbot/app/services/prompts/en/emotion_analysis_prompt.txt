@@ -1,0 +1,13 @@
+Analyze the recent diary entries below and identify the user's emotional themes and patterns.
+
+[Recent diary entries]
+{recent_contents}
+
+[Output requirements]
+Output ONLY a JSON object — no other text, explanations, or Markdown — in this format:
+{{"themes": ["theme1", "theme2", "theme3"], "pattern": "one short line on how emotions changed over time", "factors": "one short line on what brought positive and negative feelings", "focus": "one short suggestion for the companion"}}
+
+Notes:
+- themes: an array of 1-5 short phrases
+- other fields: single strings, each under ~30 words
+- write the values in the same language as the diaries

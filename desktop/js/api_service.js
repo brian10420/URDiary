@@ -3,7 +3,7 @@
  */
 const ApiService = (function() {
     // API基礎URL
-    let API_BASE_URL = 'http://localhost:8000';
+    let API_BASE_URL = 'http://localhost:8001';
     
     // 用戶ID（暫時靜態設置，後續可從登錄過程獲取）
     let currentUserId = localStorage.getItem('currentUserId') || 'desktop_user';
@@ -12,6 +12,16 @@ const ApiService = (function() {
     // JWT令牌存儲
     let accessToken = localStorage.getItem('auth_token') || null;
     let tokenExpiry = localStorage.getItem('token_expiry') ? new Date(localStorage.getItem('token_expiry')) : null;
+
+    // 清除歷史版本在離線/錯誤時偽造的模擬令牌（如 mock_jwt_token_for_dev_only），
+    // 這類殘留會讓客戶端誤以為已登入
+    if (accessToken && accessToken.toLowerCase().includes('mock')) {
+        console.warn('偵測到舊版殘留的模擬令牌，已清除');
+        accessToken = null;
+        tokenExpiry = null;
+        localStorage.removeItem('auth_token');
+        localStorage.removeItem('token_expiry');
+    }
     
     // 初始化狀態標誌
     let isInitialized = false;
@@ -119,7 +129,7 @@ const ApiService = (function() {
             
             // 優先從配置中取得 API URL
             const baseUrl = CONFIG && CONFIG.API && CONFIG.API.BASE_URL ? 
-                CONFIG.API.BASE_URL : 'http://localhost:8000';
+                CONFIG.API.BASE_URL : 'http://localhost:8001';
             
             const response = await fetch(`${baseUrl}/users/token/refresh`, {
                 method: 'POST',
@@ -179,17 +189,15 @@ const ApiService = (function() {
         const startTime = Date.now();
         
         try {
-            // 檢查網絡連接 - 改進檢測邏輯
+            // 檢查網絡連接
             if (!navigator.onLine) {
-                console.warn(`設備處於離線狀態 (${endpoint})，嘗試使用模擬數據`);
-                
-                // 直接拋出特定錯誤
+                console.warn(`設備處於離線狀態 (${endpoint})`);
                 throw new Error('OFFLINE_MODE');
             }
             
             // 優先從配置中取得 API URL
             const baseUrl = CONFIG && CONFIG.API && CONFIG.API.BASE_URL ? 
-                CONFIG.API.BASE_URL : 'http://localhost:8000';
+                CONFIG.API.BASE_URL : 'http://localhost:8001';
             
             // 完全移除API可用性檢測（避免因405錯誤導致不必要的問題）
             // 相反，我們將依賴後續的真實請求來確定API是否可用
@@ -210,12 +218,16 @@ const ApiService = (function() {
             const url = `${baseUrl}${endpoint}`;
             
             // 設置默認選項
+            // X-Memory-Semantic / X-Language 為無條件基礎標頭（不放進被 hasKey
+            // 閘住的 X-LLM-* 區塊）：即使走後端後備供應商，偏好也要生效
             const fetchOptions = {
                 method: options.method || 'GET',
                 headers: {
                     'Content-Type': 'application/json',
                     'Accept': 'application/json',
                     'X-Client': 'URDiary-ElectronApp',
+                    'X-Memory-Semantic': (localStorage.getItem('urDiary_semantic_memory') === '1') ? '1' : '0',
+                    'X-Language': (typeof I18N !== 'undefined') ? I18N.getLang() : 'zh-TW',
                     ...options.headers
                 }
             };
@@ -224,7 +236,36 @@ const ApiService = (function() {
             if (accessToken) {
                 fetchOptions.headers['Authorization'] = `Bearer ${accessToken}`;
             }
-            
+
+            // 需要 LLM 的端點：附上請求範圍的供應商設定 (X-LLM-* 標頭)。
+            // 金鑰從 SecureStore 記憶體快取取得（safeStorage 解密），不經 localStorage。
+            // 未存金鑰且非本地供應商時不附標頭 → 後端走 .env Grok 後備（或回明確錯誤）。
+            const LLM_ENDPOINT_PATTERNS = ['/chat/', '/generate', '/interaction-notes/update', '/analytics/emotion/'];
+            if (LLM_ENDPOINT_PATTERNS.some(p => endpoint.includes(p))) {
+                try {
+                    if (typeof SecureStore !== 'undefined' && SecureStore.ready) {
+                        await SecureStore.ready; // 首次載入後為已解決的 promise
+                    }
+                    const activeLLM = (typeof SettingsModule !== 'undefined' && SettingsModule.getActiveLLM) ?
+                        SettingsModule.getActiveLLM() : null;
+                    if (activeLLM && (activeLLM.hasKey || activeLLM.provider === 'local')) {
+                        fetchOptions.headers['X-LLM-Provider'] = activeLLM.provider;
+                        if (activeLLM.model) {
+                            fetchOptions.headers['X-LLM-Model'] = activeLLM.model;
+                        }
+                        const llmApiKey = (typeof SecureStore !== 'undefined') ? SecureStore.getKey(activeLLM.provider) : '';
+                        if (llmApiKey) {
+                            fetchOptions.headers['X-LLM-Api-Key'] = llmApiKey;
+                        }
+                        if (activeLLM.baseUrl) {
+                            fetchOptions.headers['X-LLM-Base-Url'] = activeLLM.baseUrl;
+                        }
+                    }
+                } catch (llmHeaderError) {
+                    console.warn('附加 LLM 設定標頭失敗（將走後端後備供應商）:', llmHeaderError);
+                }
+            }
+
             // 如果有body，將其轉換為JSON
             if (options.body) {
                 fetchOptions.body = JSON.stringify(options.body);
@@ -336,21 +377,10 @@ const ApiService = (function() {
                     errorText = `HTTP錯誤 ${response.status}`;
                 }
                 
-                // 檢查錯誤信息中是否包含JWT相關關鍵詞
-                const isJwtError = errorText.toLowerCase().includes('token') || 
-                                  errorText.toLowerCase().includes('jwt') ||
-                                  errorText.toLowerCase().includes('auth') || 
-                                  errorText.toLowerCase().includes('認證');
-                
-                if (isJwtError) {
-                    console.warn('JWT相關錯誤:', errorText);
-                    
-                    // JWT錯誤時可以嘗試清除令牌，以便下次重新獲取
-                    clearAuthToken();
-                    
-                    throw new Error('JWT_ERROR_IN_RESPONSE');
-                }
-                
+                // 注意：不可用錯誤文字子字串（token/auth/認證）猜測 JWT 失效 ——
+                // LLM 供應商的認證錯誤（例如 Claude 的 authentication_error）會被誤判
+                // 而把使用者登出。JWT 失效只信 HTTP 401 狀態碼（已在上方處理）。
+
                 // 記錄服務器錯誤
                 const isServerError = response.status >= 500 && response.status < 600;
                 if (isServerError) {
@@ -365,7 +395,9 @@ const ApiService = (function() {
                         });
                     }
                     
-                    throw new Error('SERVER_ERROR');
+                    const serverError = new Error('SERVER_ERROR');
+                    serverError.detail = errorText;
+                    throw serverError;
                 }
                 
                 // 其他HTTP錯誤
@@ -389,7 +421,9 @@ const ApiService = (function() {
                     });
                 }
                 
-                throw new Error(`API_ERROR:${response.status}`);
+                const apiError = new Error(`API_ERROR:${response.status}`);
+                apiError.detail = errorText;
+                throw apiError;
             }
             
             // 嘗試解析JSON響應
@@ -444,78 +478,94 @@ const ApiService = (function() {
                 console.warn('記錄API錯誤信息失敗:', logError);
             }
             
-            // 獲取錯誤碼 - 從自定義錯誤中提取
-            const errorMatches = error.message.match(/^([A-Z_]+)($|:)/);
+            // 獲取錯誤碼 - 從自定義錯誤中提取（error 可能不是 Error 物件，例如 abort reason 字串）
+            const rawMessage = (error && error.message) ? String(error.message) : String(error);
+            const errorMatches = rawMessage.match(/^([A-Z_]+)($|:)/);
             const errorCode = errorMatches ? errorMatches[1] : null;
-            const httpStatus = error.message.split(':')[1]; // 如果是HTTP錯誤，提取狀態碼
-            
-            console.log(`識別錯誤類型: ${errorCode || '未知'}, HTTP狀態: ${httpStatus || 'N/A'}`);
-            
-            // 根據錯誤類型決定如何處理
+            const httpStatus = errorCode ? rawMessage.split(':')[1] : null;
+            const detail = (error && error.detail) ? String(error.detail) : '';
+
+            console.log(`識別錯誤類型: ${errorCode || (error && error.name) || '未知'}, HTTP狀態: ${httpStatus || 'N/A'}`);
+
+            const isTimeout = (error && error.name === 'AbortError') || rawMessage.includes('請求超時');
+            const isNetworkFailure = errorCode === 'OFFLINE_MODE' || isTimeout ||
+                (error && (error.name === 'TypeError' || error.name === 'NetworkError'));
+
+            // 組出如實、可讀的錯誤訊息（不再以模擬數據掩蓋錯誤）
+            let friendlyMessage;
             switch (errorCode) {
                 case 'OFFLINE_MODE':
-                    console.log('設備處於離線模式，使用模擬數據');
-                    return getMockDataForEndpoint(endpoint, { ...options, errorType: 'offline' });
-                    
+                    friendlyMessage = I18N.t('errors.offline');
+                    break;
+
                 case 'JWT_AUTH_ERROR':
-                case 'JWT_ERROR_IN_RESPONSE':
-                    console.log('JWT認證錯誤，使用模擬數據並通知用戶');
+                    friendlyMessage = I18N.t('errors.authFailed');
                     if (typeof UIManager !== 'undefined' && UIManager.showToast) {
-                        UIManager.showToast('認證失敗，請重新登入');
+                        UIManager.showToast(I18N.t('errors.authFailed'));
                     }
-                    return getMockDataForEndpoint(endpoint, { ...options, errorType: 'auth' });
-                    
-                case 'PERMISSION_ERROR':
-                    console.log('權限錯誤，使用模擬數據並通知用戶');
-                    if (typeof UIManager !== 'undefined' && UIManager.showToast) {
-                        UIManager.showToast('您沒有權限執行此操作');
-                    }
-                    return getMockDataForEndpoint(endpoint, { ...options, errorType: 'permission' });
-                    
-                case 'SERVER_ERROR':
-                    console.log('服務器錯誤，使用模擬數據');
-                    return getMockDataForEndpoint(endpoint, { ...options, errorType: 'server' });
-                    
-                case 'API_ERROR':
-                    console.log(`API錯誤 (${httpStatus})，檢查是否可降級`);
-                    
-                    // 針對特定端點的降級策略
-                    if (endpoint.includes('/chat/') || endpoint.includes('/diary/')) {
-                        return getMockDataForEndpoint(endpoint, { ...options, errorType: 'api', status: httpStatus });
+                    // 令牌已在上方清除，通知主流程開啟登入對話框
+                    try {
+                        window.dispatchEvent(new CustomEvent('urdiary:auth-expired', { detail: { endpoint } }));
+                    } catch (dispatchError) {
+                        console.warn('無法發送認證失效事件:', dispatchError);
                     }
                     break;
-                    
+
+                case 'PERMISSION_ERROR':
+                    friendlyMessage = I18N.t('errors.forbidden');
+                    if (typeof UIManager !== 'undefined' && UIManager.showToast) {
+                        UIManager.showToast(I18N.t('errors.forbidden'));
+                    }
+                    break;
+
+                case 'SERVER_ERROR':
+                    friendlyMessage = detail ? I18N.t('errors.serverWithDetail', { detail: detail }) : I18N.t('errors.server');
+                    break;
+
+                case 'API_ERROR':
+                    friendlyMessage = detail ?
+                        `${I18N.t('errors.server')} (HTTP ${httpStatus})：${detail}` :
+                        `${I18N.t('errors.server')} (HTTP ${httpStatus})`;
+                    break;
+
                 default:
-                    // 處理其他類型的錯誤
-                    if (error.name === 'AbortError') {
-                        console.log('請求超時，使用模擬數據');
-                        return getMockDataForEndpoint(endpoint, { ...options, errorType: 'timeout' });
+                    if (isTimeout) {
+                        friendlyMessage = I18N.t('errors.timeout');
+                    } else if (isNetworkFailure) {
+                        friendlyMessage = I18N.t('errors.cantConnect');
+                    } else {
+                        friendlyMessage = rawMessage;
                     }
-                    
-                    if (error.name === 'TypeError' || error.name === 'NetworkError') {
-                        console.log('網絡錯誤，使用模擬數據');
-                        return getMockDataForEndpoint(endpoint, { ...options, errorType: 'network' });
-                    }
-                    
-                    // 檢查是否有本地備份
-            if (endpoint.includes('/diaries') || endpoint.includes('/notes')) {
-                console.log('嘗試使用本地數據作為備份...');
+            }
+
+            // 唯讀端點在「連不上伺服器」時允許回退到本機快取（明確標示 _fromCache），
+            // 認證/權限/伺服器錯誤不回退 —— 必須讓使用者看見真實錯誤
+            const isReadOnlyGet = (!options.method || options.method === 'GET') &&
+                (endpoint.includes('/diaries') || endpoint.includes('/interaction-notes') || endpoint.includes('/notes'));
+            if (isNetworkFailure && isReadOnlyGet) {
                 const localData = getLocalData(endpoint);
                 if (localData) {
-                    console.log('使用本地備份數據:', endpoint);
-                    return localData;
-                        }
+                    console.warn(`無法連線，改用本機快取資料: ${endpoint}`);
+                    if (typeof UIManager !== 'undefined' && UIManager.showToast) {
+                        UIManager.showToast(I18N.t('errors.cachedShown'));
                     }
+                    return { ...localData, _fromCache: true };
+                }
             }
-            
-            // 如果配置了自動使用模擬數據，對所有錯誤使用模擬數據
-            if (CONFIG && CONFIG.USE_MOCK_DATA) {
-                console.log('使用模擬數據作為最後的後備方案');
-                return getMockDataForEndpoint(endpoint, { ...options, errorType: 'fallback' });
+
+            // 唯一的開發者旗標（預設關閉）才允許以模擬數據除錯
+            if (CONFIG && CONFIG.DEBUG && CONFIG.DEBUG.MOCK_API) {
+                console.warn('DEBUG.MOCK_API 已開啟，回傳模擬數據（僅供除錯）');
+                return getMockDataForEndpoint(endpoint, { ...options, errorType: errorCode || 'debug' });
             }
-            
-            // 重新拋出錯誤，如果無法處理
-            throw new Error(`API請求失敗: ${error.message}`);
+
+            // 如實拋出錯誤，由呼叫端呈現給使用者
+            const apiFailure = new Error(friendlyMessage);
+            apiFailure.code = errorCode || (error && error.name) || 'UNKNOWN';
+            apiFailure.status = httpStatus ? parseInt(httpStatus, 10) : null;
+            apiFailure.detail = detail || null;
+            apiFailure.cause = error;
+            throw apiFailure;
         }
     }
     
@@ -550,15 +600,7 @@ const ApiService = (function() {
         }
     }
     
-    // 模擬API調用延遲
-    async function mockApiCall(data, delay = 1000) {
-        console.warn('使用模擬API調用:', data);
-        return new Promise(resolve => {
-            setTimeout(() => resolve(data), delay);
-        });
-    }
-    
-    // 根據端點獲取模擬數據
+    // 根據端點獲取模擬數據（僅供 DEBUG.MOCK_API 開發者旗標使用）
     function getMockDataForEndpoint(endpoint, options = {}) {
         console.log(`獲取模擬數據: ${endpoint}`, options);
         
@@ -730,13 +772,11 @@ const ApiService = (function() {
             while (retryCount <= maxRetries) {
                 try {
             // 直接調用chat/enhanced端點
+            // 身分由後端從 JWT 導出、供應商/模型由 X-LLM-* 標頭提供，body 只需訊息本身
             const data = await fetchAPI('/chat/enhanced/', {
                 method: 'POST',
                 body: {
-                    user_id: currentUserId,
-                    numeric_user_id: numericUserId,
-                    message: message,
-                    model: model // 添加模型參數
+                    message: message
                 }
             });
             
@@ -758,23 +798,23 @@ const ApiService = (function() {
                     ...data
                 };
             } else {
-                response = {
-                    message: '無法解析服務器響應',
-                    response: '抱歉，無法處理您的請求。'
-                };
+                // 伺服器回傳了非預期的格式 —— 如實回報，不偽造回應
+                console.error('無法解析服務器響應:', data);
+                throw new Error('伺服器回傳了無法解析的響應格式');
             }
-            
+
             console.log('標準化後的響應:', response);
             return response;
                 } catch (error) {
                     lastError = error;
                     retryCount++;
-                    
+
                     // 只有在重試次數未達到最大值且錯誤是服務器錯誤(500系列)時才重試
-                    const isServerError = error.message.includes('500') || 
-                                         error.message.includes('服務器內部錯誤') || 
+                    const isServerError = error.code === 'SERVER_ERROR' ||
+                                         error.message.includes('500') ||
+                                         error.message.includes('服務器內部錯誤') ||
                                          error.message.includes('伺服器內部錯誤');
-                    
+
                     if (retryCount <= maxRetries && isServerError) {
                         console.warn(`嘗試第 ${retryCount} 次重新發送消息...`);
                         // 等待一段時間再重試，避免立即重試造成服務器負擔
@@ -785,53 +825,13 @@ const ApiService = (function() {
                     }
                 }
             }
-            
+
             // 如果所有重試都失敗，拋出錯誤
             throw lastError || new Error('發送消息失敗');
         } catch (error) {
             console.error('發送消息錯誤:', error);
-            
-            // 解析錯誤信息
-            let errorDetail = '';
-            try {
-                if (error.message.includes('{')) {
-                    const errorJson = error.message.substring(error.message.indexOf('{'));
-                    const errorObj = JSON.parse(errorJson);
-                    if (errorObj.detail) {
-                        errorDetail = errorObj.detail;
-                    }
-                }
-            } catch (parseError) {
-                console.warn('無法解析錯誤詳情', parseError);
-            }
-            
-            // 使用模擬數據作為備份
-            if (CONFIG && (CONFIG.USE_MOCK_DATA || CONFIG.DEBUG.MOCK_API)) {
-                console.log('使用模擬數據作為備份響應');
-                const mockResponse = getRandomResponse();
-                
-                // 添加錯誤信息提示
-                let responseMessage = mockResponse;
-                if (errorDetail) {
-                    // 將詳細錯誤信息添加到模擬響應中
-                    responseMessage = `[注意: 伺服器暫時不可用 - ${errorDetail}]\n\n${mockResponse}`;
-                }
-                
-                return {
-                    message: responseMessage,
-                    response: responseMessage,
-                    is_mock: true,
-                    error_detail: errorDetail || error.message,
-                    model_used: model || 'mock'
-                };
-            }
-            
-            // 返回錯誤消息
-            return {
-                message: errorDetail ? `發送消息時出錯: ${errorDetail}` : '發送消息時出錯: ' + error.message,
-                response: '抱歉，我遇到了技術問題。請稍後再試。',
-                error: true
-            };
+            // 如實拋出錯誤（訊息已由 fetchAPI 轉為可讀格式），由聊天模塊顯示給使用者
+            throw error;
         }
     }
     
@@ -854,13 +854,11 @@ const ApiService = (function() {
             while (retryCount <= maxRetries) {
                 try {
             // 使用較長的超時時間
+            // 身分由後端從 JWT 導出、供應商/模型由 X-LLM-* 標頭提供
             const data = await fetchAPI('/chat/end/', {
                 method: 'POST',
                 body: {
-                    user_id: currentUserId,
-                    numeric_user_id: numericUserId,
-                    exclude_interaction_notes: true,  // 添加參數，防止將互動筆記融入日記
-                    model: model  // 添加模型參數
+                    exclude_interaction_notes: true  // 防止將互動筆記融入日記
                 }
             });
             
@@ -876,12 +874,13 @@ const ApiService = (function() {
                 } catch (error) {
                     lastError = error;
                     retryCount++;
-                    
+
                     // 只有在重試次數未達到最大值且錯誤是服務器錯誤(500系列)時才重試
-                    const isServerError = error.message.includes('500') || 
-                                         error.message.includes('服務器內部錯誤') || 
+                    const isServerError = error.code === 'SERVER_ERROR' ||
+                                         error.message.includes('500') ||
+                                         error.message.includes('服務器內部錯誤') ||
                                          error.message.includes('伺服器內部錯誤');
-                    
+
                     if (retryCount <= maxRetries && isServerError) {
                         console.warn(`嘗試第 ${retryCount} 次結束聊天...`);
                         // 等待時間稍微長一些，結束聊天是重操作
@@ -892,119 +891,63 @@ const ApiService = (function() {
                     }
                 }
             }
-            
+
             // 如果所有重試都失敗，拋出錯誤
             throw lastError || new Error('結束聊天失敗');
         } catch (error) {
             console.error('結束聊天錯誤:', error);
-            
-            // 解析錯誤信息
-            let errorDetail = '';
-            try {
-                if (error.message.includes('{')) {
-                    const errorJson = error.message.substring(error.message.indexOf('{'));
-                    const errorObj = JSON.parse(errorJson);
-                    if (errorObj.detail) {
-                        errorDetail = errorObj.detail;
-                    }
-                }
-            } catch (parseError) {
-                console.warn('無法解析錯誤詳情', parseError);
-            }
-            
-            // 使用模擬數據作為備份
-            if (CONFIG && CONFIG.USE_MOCK_DATA) {
-                console.log('使用模擬數據作為結束聊天響應');
-                const mockData = getMockDataForEndpoint('/chat/end/');
-                
-                // 若存在錯誤詳情，將其添加到模擬日記內容中
-                if (errorDetail && mockData.diary && mockData.diary.content) {
-                    const errorNote = `\n\n**系統通知**: 日記是在離線模式下生成的。伺服器錯誤: ${errorDetail}`;
-                    mockData.diary.content += errorNote;
-                    mockData.error_detail = errorDetail;
-                }
-                
-                // 添加使用的模型信息
-                mockData.model_used = model || 'mock';
-                
-                return mockData;
-            }
-            
-            // 如果不使用模擬數據，則拋出錯誤
-            throw new Error(errorDetail ? `結束聊天失敗: ${errorDetail}` : `結束聊天失敗: ${error.message}`);
+            // 如實拋出錯誤（訊息已由 fetchAPI 轉為可讀格式），由聊天模塊顯示給使用者；
+            // 對話歷史仍保留在伺服器端，使用者可重試
+            throw error;
         }
     }
     
+    // 每日開場問候：今日首次開啟時後端會生成 AI 主動問候
+    // 回 {checkin:false} 代表今日已問候過或 LLM 不可用（皆非錯誤）
+    async function checkIn() {
+        return await fetchAPI('/chat/checkin/', {
+            method: 'POST',
+            body: {}
+        });
+    }
+
     // 獲取日記列表
     async function getDiaries() {
-        try {
-            console.log('正在獲取日記列表...');
-            
-            const path = `/diaries/${numericUserId}`;
-            let response;
-            
-            // 嘗試從 API 獲取
-            try {
-                response = await fetchAPI(path, { method: 'GET' });
-                console.log('從 API 獲取日記成功');
-            } catch (apiError) {
-                console.warn('從 API 獲取日記失敗:', apiError);
-                
-                if (CONFIG.USE_MOCK_DATA) {
-                    console.log('使用模擬數據');
-                    response = getMockDataForEndpoint('/diaries/1');
-                } else {
-                    throw apiError;
-                }
-            }
-            
-            // 驗證響應格式
-            if (!response || !response.diaries || !Array.isArray(response.diaries)) {
-                console.error('日記數據格式不正確:', response);
-                
-                // 使用本地數據作為備份
-                const localData = getLocalData(path);
-                if (localData && localData.diaries && Array.isArray(localData.diaries)) {
-                    console.log('使用本地備份數據');
-                    return localData.diaries;
-                }
-                
-                // 如果還是失敗，使用模擬數據
-                if (CONFIG.USE_MOCK_DATA) {
-                    console.log('使用空模擬日記列表');
-                    return generateSampleDiaries();
-                }
-                
-                return [];
-            }
-            
-            // 轉換數據格式
-            const diaries = response.diaries.map(diary => ({
-                id: diary.diary_id || generateId(),
-                title: diary.title || '無標題日記',
-                content: diary.content || '',
-                date: diary.diary_date || new Date().toISOString(),
-                mood: getMoodFromValence(diary.valence),
-                valence: diary.valence || 0.5,
-                arousal: diary.arousal || 0.5
-            }));
-            
-            // 保存到本地存儲作為備份
-            saveLocalData(path, { diaries });
-            
-            console.log(`成功獲取 ${diaries.length} 條日記`);
-            return diaries;
-        } catch (error) {
-            console.error('獲取日記列表失敗:', error);
-            
-            // 使用模擬數據
-            if (CONFIG.USE_MOCK_DATA) {
-                console.log('使用模擬日記列表');
-                return generateSampleDiaries();
-            }
-            
-            throw new Error(`獲取日記失敗: ${error.message}`);
+        console.log('正在獲取日記列表...');
+
+        const path = `/diaries/${numericUserId}`;
+        // 失敗時如實拋出（fetchAPI 已轉為可讀錯誤），由日記模塊顯示給使用者
+        const response = await fetchAPI(path, { method: 'GET' });
+
+        // fetchAPI 在連不上伺服器時可能回傳本機快取（內容已是客戶端格式，勿再轉換）
+        if (response && response._fromCache && Array.isArray(response.diaries)) {
+            console.warn('顯示本機快取的日記資料');
+            return response.diaries;
         }
+
+        // 驗證響應格式 —— 格式錯誤是真實問題，如實回報
+        if (!response || !response.diaries || !Array.isArray(response.diaries)) {
+            console.error('日記數據格式不正確:', response);
+            throw new Error('伺服器回傳的日記資料格式不正確');
+        }
+
+        // 轉換數據格式（空清單就是真實的空狀態）
+        const diaries = response.diaries.map(diary => ({
+            id: diary.diary_id || generateId(),
+            title: diary.title || deriveDiaryTitle(diary.content, diary.diary_date),
+            summary: diary.summary || '',
+            content: diary.content || '',
+            date: diary.diary_date || new Date().toISOString(),
+            mood: getMoodFromValence(diary.valence),
+            valence: diary.valence || 0.5,
+            arousal: diary.arousal || 0.5
+        }));
+
+        // 保存到本地存儲，作為離線時的唯讀快取
+        saveLocalData(path, { diaries });
+
+        console.log(`成功獲取 ${diaries.length} 條日記`);
+        return diaries;
     }
     
     // 根據ID獲取日記詳情
@@ -1018,6 +961,7 @@ const ApiService = (function() {
                     return {
                         id: diary.diary_id || diary.id,
                         title: diary.title,
+                        summary: diary.summary || '',
                         content: diary.content,
                         date: diary.diary_date || diary.date,
                         mood: getMoodFromValence(diary.valence),
@@ -1033,6 +977,7 @@ const ApiService = (function() {
             return {
                 id: response.diary_id,
                 title: response.title,
+                summary: response.summary || '',
                 content: response.content,
                 date: response.diary_date,
                 mood: getMoodFromValence(response.valence),
@@ -1134,54 +1079,26 @@ const ApiService = (function() {
             }
             ErrorLogger.captureError(error, { type: 'api', context: 'get-notes' });
             
-            // 嘗試從本地存儲獲取
+            // 嘗試從本地存儲獲取（唯讀快取，僅在連不上伺服器時墊底）
             console.log('嘗試從本地存儲獲取筆記數據');
-            let localNotes = [];
             try {
                 const storageKey = CONFIG.STORAGE.NOTES || 'urd_notes';
                 const stored = localStorage.getItem(storageKey);
                 if (stored) {
-                    localNotes = JSON.parse(stored);
-                    console.log('成功從本地存儲獲取筆記:', localNotes.length);
+                    const localNotes = JSON.parse(stored);
+                    console.warn('顯示本機快取的筆記資料:', localNotes.length);
+                    if (typeof UIManager !== 'undefined' && UIManager.showToast) {
+                        UIManager.showToast(I18N.t('errors.cachedShown'));
+                    }
                     return localNotes;
                 }
             } catch (localError) {
                 console.error('讀取本地筆記失敗:', localError);
                 ErrorLogger.captureError(localError, { type: 'storage', context: 'read-local-notes' });
             }
-            
-            // 生成示例筆記
-            console.log('生成示例筆記數據');
-            localNotes = [
-                {
-                    id: generateId(),
-                    title: '示例筆記 1',
-                    content: '這是一個示例筆記，當無法連接到API時會顯示此內容。您可以編輯或刪除這個筆記。',
-                    created: new Date().toISOString(),
-                    updated: new Date().toISOString(),
-                    tags: ['示例']
-                },
-                {
-                    id: generateId(),
-                    title: '如何使用互動筆記',
-                    content: '互動筆記會記錄您與系統的重要互動。通過聊天產生的重要內容將自動保存為筆記，您也可以手動創建和編輯筆記。',
-                    created: new Date(Date.now() - 86400000).toISOString(),
-                    updated: new Date(Date.now() - 86400000).toISOString(),
-                    tags: ['幫助', '指南']
-                }
-            ];
-            
-            // 存儲到本地
-            try {
-                const storageKey = CONFIG.STORAGE.NOTES || 'urd_notes';
-                localStorage.setItem(storageKey, JSON.stringify(localNotes));
-                console.log('示例筆記已保存到本地存儲');
-            } catch (storageError) {
-                console.warn('無法將示例筆記保存到本地存儲:', storageError);
-                ErrorLogger.captureError(storageError, { type: 'storage', context: 'save-sample-notes' });
-            }
-            
-            return localNotes;
+
+            // 無本機快取可用 —— 如實拋出錯誤，由呼叫端顯示（不再捏造示例筆記）
+            throw error;
         }
     }
     
@@ -1189,7 +1106,7 @@ const ApiService = (function() {
     async function saveNote(note) {
         // 目前互動筆記不支持手動編輯，將來可以實現
         console.warn('保存筆記:', note);
-        UIManager.showToast('注意: 互動筆記由系統自動生成，暫不支持手動編輯');
+        UIManager.showToast(I18N.t('notes.autoGenerated'));
         
         return {
             success: false,
@@ -1200,7 +1117,7 @@ const ApiService = (function() {
     // 刪除筆記 (互動筆記通常不應刪除)
     async function deleteNote(noteId) {
         console.warn('嘗試刪除筆記:', noteId);
-        UIManager.showToast('注意: 互動筆記不可刪除');
+        UIManager.showToast(I18N.t('notes.cantDelete'));
         
         return {
             success: false,
@@ -1208,76 +1125,49 @@ const ApiService = (function() {
         };
     }
     
+    /**
+     * 推導日記標題
+     * 後端 diaries 表沒有 title 欄位，若不推導，每篇日記都會顯示「無標題日記」。
+     * 取內文第一行有意義的文字 (跳過 Markdown 標題與列點)，取不到則以日期為題。
+     */
+    function deriveDiaryTitle(content, dateIso) {
+        if (typeof content === 'string' && content.trim()) {
+            const line = content
+                .split('\n')
+                .map(l => l.trim())
+                .find(l => l && !/^#{1,6}\s/.test(l) && !/^[-*>|]/.test(l));
+
+            if (line) {
+                const clean = line.replace(/[*_`#]/g, '').trim();
+                if (clean) {
+                    return clean.length > 24 ? clean.slice(0, 24) + '…' : clean;
+                }
+            }
+        }
+
+        const d = new Date(dateIso);
+        return isNaN(d.getTime()) ? I18N.t('diary.plain') :
+            I18N.t('diary.dateTitle', { month: d.getMonth() + 1, day: d.getDate() });
+    }
+
     // 從情緒值獲取情緒標籤
+    // 後端的 valence 已被夾在 0~1 之間，原本以負值判斷 sad/angry 永遠不會成立，
+    // 所有偏負面的日記都會被標成 neutral。這裡改用 0~1 的分界。
     function getMoodFromValence(valence) {
-        if (typeof valence !== 'number') {
+        if (typeof valence !== 'number' || isNaN(valence)) {
             return 'neutral';
         }
-        
+
         if (valence >= 0.7) return 'happy';
-        if (valence >= 0.4) return 'calm';
-        if (valence >= 0) return 'neutral';
-        if (valence >= -0.4) return 'sad';
+        if (valence >= 0.55) return 'calm';
+        if (valence >= 0.45) return 'neutral';
+        if (valence >= 0.25) return 'sad';
         return 'angry';
     }
     
     // 生成唯一ID
     function generateId() {
         return 'diary_' + Math.random().toString(36).substr(2, 9);
-    }
-    
-    // 獲取隨機回應 (用於模擬和後備)
-    function getRandomResponse() {
-        const responses = [
-            '我理解您的意思了。請繼續說。',
-            '這是個有趣的觀點。您能詳細解釋一下嗎？',
-            '謝謝您分享這個想法。還有其他方面您想討論嗎？',
-            '我明白了。關於這個話題，您有什麼具體的問題嗎？',
-            '這是個很好的問題。讓我想想...',
-            '您的經歷非常寶貴。能分享更多細節嗎？',
-            '我注意到您對這個話題很感興趣。有什麼特別的原因嗎？',
-            '我們可以從另一個角度思考這個問題。',
-            '這讓我想起了一個類似的情況...',
-            '您的想法很有創意。我們可以進一步探討這個方向。'
-        ];
-        
-        return responses[Math.floor(Math.random() * responses.length)];
-    }
-    
-    // 生成示例日記數據
-    function generateSampleDiaries() {
-        const sampleDiaries = [
-            {
-                id: 'diary1',
-                title: '美好的一天',
-                content: '今天是個陽光明媚的日子，我心情很好。早上和朋友一起去公園散步，然後去了一家新開的咖啡店。咖啡的香氣和朋友的笑聲讓這一天變得特別美好。',
-                date: new Date(Date.now() - 3600000 * 24).toISOString(),
-                mood: 'happy',
-                valence: 0.8,
-                arousal: 0.6
-            },
-            {
-                id: 'diary2',
-                title: '工作的挑戰',
-                content: '今天工作中遇到了一些挑戰，一個項目出現了意想不到的問題。雖然有些困難，但我和團隊一起找到了解決方案。這讓我意識到團隊合作的重要性。',
-                date: new Date(Date.now() - 3600000 * 48).toISOString(),
-                mood: 'neutral',
-                valence: 0.3,
-                arousal: 0.7
-            },
-            {
-                id: 'diary3',
-                title: '安靜的夜晚',
-                content: '今晚很安靜，我獨自一人在家，聽著輕柔的音樂，看著最喜歡的書。有時候，這樣的獨處時光也很珍貴，讓我有機會思考和放鬆。',
-                date: new Date(Date.now() - 3600000 * 72).toISOString(),
-                mood: 'calm',
-                valence: 0.6,
-                arousal: 0.2
-            }
-        ];
-        
-        console.log('生成了示例日記數據:', sampleDiaries.length);
-        return sampleDiaries;
     }
     
     // 設置用戶ID
@@ -1442,54 +1332,33 @@ const ApiService = (function() {
         }
     }
     
-    // 登入並獲取JWT令牌
-    async function login(username) {
+    // 登入並獲取JWT令牌（真實密碼由後端 bcrypt 驗證）
+    async function login(username, password) {
         try {
             console.log(`嘗試登入用戶: ${username}`);
-            
+
             // 檢查參數
             if (!username) {
                 console.error('登入失敗: 未提供用戶名');
-                throw new Error('登入需要用戶名');
+                throw new Error(I18N.t('login.enterUsername'));
             }
-            
-            // 檢查是否已經有有效令牌
-            if (accessToken && !isTokenExpiringSoon(60)) { // 如果令牌還有超過60分鐘有效
-                console.log('已有有效的認證令牌，無需重新登入');
-                return { success: true };
+            if (!password) {
+                console.error('登入失敗: 未提供密碼');
+                throw new Error(I18N.t('login.enterPassword'));
             }
-            
-            // 使用本地密碼或默認密碼
-            // 注意: 在實際生產環境中，應該使用更安全的方式處理密碼
-            const password = 'desktop_client'; // 使用默認密碼，因為是電子客戶端
-            
+
             const formData = new URLSearchParams();
             formData.append('username', username);
             formData.append('password', password);
             
             // 優先從配置獲取API URL
             const baseUrl = CONFIG && CONFIG.API && CONFIG.API.BASE_URL ? 
-                CONFIG.API.BASE_URL : 'http://localhost:8000';
+                CONFIG.API.BASE_URL : 'http://localhost:8001';
             
-            // 檢查網絡連接
+            // 檢查網絡連接（絕不偽造令牌 —— 登入必須由後端驗證）
             if (!navigator.onLine) {
                 console.warn('設備處於離線狀態，無法進行登入');
-                
-                // 在模擬模式下創建模擬令牌
-                if (CONFIG && CONFIG.USE_MOCK_DATA) {
-                    console.log('離線模式: 使用模擬令牌');
-                    const mockToken = 'mock_jwt_token_for_offline_mode';
-                    setAuthToken(mockToken, 86400); // 24小時
-    return {
-                        success: true,
-                        userId: numericUserId,
-                        username: username,
-                        is_mock: true,
-                        offline: true
-                    };
-                }
-                
-                throw new Error('設備處於離線狀態，無法進行登入');
+                throw new Error(I18N.t('errors.offlineLogin'));
             }
             
             // 登入請求不使用fetchAPI函數，避免循環依賴
@@ -1538,7 +1407,7 @@ const ApiService = (function() {
                 // 檢查令牌
                 if (!authData.access_token) {
                     console.error('登入響應中缺少令牌:', authData);
-                    throw new Error('伺服器響應缺少有效的認證令牌');
+                    throw new Error(I18N.t('errors.badToken'));
                 }
                 
                 // 保存令牌 - 如果服務器未提供過期時間，使用默認值(24小時)
@@ -1562,50 +1431,22 @@ const ApiService = (function() {
                 };
             } catch (fetchError) {
                 clearTimeout(timeoutId);
-                
-                // 如果是超時或網絡錯誤
-                if (fetchError.name === 'AbortError' || fetchError.name === 'TypeError') {
-                    console.warn('登入請求失敗:', fetchError.message);
-                    
-                    // 在開發或測試模式下使用模擬資料
-                    if (CONFIG && (CONFIG.USE_MOCK_DATA || CONFIG.DEBUG.MOCK_API)) {
-                        console.log('使用模擬登入數據');
-                        
-                        // 模擬令牌（僅用於開發和測試）
-                        const mockToken = 'mock_jwt_token_for_dev_only';
-                        setAuthToken(mockToken, 86400); // 24小時
-                        
-                        return {
-                            success: true,
-                            userId: numericUserId,
-                            username: username,
-                            is_mock: true
-                        };
-                    }
+
+                // 超時或網絡錯誤換成可讀訊息；絕不偽造令牌
+                if (fetchError.name === 'AbortError') {
+                    throw new Error(I18N.t('errors.loginTimeout'));
                 }
-                
+                if (fetchError.name === 'TypeError') {
+                    throw new Error(I18N.t('errors.cantConnect'));
+                }
+
                 // 重新拋出其他錯誤
                 throw fetchError;
             }
         } catch (error) {
             console.error('登入過程出錯:', error);
-            
-            // 如果是開發或測試模式，使用模擬數據
-            if (CONFIG && (CONFIG.USE_MOCK_DATA || CONFIG.DEBUG.MOCK_API)) {
-                console.log('使用模擬登入數據');
-                
-                // 模擬令牌（僅用於開發和測試）
-                const mockToken = 'mock_jwt_token_for_dev_only';
-                setAuthToken(mockToken, 86400); // 24小時
-                
-                return {
-                    success: true,
-                    userId: numericUserId,
-                    username: currentUserId,
-                    is_mock: true
-                };
-            }
-            
+
+            // 如實回報登入失敗，由登入介面顯示錯誤訊息
             return {
                 success: false,
                 error: error.message
@@ -1635,39 +1476,26 @@ const ApiService = (function() {
                 }
                 
                 console.log('令牌即將過期，嘗試刷新...');
-                
+
                 // 嘗試刷新令牌
                 const refreshed = await refreshToken();
                 if (refreshed) {
                     console.log('令牌刷新成功');
                     return { success: true };
                 } else {
-                    console.warn('令牌刷新失敗，將嘗試重新登入');
+                    console.warn('令牌刷新失敗，需要重新登入');
                     // 清除已過期的令牌
                     clearAuthToken();
                 }
             }
-            
-            // 如果沒有令牌或刷新失敗，嘗試用戶ID登入
-            if (currentUserId) {
-                console.log('嘗試使用現有用戶ID自動登入:', currentUserId);
-                
-                const loginResult = await login(currentUserId);
-                if (loginResult.success) {
-                    console.log('自動登入成功');
-                    return loginResult;
-                } else {
-                    console.warn('自動登入失敗:', loginResult.error);
-                    return { success: false, error: loginResult.error };
-                }
-            }
-            
-            console.warn('無用戶信息可用於自動登入');
-            return { success: false, error: '無法自動登入：沒有保存的用戶信息' };
-            
+
+            // 密碼不會存在本機，無法代替使用者登入 —— 交回登入介面
+            console.log('沒有可用的令牌，需要使用者輸入密碼登入');
+            return { success: false, needLogin: true, error: '請輸入密碼登入' };
+
         } catch (error) {
             console.error('自動登入過程發生錯誤:', error);
-            return { success: false, error: `自動登入失敗: ${error.message}` };
+            return { success: false, needLogin: true, error: `自動登入失敗: ${error.message}` };
         }
     }
     
@@ -1698,18 +1526,6 @@ const ApiService = (function() {
             }
         } catch (error) {
             console.error(`獲取筆記失敗 (ID: ${noteId}):`, error);
-            
-            // 如果啟用了模擬數據，則返回模擬數據
-            if (CONFIG.USE_MOCK_DATA) {
-                const mockNotes = getMockDataForEndpoint('/notes', { method: 'GET' });
-                const mockNote = mockNotes.find(note => note.id === noteId);
-                
-                if (mockNote) {
-                    console.log('使用模擬數據代替API響應');
-                    return mockNote;
-                }
-            }
-            
             throw new Error(`無法獲取筆記: ${error.message}`);
         }
     }
@@ -1720,6 +1536,7 @@ const ApiService = (function() {
         ensureInitialized,
         fetchAPI,
         sendChatMessage,
+        checkIn: checkIn,
         endChat: endChat,
         getDiaries: getDiaries,
         getDiaryById: getDiaryById,

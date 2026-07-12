@@ -1,74 +1,51 @@
-import os
-from openai import OpenAI
-from memory_manager import get_chat_history, save_chat_history
-from config import GROK_API_URL, XAI_API_KEY
+"""相容層：舊程式碼的 GrokAPIError / send_to_grok 收斂到統一的 llm.chat。
 
-# 初始化 OpenAI 客戶端（用於調用 Grok API）
-client = OpenAI(
-    api_key=XAI_API_KEY,
-    base_url=GROK_API_URL,  # 官方提供的 API URL
-)
+新程式請直接使用 llm.chat(messages, cfg) 與 providers.base.LLMError。
+供應商實作見 app/providers/（openai/anthropic/gemini 官方 SDK）。
+"""
+import llm
+from memory_manager import get_chat_history, append_chat_messages
+from providers.base import LLMError
+from services.prompt_loader import load_prompt, get_role
 
-# 定義常用的模型 ID
-MODELS = {
-    "grok2": "grok-2-latest",
-    "grok3": "grok-3-latest"
-}
+# 舊名稱相容：原本散落各處的 `except GrokAPIError` 等同捕捉 LLMError。
+# 語意不變 —— 絕不可把錯誤訊息當成模型輸出回傳（會寫進日記並污染
+# 之後每一次對話的 system prompt），失敗一律拋例外讓路由回 5xx。
+GrokAPIError = LLMError
 
-def send_to_grok(user_id, message, model="grok3"):
-    """發送使用者輸入到 Grok AI，並返回回應
-    
+
+def send_to_grok(user_id, message, cfg=None, crisis=False, lang="zh-TW"):
+    """發送使用者輸入到所選的 LLM 供應商，並管理對話歷史。
+
     Args:
-        user_id: 用戶ID
-        message: 使用者的信息
-        model: 使用的模型，可選值為 "grok2" 或 "grok3"，默認為 "grok3"
+        user_id: 對話歷史使用的用戶ID（由 token 導出）
+        message: 使用者的訊息
+        cfg: 請求範圍的 LLMConfig；None 時走 .env Grok 後備
+        crisis: 敏感詞命中時附加危機模式指示
+        lang: 提示詞語言
+
+    Raises:
+        LLMError: API 呼叫失敗時拋出（不會把錯誤字串當成回應）
     """
-    try:
-        chat_history = get_chat_history(user_id)
+    chat_history = get_chat_history(user_id)
 
-        # 獲取模型 ID
-        model_id = MODELS.get(model, MODELS["grok3"])
+    # 只保留使用者與助手訊息，避免歷史中殘留的 system 訊息重複累積
+    history = [m for m in chat_history if m.get("role") in ("user", "assistant")]
 
-        # 格式化對話內容
-        messages = [{"role": "system", "content": "You are Grok, a chatbot inspired by the Hitchhiker's Guide to the Galaxy."}]
-        messages += chat_history
-        messages.append({"role": "user", "content": message})
+    system_prompt = get_role("companion", lang)
+    if crisis:
+        system_prompt += "\n\n" + load_prompt("crisis_mode.txt", lang)
 
-        # 調用 Grok API
-        completion = client.chat.completions.create(
-            model=model_id,
-            messages=messages,
-        )
+    messages = [{"role": "system", "content": system_prompt}]
+    messages += history
+    messages.append({"role": "user", "content": message})
 
-        ai_response = completion.choices[0].message.content
+    ai_response = llm.chat(messages, cfg)
 
-        # 儲存對話歷史
-        messages.append({"role": "assistant", "content": ai_response})
-        save_chat_history(user_id, messages)
+    # 儲存本輪對話 (append 語意；則數/天數修剪由 memory_manager 處理)
+    append_chat_messages(user_id, [
+        {"role": "user", "content": message},
+        {"role": "assistant", "content": ai_response},
+    ])
 
-        return ai_response
-
-    except Exception as e:
-        return f"Error: {str(e)}"
-
-def send_to_model(messages, model="grok3"):
-    """透過指定模型發送消息
-    
-    Args:
-        messages: 消息列表
-        model: 使用的模型，可選值為 "grok2" 或 "grok3"，默認為 "grok3"
-    """
-    try:
-        # 獲取模型 ID
-        model_id = MODELS.get(model, MODELS["grok3"])
-        
-        # 調用 Grok API
-        completion = client.chat.completions.create(
-            model=model_id,
-            messages=messages,
-        )
-        
-        return completion.choices[0].message.content
-    except Exception as e:
-        print(f"調用模型 {model} 時出錯: {str(e)}")
-        return f"Error: {str(e)}"
+    return ai_response

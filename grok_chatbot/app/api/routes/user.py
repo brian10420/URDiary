@@ -5,10 +5,12 @@ from typing import List, Dict, Any, Optional
 from pydantic import BaseModel
 from datetime import datetime, timedelta
 
-from api.deps import get_db
-from utils.api_exceptions import BadRequestError, NotFoundError, UnauthorizedError
+from api.deps import get_db, get_current_user
+from utils.api_exceptions import BadRequestError, NotFoundError, UnauthorizedError, ForbiddenError
 from utils.error_codes import ErrorCode
+from utils.password_validator import validate_password_and_get_errors
 from database import crud
+from database.models import User
 from utils.security import (
     create_access_token, 
     create_refresh_token,
@@ -27,9 +29,11 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 
 class UserCreate(BaseModel):
     username: str
+    password: str
 
 class Token(BaseModel):
     access_token: str
+    refresh_token: Optional[str] = None
     token_type: str
     expires_in: int
     user_id: int
@@ -43,9 +47,9 @@ class TokenResponse(BaseModel):
 class RefreshTokenRequest(BaseModel):
     refresh_token: Optional[str] = None
 
-@router.post("/create", response_model=Dict[str, Any], 
+@router.post("/create", response_model=Dict[str, Any],
             summary="創建新用戶",
-            description="創建新用戶並返回用戶ID和用戶名")
+            description="創建新用戶（密碼經強度檢查與 bcrypt 雜湊後儲存）並返回用戶ID和用戶名")
 def create_user(user: UserCreate, db: Session = Depends(get_db)):
     """創建新用戶"""
     existing_user = crud.get_user_by_username(db, user.username)
@@ -55,33 +59,42 @@ def create_user(user: UserCreate, db: Session = Depends(get_db)):
             detail="該用戶名稱已存在"
         )
 
-    new_user = crud.create_user(db, user.username)
+    password_errors = validate_password_and_get_errors(user.password)
+    if password_errors:
+        raise BadRequestError(
+            error_code=ErrorCode.INVALID_INPUT,
+            detail="密碼強度不足：" + "；".join(password_errors)
+        )
+
+    new_user = crud.create_user(db, user.username, get_password_hash(user.password))
     return {"message": "User created", "user_id": new_user.id, "username": new_user.username}
 
 @router.get("/{user_id}", response_model=Dict[str, Any],
            summary="獲取用戶資訊",
-           description="根據用戶ID獲取用戶詳細資訊")
-def get_user(user_id: int, db: Session = Depends(get_db)):
-    """獲取用戶資訊"""
-    user = crud.get_user(db, user_id)
-    if not user:
-        raise NotFoundError(
-            error_code=ErrorCode.USER_NOT_FOUND,
-            detail="用戶不存在"
+           description="獲取自己的用戶詳細資訊（需認證，僅能查詢自己）")
+def get_user(user_id: int, current_user: User = Depends(get_current_user)):
+    """獲取用戶資訊（僅限本人）"""
+    if user_id != current_user.id:
+        raise ForbiddenError(
+            error_code=ErrorCode.FORBIDDEN,
+            detail="無權存取其他使用者的資料"
         )
     return {
-        "user_id": user.id,
-        "username": user.username,
-        "created_at": user.created_at.isoformat()
+        "user_id": current_user.id,
+        "username": current_user.username,
+        "created_at": current_user.created_at.isoformat()
     }
 
 @router.get("/", response_model=List[Dict[str, Any]],
-          summary="獲取用戶列表",
-          description="獲取用戶列表，支持分頁")
-def get_users(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
-    """獲取用戶列表"""
-    users = crud.get_users(db, skip, limit)
-    return [{"user_id": u.id, "username": u.username, "created_at": u.created_at.isoformat()} for u in users]
+          summary="獲取目前登入的用戶",
+          description="不再無認證列出全部使用者；僅回傳目前登入者（本機 profile 清單由前端維護）")
+def get_users(current_user: User = Depends(get_current_user)):
+    """獲取用戶列表（僅回傳目前登入者，避免洩漏其他帳號）"""
+    return [{
+        "user_id": current_user.id,
+        "username": current_user.username,
+        "created_at": current_user.created_at.isoformat()
+    }]
 
 @router.post("/login", response_model=Token,
             summary="用戶登入",
@@ -95,7 +108,20 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = 
             error_code=ErrorCode.UNAUTHORIZED,
             detail="用戶名或密碼不正確"
         )
-    
+
+    # 驗證密碼（bcrypt + pepper，見 utils/security）
+    if not user.password_hash:
+        # 加密碼欄位之前建立的舊帳號 —— 不能無條件放行
+        raise UnauthorizedError(
+            error_code=ErrorCode.UNAUTHORIZED,
+            detail="此帳號尚未設定密碼，請重新建立帳號"
+        )
+    if not verify_password(form_data.password, user.password_hash):
+        raise UnauthorizedError(
+            error_code=ErrorCode.UNAUTHORIZED,
+            detail="用戶名或密碼不正確"
+        )
+
     # 創建訪問令牌
     access_token_expires = timedelta(hours=24)  # 24小時過期
     access_token = create_access_token(
@@ -171,7 +197,8 @@ async def refresh_token(
         # 檢查令牌是否過期太久（超過7天不允許刷新）
         token_exp = payload.get("exp")
         if token_exp:
-            exp_time = datetime.fromtimestamp(token_exp)
+            # exp 為 UTC 時間戳，必須用 UTC 解析，否則非 UTC 時區的主機會判斷錯誤
+            exp_time = datetime.utcfromtimestamp(token_exp)
             now = datetime.utcnow()
             if (now - exp_time).days > 7:
                 raise UnauthorizedError(

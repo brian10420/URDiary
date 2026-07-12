@@ -7,21 +7,24 @@
     <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="css/styles.css">
-    
-    <!-- 1. 配置和核心服務 - 優先加載 -->
+
+    <!-- 1. 配置和核心服務 - 優先加載 (i18n 需在其他模塊之前) -->
+    <script src="js/security_utils.js"></script>
+    <script src="js/i18n.js"></script>
     <script src="js/config.js"></script>
     <script src="js/error_logger.js"></script>
+    <script src="js/secure_store.js"></script>
     <script src="js/api_service.js"></script>
-    <script src="js/password_manager.js"></script>
-    
+    <script src="js/settings_module.js"></script>
+
     <!-- 2. UI和錯誤處理 -->
     <script src="js/ui_manager.js"></script>
     <script src="js/error_handler.js"></script>
-    
+
     <!-- 3. 功能模塊 - 最後加載 -->
     <script src="js/chat_module.js"></script>
     <script src="js/diary_module.js"></script>
-    
+
     <!-- 主程序入口 - 最後加載 -->
     <script src="js/main.js"></script>
 </head>
@@ -34,144 +37,207 @@
                     <img src="assets/icon.jpg" alt="URDiary Logo" onerror="this.src='assets/default-avatar.png'">
                 </div>
                 <h1>URDiary</h1>
-                <p>您的情緒陪伴與日記助手</p>
+                <p data-i18n="app.tagline">您的情緒陪伴與日記助手</p>
             </div>
         </div>
-        
+
         <!-- 頁面頂部 -->
         <header class="app-header">
             <div class="app-logo">
                 <img src="assets/icon.jpg" alt="URDiary Logo" onerror="this.src='assets/default-avatar.png'">
                 <span>URDiary</span>
             </div>
-            
+
             <nav class="app-nav">
-                <div class="nav-item active" data-view="chat">對話</div>
-                <div class="nav-item" data-view="diary">日記</div>
+                <div class="nav-item active" data-view="chat" data-i18n="nav.chat">對話</div>
+                <div class="nav-item" data-view="diary" data-i18n="nav.diary">日記</div>
             </nav>
-            
+
             <div class="app-tools">
-                <button id="user-select-btn" class="icon-btn" title="切換用戶">
+                <button id="settings-btn" class="icon-btn" title="設定" data-i18n-title="tools.settings">
+                    <i class="fa fa-cog"></i>
+                </button>
+                <button id="user-select-btn" class="icon-btn" title="切換用戶" data-i18n-title="tools.switchUser">
                     <i class="fa fa-user"></i>
                 </button>
-                <button id="theme-toggle" class="icon-btn" title="切換主題">
+                <button id="theme-toggle" class="icon-btn" title="切換主題" data-i18n-title="tools.theme">
                     <i class="fa fa-sun"></i>
                 </button>
-                <button id="debug-btn" class="icon-btn" title="開啟調試工具">
+                <button id="debug-btn" class="icon-btn" title="開啟調試工具" data-i18n-title="tools.debug">
                     <i class="fa fa-bug"></i>
                 </button>
             </div>
         </header>
-        
+
         <!-- 用戶選擇對話框 -->
         <div id="user-select-dialog" class="modal" style="display: none;">
             <div class="modal-content">
                 <div class="modal-header">
-                    <h3>選擇用戶</h3>
+                    <h3 data-i18n="userDialog.title">選擇用戶</h3>
                     <button id="close-user-dialog-btn" class="btn-close">×</button>
                 </div>
                 <div class="modal-body">
                     <div id="user-list" class="user-list">
                         <!-- 用戶列表將通過JavaScript動態載入 -->
-                        <p>正在載入用戶列表...</p>
+                        <p data-i18n="userDialog.loading">正在載入用戶列表...</p>
                     </div>
                     <div class="user-actions">
-                        <button id="create-user-btn" class="btn">創建新用戶</button>
+                        <button id="create-user-btn" class="btn" data-i18n="userDialog.create">創建新用戶</button>
                     </div>
                 </div>
             </div>
         </div>
-        
+
         <!-- 密碼驗證對話框 -->
         <div id="password-dialog" class="modal" style="display: none;">
             <div class="modal-content">
                 <div class="modal-header">
-                    <h3>請輸入密碼</h3>
+                    <h3 data-i18n="login.title">登入</h3>
                     <button id="close-password-dialog-btn" class="btn-close">×</button>
                 </div>
                 <div class="modal-body">
                     <div id="selected-user-info" class="mb-3"></div>
                     <div class="form-group">
-                        <label for="user-password">密碼:</label>
-                        <input type="password" id="user-password" class="form-control" placeholder="請輸入4-20位密碼">
+                        <label for="login-username" data-i18n="login.username">用戶名稱:</label>
+                        <input type="text" id="login-username" class="form-control" placeholder="請輸入用戶名稱" data-i18n-placeholder="login.usernamePlaceholder">
+                    </div>
+                    <div class="form-group">
+                        <label for="user-password" data-i18n="login.password">密碼:</label>
+                        <input type="password" id="user-password" class="form-control" placeholder="請輸入密碼" data-i18n-placeholder="login.passwordPlaceholder">
                         <div id="password-error" class="error-message" style="display: none; color: red; margin-top: 5px;"></div>
                     </div>
                     <div class="form-actions">
-                        <button id="verify-password-btn" class="btn">確認</button>
+                        <button id="verify-password-btn" class="btn" data-i18n="login.submit">登入</button>
                     </div>
                 </div>
             </div>
         </div>
-        
+
         <!-- 創建用戶對話框 -->
         <div id="create-user-dialog" class="modal" style="display: none;">
             <div class="modal-content">
                 <div class="modal-header">
-                    <h3>創建新用戶</h3>
+                    <h3 data-i18n="create.title">創建新用戶</h3>
                     <button id="close-create-user-btn" class="btn-close">×</button>
                 </div>
                 <div class="modal-body">
                     <div class="form-group">
-                        <label for="new-username">用戶名稱:</label>
-                        <input type="text" id="new-username" class="form-control" placeholder="請輸入用戶名稱">
+                        <label for="new-username" data-i18n="login.username">用戶名稱:</label>
+                        <input type="text" id="new-username" class="form-control" placeholder="請輸入用戶名稱" data-i18n-placeholder="login.usernamePlaceholder">
                     </div>
                     <div class="form-group">
-                        <label for="new-password">密碼:</label>
-                        <input type="password" id="new-password" class="form-control" placeholder="請輸入4-20位密碼">
+                        <label for="new-password" data-i18n="login.password">密碼:</label>
+                        <input type="password" id="new-password" class="form-control" placeholder="至少8字元，含大小寫字母、數字與特殊符號" data-i18n-placeholder="create.passwordPlaceholder">
                     </div>
                     <div class="form-group">
-                        <label for="confirm-password">確認密碼:</label>
-                        <input type="password" id="confirm-password" class="form-control" placeholder="請再次輸入密碼">
+                        <label for="confirm-password" data-i18n="create.confirmPassword">確認密碼:</label>
+                        <input type="password" id="confirm-password" class="form-control" placeholder="請再次輸入密碼" data-i18n-placeholder="create.confirmPlaceholder">
                         <div id="create-password-error" class="error-message" style="display: none; color: red; margin-top: 5px;"></div>
                     </div>
                     <div class="form-actions">
-                        <button id="submit-new-user" class="btn">創建</button>
+                        <button id="submit-new-user" class="btn" data-i18n="create.submit">創建</button>
                     </div>
                 </div>
             </div>
         </div>
-        
+
+        <!-- 設定對話框 -->
+        <div id="settings-dialog" class="modal" style="display: none;">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3 data-i18n="settings.title">設定</h3>
+                    <button id="close-settings-btn" class="btn-close">×</button>
+                </div>
+                <div class="modal-body">
+                    <div class="form-group">
+                        <label for="settings-language" data-i18n="settings.language">介面與對話語言:</label>
+                        <select id="settings-language" class="form-control">
+                            <option value="zh-TW">繁體中文</option>
+                            <option value="en">English</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="settings-provider" data-i18n="settings.provider">AI 供應商:</label>
+                        <select id="settings-provider" class="form-control"></select>
+                    </div>
+                    <div class="form-group">
+                        <label for="settings-model" data-i18n="settings.model">模型（留空使用預設，可從建議清單選擇）:</label>
+                        <input type="text" id="settings-model" class="form-control" placeholder="" list="settings-model-suggestions">
+                        <datalist id="settings-model-suggestions"></datalist>
+                    </div>
+                    <div class="form-group">
+                        <label for="settings-api-key" data-i18n="settings.apiKey">API Key:</label>
+                        <input type="password" id="settings-api-key" class="form-control" placeholder="請輸入 API Key" data-i18n-placeholder="settings.apiKeyPlaceholder">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 5px;">
+                            <small id="settings-key-status"></small>
+                            <button id="settings-clear-key" class="btn" style="padding: 2px 8px; font-size: 12px;" data-i18n="settings.clearKey">刪除金鑰</button>
+                        </div>
+                        <small style="display: block; margin-top: 4px; color: #888;" data-i18n="settings.keyNote">
+                            金鑰以系統金鑰鏈 (safeStorage) 加密存於本機，僅隨請求送往本機後端，不會上傳伺服器。
+                        </small>
+                    </div>
+                    <div class="form-group" id="settings-base-url-row" style="display: none;">
+                        <label for="settings-base-url" data-i18n="settings.baseUrl">Base URL:</label>
+                        <input type="text" id="settings-base-url" class="form-control" placeholder="http://localhost:11434/v1">
+                    </div>
+                    <div class="form-group">
+                        <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                            <input type="checkbox" id="settings-semantic-memory" style="width: auto;">
+                            <span data-i18n="settings.semantic">進階記憶（語意檢索）</span>
+                        </label>
+                        <small id="settings-semantic-status" style="display: block; margin-top: 4px; color: #888;" data-i18n="settings.semanticNote">
+                            以語意相似度尋找相關的過往日記（例如「上班的事」能對到「工作」）。需先在後端安裝 fastembed。
+                        </small>
+                    </div>
+                    <div id="settings-error" class="error-message" style="display: none; color: red; margin-top: 5px;"></div>
+                    <div class="form-actions">
+                        <button id="settings-save" class="btn" data-i18n="settings.save">儲存並使用</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <!-- 主內容區域 -->
         <main class="app-content">
             <!-- 對話視圖 -->
             <div id="chat-view" class="view-container active">
                 <div class="chat-container">
                     <div class="chat-header">
-                        <div class="chat-title">與AI助手對話</div>
+                        <div class="chat-title" data-i18n="chat.title">與AI助手對話</div>
                         <div class="chat-actions">
-                            <button id="clear-chat-btn" class="btn btn-sm" title="清空對話">
+                            <button id="clear-chat-btn" class="btn btn-sm" title="清空對話" data-i18n-title="chat.clear">
                                 <i class="fa fa-trash"></i>
                             </button>
                         </div>
                     </div>
-                    
+
                     <div class="chat-messages"></div>
-                    
+
                     <div class="chat-input-area">
                         <div class="chat-input-wrapper">
-                            <textarea id="user-input" placeholder="告訴我您今天的感受..." autofocus></textarea>
+                            <textarea id="user-input" placeholder="告訴我您今天的感受..." data-i18n-placeholder="chat.inputPlaceholder" autofocus></textarea>
                             <button id="send-button">
                                 <i class="fa fa-paper-plane"></i>
                             </button>
                         </div>
                     </div>
-                    
+
                     <div class="chat-footer">
-                        <button id="end-chat-btn" class="btn">結束對話並生成日記</button>
+                        <button id="end-chat-btn" class="btn" data-i18n="chat.endButton">結束對話並生成日記</button>
                     </div>
                 </div>
             </div>
-            
+
             <!-- 日記視圖 -->
             <div id="diary-view" class="view-container">
-                <h2 class="view-title">日記記錄</h2>
+                <h2 class="view-title" data-i18n="diary.viewTitle">日記記錄</h2>
                 <div class="diary-container">
                     <div class="diary-list"></div>
                     <div class="diary-detail" style="display: none;">
                         <div class="detail-header">
                             <h3 class="detail-title"></h3>
                             <div class="detail-actions">
-                                <button id="back-to-list-btn" class="btn btn-sm">返回列表</button>
+                                <button id="back-to-list-btn" class="btn btn-sm" data-i18n="diary.backToList">返回列表</button>
                             </div>
                         </div>
                         <div class="detail-content"></div>
@@ -185,22 +251,22 @@
                 </div>
             </div>
         </main>
-        
+
         <!-- 頁面底部 -->
         <footer class="app-footer">
-            <p>URDiary &copy; 2025 - 您的日記助手</p>
+            <p data-i18n="app.footer">URDiary &copy; 2025 - 您的日記助手</p>
         </footer>
     </div>
-    
+
     <!-- 加載動畫 -->
     <div class="loading-spinner">
-        <div class="loading-message">生成日記中...</div>
+        <div class="loading-message" data-i18n="chat.generatingDiary">生成日記中...</div>
     </div>
-    
+
     <!-- 錯誤提示區域 -->
     <div id="error-container" style="display: none;">
         <div class="error-header">
-            <h3>錯誤信息</h3>
+            <h3 data-i18n="errors.title">錯誤信息</h3>
             <button id="close-error-btn" class="btn-close">×</button>
         </div>
         <div id="error-content"></div>

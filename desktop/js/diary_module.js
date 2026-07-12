@@ -52,7 +52,7 @@ const DiaryModule = (function() {
                     <div class="detail-header">
                         <h3 class="detail-title"></h3>
                         <div class="detail-actions">
-                            <button id="back-to-list-btn" class="btn btn-sm">返回列表</button>
+                            <button id="back-to-list-btn" class="btn btn-sm">${I18N.t('diary.backToList')}</button>
                         </div>
                     </div>
                     <div class="detail-content"></div>
@@ -142,9 +142,9 @@ const DiaryModule = (function() {
         } catch (error) {
             console.error('載入日記列表失敗:', error);
             if (typeof UIManager !== 'undefined' && UIManager.showError) {
-                UIManager.showError('載入失敗', '載入日記資料時出錯: ' + error.message);
+                UIManager.showError(I18N.t('diary.loadFailedTitle'), I18N.t('diary.loadFailedBody', { error: error.message }));
             } else {
-                alert('載入日記失敗: ' + error.message);
+                alert(I18N.t('diary.loadFailedAlert', { error: error.message }));
             }
             // 确保至少显示空状态
             diaries = [];
@@ -207,16 +207,16 @@ const DiaryModule = (function() {
                 listItem.className = 'diary-card';
                 listItem.setAttribute('data-id', diary.id);
                 
-                // 設置HTML內容
+                // 設置HTML內容 (title/content 來自 AI 生成的日記，必須轉義)
                 listItem.innerHTML = `
                     <div class="card-header">
-                        <div class="card-date">${formattedDate}</div>
+                        <div class="card-date">${escapeHtml(formattedDate)}</div>
                         <div class="mood-tag" style="background-color: ${getMoodColor(diary.mood)}">
-                            ${moodName}
+                            ${escapeHtml(moodName)}
                         </div>
                     </div>
-                    <h3 class="card-title">${diary.title || '無標題日記'}</h3>
-                    <div class="card-excerpt">${getExcerpt(diary.content, 80)}</div>
+                    <h3 class="card-title">${escapeHtml(diary.title || I18N.t('diary.untitled'))}</h3>
+                    <div class="card-excerpt">${escapeHtml(diary.summary || getExcerpt(diary.content, 80))}</div>
                 `;
                 
                 // 添加點擊事件 - 使用外部函數封裝以避免閉包問題
@@ -260,7 +260,7 @@ const DiaryModule = (function() {
             
             if (!diary) {
                 console.error(`找不到ID為${diaryId}的日記`);
-                UIManager.showError('找不到日記', '無法找到指定的日記記錄');
+                UIManager.showError(I18N.t('diary.notFoundTitle'), I18N.t('diary.notFoundBody'));
                 return;
             }
             
@@ -287,7 +287,7 @@ const DiaryModule = (function() {
             
             // 格式化日期
             const dateObj = new Date(diary.date);
-            const formattedDate = dateObj.toLocaleDateString('zh-CN', {
+            const formattedDate = dateObj.toLocaleDateString(I18N.dateLocale(), {
                 year: 'numeric',
                 month: 'long',
                 day: 'numeric',
@@ -309,8 +309,8 @@ const DiaryModule = (function() {
                 moodElement: !!moodElement
             });
             
-            if (titleElement) titleElement.textContent = diary.title || '無標題日記';
-            if (contentElement) contentElement.innerHTML = formatContent(diary.content || '無內容');
+            if (titleElement) titleElement.textContent = diary.title || I18N.t('diary.untitled');
+            if (contentElement) contentElement.innerHTML = formatContent(diary.content || I18N.t('diary.noContent'));
             if (dateElement) dateElement.textContent = formattedDate;
             if (moodElement) moodElement.textContent = getMoodName(diary.mood);
             
@@ -331,7 +331,7 @@ const DiaryModule = (function() {
         } catch (error) {
             console.error('顯示日記詳情時出錯:', error);
             console.error('錯誤堆棧:', error.stack);
-            UIManager.showError('顯示詳情失敗', '顯示日記詳情時出錯: ' + error.message);
+            UIManager.showError(I18N.t('diary.detailFailedTitle'), I18N.t('diary.detailFailedBody', { error: error.message }));
         }
     }
     
@@ -349,7 +349,7 @@ const DiaryModule = (function() {
             return '未知日期';
         }
         
-        return date.toLocaleDateString('zh-CN', {
+        return date.toLocaleDateString(I18N.dateLocale(), {
             month: 'short',
             day: 'numeric'
         });
@@ -377,25 +377,16 @@ const DiaryModule = (function() {
     
     // 獲取情緒顯示名稱
     function getMoodName(mood) {
-        const moodNames = {
-            'happy': '喜悅',
-            'excited': '興奮',
-            'calm': '平靜',
-            'neutral': '中性',
-            'sad': '悲傷',
-            'angry': '憤怒',
-            'anxious': '焦慮'
-        };
-        
-        return moodNames[mood] || '未知情緒';
+        const known = ['happy', 'excited', 'calm', 'neutral', 'sad', 'angry', 'anxious'];
+        return known.includes(mood) ? I18N.t('mood.' + mood) : I18N.t('mood.unknown');
     }
     
     // 格式化內容，處理換行和特殊標記
     function formatContent(content) {
-        if (!content) return '<p>無內容</p>';
-        
-        // 處理換行符
-        let formatted = content.replace(/\n\n/g, '</p><p>').replace(/\n/g, '<br>');
+        if (!content) return `<p>${I18N.t('diary.noContent')}</p>`;
+
+        // 日記內容由 AI 生成後寫入 innerHTML —— 必須先轉義再套用段落/換行標籤
+        let formatted = escapeHtml(content).replace(/\n\n/g, '</p><p>').replace(/\n/g, '<br>');
         
         // 確保有開始和結束標籤
         if (!formatted.startsWith('<p>')) {
@@ -420,9 +411,9 @@ const DiaryModule = (function() {
         diaryListElement.innerHTML = `
             <div class="empty-state">
                 <div class="empty-icon">📝</div>
-                <h3>尚無日記</h3>
-                <p>開始與AI助手對話，生成您的第一篇日記吧！</p>
-                <button class="btn primary-btn" id="start-chat-btn">開始對話</button>
+                <h3>${I18N.t('diary.emptyTitle')}</h3>
+                <p>${I18N.t('diary.emptyHint')}</p>
+                <button class="btn primary-btn" id="start-chat-btn">${I18N.t('diary.startChat')}</button>
             </div>
         `;
         

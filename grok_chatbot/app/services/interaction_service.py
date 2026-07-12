@@ -1,17 +1,14 @@
-from grok_client import client, send_to_model, MODELS
-from memory_manager import get_chat_history
+import llm
+from providers.base import LLMConfig
+from memory_manager import get_chat_history, append_chat_messages
 from database import crud, SessionLocal
 from database.models import InteractionNote
+from services.diary_draft import DiaryDraft, parse_diary_output
+from services.prompt_loader import load_prompt, get_role
+from services.prompt_builder import build_conversation_system, build_checkin_prompt
 from sqlalchemy.orm import Session
-from typing import Dict, Any, Optional, Tuple
-import re
-import json
-import os
-from datetime import datetime
-from config import DEFAULT_MODEL
-
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-PROMPTS_DIR = os.path.join(BASE_DIR, "services", "prompts")
+from utils.time_utils import get_diary_date, get_diary_datetime, get_local_now
+from typing import Dict, Any, Optional
 
 def get_latest_interaction_note(db: Session, user_id: int) -> Optional[InteractionNote]:
     """
@@ -39,34 +36,27 @@ def create_interaction_note(db: Session, user_id: int, content: str) -> Interact
     db.refresh(interaction_note)
     return interaction_note
 
-def read_prompt_file(filename):
-    """安全讀取提示詞文件"""
-    try:
-        prompt_path = os.path.join(PROMPTS_DIR, filename)
-        with open(prompt_path, "r", encoding="utf-8") as f:
-            return f.read()
-    except Exception as e:
-        print(f"讀取提示詞文件 {filename} 時發生錯誤: {str(e)}")
-        # 返回一個簡單的備用提示詞
-        return "請根據對話歷史生成相應內容。"
-    
 def update_interaction_note(
-    chat_history: list, 
-    previous_note_content: Optional[str], 
+    chat_history: list,
+    previous_note_content: Optional[str],
     today_diary: str,
-    model: str = DEFAULT_MODEL
+    cfg: Optional[LLMConfig] = None,
+    user_id: Optional[int] = None,
+    lang: str = "zh-TW"
 ) -> str:
     """
     生成更新的互動筆記內容
-    
+
     Args:
         chat_history: 聊天歷史
         previous_note_content: 前一個互動筆記內容
         today_diary: 今日日記內容
-        model: 使用的模型，默認使用配置中的默認模型
+        cfg: 請求範圍的 LLM 設定；None 時走 .env Grok 後備
+        user_id: 用戶數字ID，提供時會執行情緒趨勢分析
+        lang: 提示詞語言
     """
     # 讀取互動筆記提示詞
-    prompt_template = read_prompt_file("interaction_note_prompt.txt")
+    prompt_template = load_prompt("interaction_note_prompt.txt", lang)
     
     # 格式化對話歷史
     formatted_history = []
@@ -77,39 +67,32 @@ def update_interaction_note(
     chat_content = "\n".join(formatted_history)
     
     # 獲取今日日期，格式為YYYY-MM-DD
-    today_date = datetime.now().strftime("%Y-%m-%d")
+    # 必須用日記的本地日期基準：容器內 datetime.now() 是 UTC，
+    # 台北早上 7 點 = UTC 前一天 23 點，會讓提示詞把今天的事標成昨天。
+    today_date = get_diary_date().strftime("%Y-%m-%d")
     
-    # 執行情緒分析
-    from .analytics_service import analyze_emotion_trends
-    emotion_analysis = {"theme_analysis": {"主要情緒主題": ["無資料"], "情緒變化模式": "無資料", "積極和消極因素": "無資料", "建議的關注點": "無資料"}}
-    
+    # 執行情緒分析 (JSON key 為英文，與 emotion_analysis_prompt.txt 的輸出格式對齊)
+    from services.analytics_service import analyze_emotion_trends
+    emotion_analysis = {"theme_analysis": {"themes": ["無資料"], "pattern": "無資料", "factors": "無資料", "focus": "無資料"}}
+
     try:
-        # 使用臨時數據庫連接
-        db = SessionLocal()
-        user_id = None
-        
-        # 嘗試從聊天歷史中提取用戶ID
-        for msg in chat_history:
-            if msg.get("user_id"):
-                user_id = int(msg["user_id"])
-                break
-        
-        # 若能找到用戶ID，執行情緒分析
+        # 若呼叫端提供用戶ID，執行情緒分析（沿用同一份 LLM 設定 —— 最深的串接鏈）
         if user_id:
-            emotion_analysis = analyze_emotion_trends(user_id, "week")
-        
-        db.close()
+            emotion_analysis = analyze_emotion_trends(user_id, "week", cfg, lang=lang)
     except Exception as e:
         print(f"分析情緒時發生錯誤: {str(e)}")
-    
+
     # 提取情緒分析結果
     emotion_themes = emotion_analysis.get("theme_analysis", {})
+    themes = emotion_themes.get('themes', ['無資料'])
+    if not isinstance(themes, list):
+        themes = [str(themes)]
     emotion_info = f"""
 情緒分析結果：
-- 主要情緒主題: {', '.join(emotion_themes.get('主要情緒主題', ['無資料']))}
-- 情緒變化模式: {emotion_themes.get('情緒變化模式', '無資料')}
-- 積極和消極因素: {emotion_themes.get('積極和消極因素', '無資料')}
-- 建議的關注點: {emotion_themes.get('建議的關注點', '無資料')}
+- 主要情緒主題: {', '.join(str(t) for t in themes)}
+- 情緒變化模式: {emotion_themes.get('pattern', '無資料')}
+- 正負向因素: {emotion_themes.get('factors', '無資料')}
+- 建議留意: {emotion_themes.get('focus', '無資料')}
 """
     
     # 準備提示詞
@@ -121,44 +104,48 @@ def update_interaction_note(
         emotion_analysis=emotion_info
     )
     
-    # 調用 Grok API
-    try:
-        messages = [
-            {"role": "system", "content": "你是一位專業的心理陪伴記錄員，負責整理客戶互動筆記。"},
-            {"role": "user", "content": prompt}
-        ]
-        
-        return send_to_model(messages, model)
-        
-    except Exception as e:
-        print(f"更新互動筆記時發生錯誤: {str(e)}")
-        return "無法生成互動筆記，請稍後再試。"
+    # 調用 LLM
+    # 不可捕捉 LLMError：失敗訊息若被當成筆記內容存入資料庫，
+    # 會污染之後每一次對話的 system prompt。讓例外往上拋，由路由回 5xx。
+    messages = [
+        {"role": "system", "content": get_role("note_taker", lang)},
+        {"role": "user", "content": prompt}
+    ]
 
-def process_interaction_note_update(chat_id: str, numeric_user_id: int, today_diary: str, model: str = DEFAULT_MODEL) -> Dict[str, Any]:
+    return llm.chat(messages, cfg)
+
+def process_interaction_note_update(chat_id: str, numeric_user_id: int, today_diary: str, cfg: Optional[LLMConfig] = None, lang: str = "zh-TW") -> Dict[str, Any]:
     """
     處理互動筆記更新流程
-    
+
     Args:
         chat_id: 聊天ID
         numeric_user_id: 用戶數字ID
         today_diary: 今日日記內容
-        model: 使用的模型，默認使用配置中的默認模型
+        cfg: 請求範圍的 LLM 設定；None 時走 .env Grok 後備
     """
+    # 讀取階段 —— 取完資料立刻關閉連線。
+    # 絕不可在持有 DB 連線 (開著的交易) 的狀態下呼叫 LLM：一次 /chat/end/ 會做
+    # 2~3 次 Grok 往返，每次數十秒，連線會被釘住直到連線池 (20+30) 耗盡。
     db = SessionLocal()
     try:
-        # 獲取聊天歷史
         chat_history = get_chat_history(chat_id)
-        
-        # 獲取最新的互動筆記
         latest_note = get_latest_interaction_note(db, numeric_user_id)
         previous_content = latest_note.content if latest_note else None
-        
-        # 生成新的互動筆記
-        new_content = update_interaction_note(chat_history, previous_content, today_diary, model)
-        
-        # 保存新的互動筆記
+    finally:
+        db.close()
+
+    # LLM 階段 —— 此時不持有任何 DB 連線
+    new_content = update_interaction_note(
+        chat_history, previous_content, today_diary, cfg,
+        user_id=numeric_user_id, lang=lang
+    )
+
+    # 寫入階段
+    db = SessionLocal()
+    try:
         new_note = create_interaction_note(db, numeric_user_id, new_content)
-        
+
         return {
             "note_id": new_note.id,
             "version": new_note.version,
@@ -183,28 +170,39 @@ def get_conversation_context(numeric_user_id: int) -> str:
     finally:
         db.close()
 
-def enhanced_chat_with_context(chat_id: str, numeric_user_id: int, message: str, model: str = DEFAULT_MODEL) -> str:
+def enhanced_chat_with_context(chat_id: str, numeric_user_id: int, message: str, cfg: Optional[LLMConfig] = None, semantic: bool = False, crisis: bool = False, lang: str = "zh-TW") -> str:
     """
     使用互動筆記增強對話體驗
-    
+
     Args:
         chat_id: 聊天ID
         numeric_user_id: 用戶數字ID
         message: 用戶消息
-        model: 使用的模型，默認使用配置中的默認模型
+        cfg: 請求範圍的 LLM 設定；None 時走 .env Grok 後備
+        semantic: 是否啟用語意記憶檢索 (X-Memory-Semantic 標頭)
+        crisis: 敏感詞命中時附加危機模式指示 (雙保險之一)
+        lang: 提示詞語言
     """
     # 獲取互動筆記上下文
     interaction_context = get_conversation_context(numeric_user_id)
-    
-    # 讀取對話提示詞
-    prompt_template = read_prompt_file("conversation_prompt.txt")
-    
-    # 準備系統提示詞
-    system_prompt = prompt_template.format(interaction_note=interaction_context)
-    
-    # 獲取對話歷史
+
+    # 獲取對話歷史 (先取：記憶檢索需要上一則使用者訊息當 query 上下文)
     chat_history = get_chat_history(chat_id)
-    
+
+    # 檢索相關的過往日記 (毫秒級；失敗時內部降級為占位文字，不擋聊天)
+    from services.memory_retrieval import get_relevant_memories
+    relevant_memories = get_relevant_memories(
+        numeric_user_id, message, chat_history, semantic=semantic)
+
+    # 分層組裝系統提示詞 (人格核心 → 對話框架與記憶 → 危機模式附錄)
+    system_prompt = build_conversation_system(
+        lang=lang,
+        interaction_note=interaction_context,
+        relevant_memories=relevant_memories,
+        today_date=get_diary_date().strftime("%Y-%m-%d"),
+        crisis=crisis,
+    )
+
     # 準備消息列表，用於API請求
     messages = [{"role": "system", "content": system_prompt}]
     
@@ -216,51 +214,47 @@ def enhanced_chat_with_context(chat_id: str, numeric_user_id: int, message: str,
     # 添加用戶新消息
     messages.append({"role": "user", "content": message})
     
-    # 調用 Grok API
-    try:
-        ai_response = send_to_model(messages, model)
-        
-        # 關鍵修改：正確保存對話歷史
-        # 新增：建立不包含系統消息的歷史記錄
-        save_messages = []
-        for msg in chat_history:
-            if msg["role"] in ["user", "assistant"]:
-                save_messages.append(msg)
-        
-        # 添加本次對話
-        save_messages.append({"role": "user", "content": message})
-        save_messages.append({"role": "assistant", "content": ai_response})
-        
-        # 保存到 Redis
-        from memory_manager import save_chat_history
-        save_chat_history(chat_id, save_messages)
-        
-        return ai_response
-        
-    except Exception as e:
-        print(f"增強對話時發生錯誤: {str(e)}")
-        return "抱歉，我現在無法回應。請稍後再試。"
-    
-def generate_enhanced_diary(chat_id: str, numeric_user_id: int, exclude_interaction_notes: bool = False, model: str = DEFAULT_MODEL) -> Tuple[str, Dict[str, float]]:
+    # 調用 LLM
+    # LLMError 不在此攔截：失敗時不應把錯誤字串當成 AI 回應存進對話歷史，
+    # 否則它會被帶入日記與互動筆記。由路由回 503。
+    ai_response = llm.chat(messages, cfg)
+
+    # 保存本輪對話 (append 語意，不再整串重寫；修剪由 memory_manager 處理)
+    append_chat_messages(chat_id, [
+        {"role": "user", "content": message},
+        {"role": "assistant", "content": ai_response},
+    ])
+
+    return ai_response
+
+
+def generate_enhanced_diary(chat_id: str, numeric_user_id: int, exclude_interaction_notes: bool = False, cfg: Optional[LLMConfig] = None, lang: str = "zh-TW") -> DiaryDraft:
     """
     使用互動筆記增強日記生成
-    
+
     Args:
         chat_id: 用戶聊天ID
         numeric_user_id: 用戶數字ID
         exclude_interaction_notes: 是否排除互動筆記，如果為True，則不使用互動筆記
-        model: 使用的模型，默認使用配置中的默認模型
-    
+        cfg: 請求範圍的 LLM 設定；None 時走 .env Grok 後備
+        lang: 提示詞語言
+
     Returns:
-        生成的日記內容和情緒評分
+        DiaryDraft (content/title/summary/valence/arousal)
     """
     # 獲取聊天歷史
     chat_history = get_chat_history(chat_id)
-    
+
     if not chat_history:
-        return "今天似乎沒有對話記錄。", {"valence": 0.5, "arousal": 0.5}
-    
-    # 獲取互動筆記上下文
+        return DiaryDraft(
+            content="今天似乎沒有對話記錄。",
+            title="沒有對話的一天",
+            summary="今天沒有對話記錄。",
+            valence=0.5,
+            arousal=0.5,
+        )
+
+    # 獲取互動筆記上下文 (短交易；LLM 呼叫前關閉連線)
     interaction_context = "尚無互動筆記記錄。"
     if not exclude_interaction_notes:
         db = SessionLocal()
@@ -269,134 +263,137 @@ def generate_enhanced_diary(chat_id: str, numeric_user_id: int, exclude_interact
             interaction_context = latest_note.content if latest_note else "尚無互動筆記記錄。"
         finally:
             db.close()
-    
-    # 格式化對話歷史
-    formatted_history = []
-    for msg in chat_history:
-        if msg["role"] in ["user", "assistant"]:
-            formatted_history.append(f"{msg['role'].upper()}: {msg['content']}")
-    
-    chat_content = "\n".join(formatted_history)
-    
-    # 讀取日記提示詞
-    prompt_template = read_prompt_file("daily_note_prompt.txt")
-    
-    # 簡化JSON請求格式
-    simplified_prompt = prompt_template + "\n請確保回應中包含日記內容和簡單的情緒評分格式。請使用這樣的格式：\n\n日記內容...\n\n情緒評分：\nvalence: 0.7\narousal: 0.3"
-    
-    # 準備提示詞
-    if exclude_interaction_notes:
-        # 如果排除互動筆記，使用不包含互動筆記的提示詞
-        prompt = simplified_prompt.format(
-            chat_history=chat_content,
-            interaction_note="請忽略此部分，專注於今日對話生成日記。"
-        )
-    else:
-        # 使用標準提示詞
-        prompt = simplified_prompt.format(
-            chat_history=chat_content,
-            interaction_note=interaction_context
-        )
-    
-    try:
-        # 調用 Grok API
-        messages = [
-            {"role": "system", "content": "你是一位能夠寫出溫暖、洞察力強的日記的助手。"},
-            {"role": "user", "content": prompt}
-        ]
-        
-        diary_text = send_to_model(messages, model)
-        
-        # 設置默認值
-        emotion_scores = {"valence": 0.5, "arousal": 0.5}
-        diary_content = diary_text
-        
-        # 方法一：尋找標準JSON
-        try:
-            import re
-            import json
-            
-            json_pattern = r'\{[\s\S]*?"valence"[\s\S]*?"arousal"[\s\S]*?\}'
-            matches = re.findall(json_pattern, diary_text)
-            
-            if matches:
-                for potential_json in matches:
-                    try:
-                        # 清理JSON字符串
-                        cleaned_json = potential_json.strip().replace('\n', ' ').replace('    ', ' ')
-                        emotion_data = json.loads(cleaned_json)
-                        
-                        if 'valence' in emotion_data and 'arousal' in emotion_data:
-                            emotion_scores["valence"] = float(emotion_data.get("valence", 0.5))
-                            emotion_scores["arousal"] = float(emotion_data.get("arousal", 0.5))
-                            
-                            # 獲取日記內容（JSON之前的部分）
-                            json_start = diary_text.find(potential_json)
-                            if json_start > 0:
-                                diary_content = diary_text[:json_start].strip()
-                            break
-                    except Exception as parse_error:
-                        print(f"嘗試解析JSON時出錯: {str(parse_error)}, JSON: {potential_json}")
-                        continue
-        except Exception as e:
-            print(f"方法一提取情緒評分時出錯: {str(e)}")
 
-        # 方法二：使用正則表達式直接提取數值
-        if emotion_scores["valence"] == 0.5 and emotion_scores["arousal"] == 0.5:
-            try:
-                # 尋找 valence: X.X 或 "valence": X.X 模式
-                valence_pattern = r'["\']?valence["\']?\s*[:=]\s*([0-9](\.[0-9]+)?)'
-                arousal_pattern = r'["\']?arousal["\']?\s*[:=]\s*([0-9](\.[0-9]+)?)'
-                
-                valence_match = re.search(valence_pattern, diary_text)
-                arousal_match = re.search(arousal_pattern, diary_text)
-                
-                if valence_match:
-                    try:
-                        emotion_scores["valence"] = float(valence_match.group(1))
-                    except:
-                        pass
-                
-                if arousal_match:
-                    try:
-                        emotion_scores["arousal"] = float(arousal_match.group(1))
-                    except:
-                        pass
-                
-                # 尋找"情緒評分："標記
-                score_marker = "情緒評分："
-                if score_marker in diary_text:
-                    diary_content = diary_text.split(score_marker)[0].strip()
-            except Exception as e:
-                print(f"方法二提取情緒評分時出錯: {str(e)}")
-        
-        # 方法三：最保守的方法，使用整個文本但避免具有格式的輸出
-        if diary_content == diary_text:
-            # 確保日記內容不包含JSON格式的字符串
-            if "{" in diary_content and "}" in diary_content:
-                try:
-                    # 嘗試去除JSON或格式化的內容
-                    parts = diary_content.split("{")
-                    if len(parts) > 1:
-                        diary_content = parts[0].strip()
-                except:
-                    pass
-        
-        # 確保情緒評分在合理範圍內
-        if "valence" in emotion_scores:
-            if emotion_scores["valence"] < 0:
-                emotion_scores["valence"] = 0
-            elif emotion_scores["valence"] > 1:
-                emotion_scores["valence"] = 1
-                
-        if "arousal" in emotion_scores:
-            if emotion_scores["arousal"] < 0:
-                emotion_scores["arousal"] = 0
-            elif emotion_scores["arousal"] > 1:
-                emotion_scores["arousal"] = 1
-        
-        return diary_content, emotion_scores
-        
-    except Exception as e:
-        print(f"生成增強日記時發生錯誤: {str(e)}")
-        return f"今天的日記生成遇到了一些技術問題。", {"valence": 0.5, "arousal": 0.5}
+    # 格式化對話歷史
+    formatted_history = [
+        f"{msg['role'].upper()}: {msg['content']}"
+        for msg in chat_history
+        if msg["role"] in ["user", "assistant"]
+    ]
+    chat_content = "\n".join(formatted_history)
+
+    # 讀取日記提示詞。輸出格式要求 (含 title/summary/valence/arousal 的
+    # JSON tail) 已寫在模板的【輸出格式】段，不再動態附加格式指示。
+    prompt_template = load_prompt("daily_note_prompt.txt", lang)
+    prompt = prompt_template.format(
+        chat_history=chat_content,
+        interaction_note=(
+            "請忽略此部分，專注於今日對話生成日記。"
+            if exclude_interaction_notes else interaction_context
+        ),
+    )
+
+    # 調用 LLM
+    # LLMError 直接往上拋：日記生成失敗時必須回 5xx，
+    # 絕不可把 "Error: ..." 當成日記內容寫進 diaries.content。
+    messages = [
+        {"role": "system", "content": get_role("diary_writer", lang)},
+        {"role": "user", "content": prompt}
+    ]
+
+    diary_text = llm.chat(messages, cfg)
+
+    # 解析永不拋例外：格式不合時退回後備推導 (此時正文已是合法的模型輸出)
+    return parse_diary_output(diary_text)
+
+
+# --- 每日 check-in ------------------------------------------------------------
+
+def _time_of_day_label(hour: int, lang: str = "zh-TW") -> str:
+    """把小時映射為時段稱呼 (check-in 開場用)。"""
+    if lang == "en":
+        if 5 <= hour < 11:
+            return "morning"
+        if 11 <= hour < 14:
+            return "midday"
+        if 14 <= hour < 18:
+            return "afternoon"
+        if 18 <= hour < 23:
+            return "evening"
+        return "late night"
+    if 5 <= hour < 11:
+        return "早上"
+    if 11 <= hour < 14:
+        return "中午"
+    if 14 <= hour < 18:
+        return "下午"
+    if 18 <= hour < 23:
+        return "晚上"
+    return "深夜"
+
+
+def daily_checkin(chat_id: str, numeric_user_id: int, cfg: Optional[LLMConfig] = None, lang: str = "zh-TW") -> Optional[str]:
+    """生成「今日首次開啟」的主動問候；今日已問候過則回 None。
+
+    依 5am 換日基準判定 (users.last_checkin_date vs get_diary_date())。
+    流程守連線紀律：讀 → 關 → LLM → 開 → 寫。
+    問候會 append 進正式對話歷史，之後的日記生成自然涵蓋這句開場。
+    """
+    today = get_diary_date()
+
+    # 讀階段
+    db = SessionLocal()
+    try:
+        user = crud.get_user(db, numeric_user_id)
+        if user is None:
+            return None
+        if user.last_checkin_date is not None and user.last_checkin_date.date() >= today:
+            return None
+
+        latest = crud.get_latest_diary(db, numeric_user_id, within_days=3)
+        if latest is not None:
+            valence = latest.valence if latest.valence is not None else 0.5
+            if valence < 0.4:
+                mood_hint = "情緒偏低" if lang != "en" else "was feeling low"
+            elif valence > 0.6:
+                mood_hint = "心情不錯" if lang != "en" else "was in good spirits"
+            else:
+                mood_hint = "情緒平穩" if lang != "en" else "was feeling steady"
+            last_diary_block = (
+                f"[{latest.diary_date.strftime('%m/%d')}]"
+                f"《{latest.title or '無標題'}》{latest.summary or ''}（{mood_hint}）"
+            )
+        else:
+            last_diary_block = "（最近三天沒有日記）" if lang != "en" else "(no diary entries in the past three days)"
+
+        note = get_latest_interaction_note(db, numeric_user_id)
+        if note is not None:
+            user_profile = note.content[:400]
+        else:
+            user_profile = ("（你們還不熟，這可能是最初幾次見面）" if lang != "en"
+                            else "(you barely know each other yet — this may be one of your first meetings)")
+    finally:
+        db.close()
+
+    # LLM 階段 (不持有 DB 連線)。LLMError 往上拋，由路由層轉為 checkin:false。
+    prompt = build_checkin_prompt(
+        lang=lang,
+        time_of_day=_time_of_day_label(get_local_now().hour, lang),
+        today_date=today.strftime("%Y-%m-%d"),
+        last_diary_block=last_diary_block,
+        user_profile=user_profile,
+    )
+    messages = [
+        {"role": "system", "content": get_role("companion", lang)},
+        {"role": "user", "content": prompt},
+    ]
+    greeting = llm.chat(messages, cfg)
+
+    # 寫階段：標記今日已問候 + 問候進入正式對話歷史。
+    # LLM 呼叫期間可能有並發的 checkin 請求同時通過了開頭的判定
+    # (前端已有 single-flight 防護，這裡是後端保底)：寫入前重新檢查，
+    # 若別的請求已搶先標記今日，丟棄本次問候避免連發兩句開場。
+    db = SessionLocal()
+    try:
+        user = crud.get_user(db, numeric_user_id)
+        if user is None:
+            return None
+        if user.last_checkin_date is not None and user.last_checkin_date.date() >= today:
+            return None  # 已被並發請求標記，本次問候不送出
+        user.last_checkin_date = get_diary_datetime()
+        db.commit()
+    finally:
+        db.close()
+
+    append_chat_messages(chat_id, [{"role": "assistant", "content": greeting}])
+    return greeting

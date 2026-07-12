@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell, safeStorage } = require('electron');
 const path = require('path');
 const fs = require('fs');
 // 引入@electron/remote模塊
@@ -64,10 +64,10 @@ function loadConfig() {
     windowHeight: 800,
     theme: 'light',
     api: {
-      baseUrl: 'http://localhost:8000',
+      baseUrl: 'http://localhost:8001',
       timeout: 30000
     },
-    useMockData: true
+    useMockData: false
   }; // 返回默認配置
 }
 
@@ -274,7 +274,7 @@ ipcMain.on('open-external-link', (event, url) => {
 // 檢查後端服務是否可用
 ipcMain.handle('check-backend-service', async () => {
   try {
-    const response = await fetch('http://localhost:8000');
+    const response = await fetch('http://localhost:8001');
     return response.ok;
   } catch (error) {
     console.warn('後端服務不可用:', error.message);
@@ -339,6 +339,65 @@ ipcMain.on('open-error-logs-directory', (event) => {
   
   // 打開目錄
   shell.openPath(errorLogsDir);
+});
+
+// ---- LLM 供應商金鑰安全儲存 ----
+// 以 Electron safeStorage (OS 金鑰鏈) 加密整包金鑰 JSON，存於 userData/provider-keys.enc。
+// 金鑰絕不進 localStorage、不寫伺服器 DB；renderer 經 IPC 取得解密後的值放記憶體使用。
+const providerKeysPath = path.join(userDataPath, 'provider-keys.enc');
+
+function readProviderKeys() {
+  try {
+    if (!fs.existsSync(providerKeysPath)) {
+      return {};
+    }
+    const encrypted = fs.readFileSync(providerKeysPath);
+    if (!encrypted.length) {
+      return {};
+    }
+    return JSON.parse(safeStorage.decryptString(encrypted));
+  } catch (error) {
+    console.error('讀取供應商金鑰失敗:', error);
+    return {};
+  }
+}
+
+function writeProviderKeys(keys) {
+  if (!safeStorage.isEncryptionAvailable()) {
+    // 沒有可用的 OS 金鑰鏈時絕不落地明文
+    throw new Error('系統加密不可用 (safeStorage)，無法安全儲存金鑰');
+  }
+  const encrypted = safeStorage.encryptString(JSON.stringify(keys));
+  fs.writeFileSync(providerKeysPath, encrypted);
+}
+
+// 設定/更新某個供應商的金鑰；value 為空字串等同刪除
+ipcMain.handle('secure-store-set', async (event, provider, value) => {
+  const keys = readProviderKeys();
+  if (value) {
+    keys[provider] = value;
+  } else {
+    delete keys[provider];
+  }
+  writeProviderKeys(keys);
+  return true;
+});
+
+// 取回全部解密後的金鑰（renderer 啟動時載入一次，之後留在記憶體）
+ipcMain.handle('secure-store-get', async () => {
+  if (!safeStorage.isEncryptionAvailable()) {
+    console.warn('safeStorage 加密不可用，回傳空金鑰集合');
+    return {};
+  }
+  return readProviderKeys();
+});
+
+// 刪除某個供應商的金鑰
+ipcMain.handle('secure-store-delete', async (event, provider) => {
+  const keys = readProviderKeys();
+  delete keys[provider];
+  writeProviderKeys(keys);
+  return true;
 });
 
 // 打開開發者工具

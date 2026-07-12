@@ -1,23 +1,15 @@
 import time
 import uuid
-import logging
 from fastapi import Request, status
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
 from sqlalchemy.exc import SQLAlchemyError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-# 配置日誌
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.StreamHandler(),
-        logging.FileHandler("/app/logs/app_errors.log")
-    ]
-)
+# 使用統一的日誌工具 (相對 logs/ 目錄，本機與容器皆可寫入)
+from utils.logger import create_logger
 
-logger = logging.getLogger("app.error_handler")
+logger = create_logger("app.error_handler", "app_errors.log")
 
 class ErrorHandler:
     """全局錯誤處理中間件"""

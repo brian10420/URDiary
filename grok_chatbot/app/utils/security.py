@@ -8,8 +8,7 @@ from fastapi.security import APIKeyHeader
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 import uuid
-import redis
-from config import REDIS_HOST, REDIS_PORT, REDIS_DB
+import threading
 
 from database import get_db
 import database.crud as crud
@@ -21,7 +20,19 @@ from utils.logger import log_error
 # 通過從配置模塊導入避免循環引用
 from config import SECRET_KEY, HASH_SALT, API_KEY
 
-redis_client = redis.StrictRedis(host=REDIS_HOST, port=REDIS_PORT, db=REDIS_DB)
+# 行程內 JWT 撤銷黑名單 (jti -> 過期時間戳)。
+# 純本地單行程部署下取代 Redis；後端重啟後黑名單清空，已撤銷的 token
+# 會「復活」直到其自然過期 (exp 仍會被驗證)——單人本地場景可接受。
+# 若未來改多 worker 部署，需換成共享儲存。
+_revoked_tokens: dict = {}
+_revoked_lock = threading.Lock()
+
+
+def _purge_expired_revocations(now_ts: float) -> None:
+    """惰性清除已過期的撤銷紀錄 (呼叫端須持有 _revoked_lock)。"""
+    expired = [jti for jti, exp in _revoked_tokens.items() if exp <= now_ts]
+    for jti in expired:
+        _revoked_tokens.pop(jti, None)
 
 # JWT token設置
 ALGORITHM = "HS256"
@@ -116,20 +127,23 @@ def revoke_token(token: str, expire_in_seconds: int = None):
             return False
             
         # 如果沒有指定過期時間，使用令牌的原始過期時間
+        now = datetime.utcnow().timestamp()
         if expire_in_seconds is None:
             token_exp = payload.get("exp")
             if token_exp:
-                now = datetime.utcnow().timestamp()
                 expire_in_seconds = int(token_exp - now)
-                
-        # 添加到黑名單
-        redis_key = f"revoked_token:{jti}"
-        redis_client.set(redis_key, "1")
-        
-        # 設置過期時間（如果有）
+
+        # 添加到黑名單；無有效過期時間時保留 30 天 (與舊 Redis 行為等價：
+        # 不會無限成長，且遠長於任何 token 的存活期)
         if expire_in_seconds and expire_in_seconds > 0:
-            redis_client.expire(redis_key, expire_in_seconds)
-            
+            expire_at = now + expire_in_seconds
+        else:
+            expire_at = now + 30 * 86400
+
+        with _revoked_lock:
+            _purge_expired_revocations(now)
+            _revoked_tokens[jti] = expire_at
+
         return True
     except Exception as e:
         log_error(e, {"action": "revoke_token"})
@@ -143,9 +157,16 @@ def is_token_revoked(token: str) -> bool:
         
         if not jti:
             return False
-            
-        redis_key = f"revoked_token:{jti}"
-        return bool(redis_client.exists(redis_key))
+
+        now = datetime.utcnow().timestamp()
+        with _revoked_lock:
+            expire_at = _revoked_tokens.get(jti)
+            if expire_at is None:
+                return False
+            if expire_at <= now:
+                _revoked_tokens.pop(jti, None)
+                return False
+            return True
     except Exception:
         return False
     
@@ -215,7 +236,8 @@ def get_token_expiry(token: str) -> Optional[datetime]:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM], options={"verify_exp": False})
         exp = payload.get("exp")
         if exp:
-            return datetime.fromtimestamp(exp)
+            # exp 為 UTC 時間戳，用 UTC 解析以配合 is_token_about_to_expire 的 utcnow 比較
+            return datetime.utcfromtimestamp(exp)
         return None
     except JWTError:
         return None
