@@ -8,7 +8,7 @@ from api.deps import get_db, get_current_user, get_llm_config, get_memory_prefs,
 from utils.messages import msg
 from database.models import User
 from providers.base import LLMConfig, LLMError
-from grok_client import send_to_grok
+from llm_compat import send_to_grok
 from memory_manager import clear_chat_history
 from services.diary_service import check_sensitive_content, get_support_message
 from services.interaction_service import (

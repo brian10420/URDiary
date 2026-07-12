@@ -1,5 +1,9 @@
 # URDiary — Your Local-First AI Diary Companion
 
+<p align="center">
+  <img src="desktop/assets/icon.jpg" alt="URDiary toast-diary mascot" width="170">
+</p>
+
 **URDiary** is a free, open-source emotional diary that runs entirely on your own computer. You chat with an AI companion that truly listens — it remembers your past entries, checks in on you daily, and turns each conversation into a structured diary entry. Built for students and anyone under pressure who is used to bottling things up, so they can feel heard, remembered, and seen.
 
 **你的資料不離開你的電腦。** 日記存在本機 SQLite 檔案裡，API 金鑰以作業系統金鑰鏈加密存放，沒有雲端伺服器、沒有帳號註冊、沒有追蹤。[繁體中文說明請見下方](#繁體中文)。
@@ -21,7 +25,7 @@ Two local processes, no Docker, no external services:
 ```
 ┌─────────────────────┐         ┌──────────────────────────┐
 │  Electron desktop   │  HTTP   │  FastAPI backend          │
-│  (desktop/)         │ ──────► │  (grok_chatbot/app/)      │
+│  (desktop/)         │ ──────► │  (backend/app/)      │
 │  UI + your API keys │  :8001  │  memory · diary · prompts │
 └─────────────────────┘         └───────────┬──────────────┘
                                             │
@@ -41,7 +45,7 @@ git clone https://github.com/brian10420/URDiary.git
 cd URDiary
 
 # 2. Start the backend (first run creates a venv and installs dependencies)
-cd grok_chatbot
+cd backend
 ./start-backend.sh        # Windows: start-backend.bat
 
 # 3. In another terminal, start the desktop app
@@ -66,7 +70,7 @@ By meaning, not just keywords — "work stuff" can recall an entry about your bo
 .venv/bin/pip install fastembed        # or: uv pip install -p .venv fastembed
 # then enable "Advanced memory (semantic search)" in Settings
 # first use downloads a ~220 MB multilingual model in the background
-# index pre-existing diaries:  cd grok_chatbot/app && ../../.venv/bin/python -m services.memory_retrieval --backfill
+# index pre-existing diaries:  cd backend/app && ../../.venv/bin/python -m services.memory_retrieval --backfill
 ```
 
 ### Where is my data?
@@ -81,7 +85,7 @@ By meaning, not just keywords — "work stuff" can recall an entry about your bo
 
 ### Configuration (optional)
 
-Everything works with zero configuration. To customize, create `grok_chatbot/.env` (see `.env.example`): timezone (`URDIARY_TIMEZONE`, default `Asia/Taipei`), data directory, port, or a fallback Grok API key for requests without a provider configured in the UI.
+Everything works with zero configuration. To customize, create `backend/.env` (see `.env.example`): timezone (`URDIARY_TIMEZONE`, default `Asia/Taipei`), data directory, port, or a fallback Grok API key for requests without a provider configured in the UI.
 
 ## Privacy
 
@@ -92,7 +96,7 @@ Everything works with zero configuration. To customize, create `grok_chatbot/.en
 
 ## Contributing
 
-Issues and pull requests are welcome. The codebase is intentionally simple: vanilla JS frontend (no build step), flat-import FastAPI backend, prompts as plain text files under `grok_chatbot/app/services/prompts/{zh-TW,en}/`. To add a language, copy a prompt directory and add a locale to `desktop/js/i18n.js`.
+Issues and pull requests are welcome. The codebase is intentionally simple: vanilla JS frontend (no build step), flat-import FastAPI backend, prompts as plain text files under `backend/app/services/prompts/{zh-TW,en}/`. To add a language, copy a prompt directory and add a locale to `desktop/js/i18n.js`.
 
 Please note: this project provides emotional companionship, **not** medical or psychological treatment. Changes to crisis-handling prompts (`crisis_mode.txt`, `support_message.txt`) are reviewed with extra care.
 
@@ -126,7 +130,7 @@ git clone https://github.com/brian10420/URDiary.git
 cd URDiary
 
 # 2. 啟動後端（首次執行會自動建立虛擬環境並安裝依賴）
-cd grok_chatbot
+cd backend
 ./start-backend.sh        # Windows 用 start-backend.bat
 
 # 3. 開另一個終端機，啟動桌面 App
@@ -149,7 +153,7 @@ npm start
 .venv/bin/pip install fastembed
 # 然後在設定面板開啟「進階記憶（語意檢索）」
 # 首次使用會在背景下載約 220MB 的多語模型
-# 為既有日記補索引：cd grok_chatbot/app && ../../.venv/bin/python -m services.memory_retrieval --backfill
+# 為既有日記補索引：cd backend/app && ../../.venv/bin/python -m services.memory_retrieval --backfill
 ```
 
 ### 我的資料在哪裡？
@@ -164,7 +168,7 @@ npm start
 
 ### 設定（可選）
 
-零設定即可使用。要客製化時建立 `grok_chatbot/.env`（參考 `.env.example`）：時區（`URDIARY_TIMEZONE`，預設 `Asia/Taipei`，建議安裝時一次決定）、資料目錄、埠號等。
+零設定即可使用。要客製化時建立 `backend/.env`（參考 `.env.example`）：時區（`URDIARY_TIMEZONE`，預設 `Asia/Taipei`，建議安裝時一次決定）、資料目錄、埠號等。
 
 ## 隱私
 
