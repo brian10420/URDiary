@@ -1,0 +1,10 @@
+Extract the key themes from the interaction notes below.
+
+[Interaction notes]
+{interaction_note_content}
+
+[Output requirements]
+- Output 3-8 key themes, one per line
+- Each theme is a short phrase of 2-5 words
+- No numbering, no extra explanations
+- Write in the same language as the notes
