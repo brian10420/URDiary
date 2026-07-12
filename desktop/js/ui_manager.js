@@ -57,9 +57,17 @@ const UIManager = (function() {
             console.warn('未找到導航項目，無法綁定事件');
         }
         
+        // 綁定錯誤視窗的關閉按鈕 (原本 index.html 有此按鈕但無任何處理器，
+        // 導致錯誤提示一旦出現就無法關閉)
+        const closeErrorBtn = document.getElementById('close-error-btn');
+        if (closeErrorBtn && !closeErrorBtn.dataset.bound) {
+            closeErrorBtn.dataset.bound = 'true';
+            closeErrorBtn.addEventListener('click', hideError);
+        }
+
         // 添加色彩主題切換功能
         initializeThemeToggle();
-        
+
         // 初始化Debug按鈕
         initializeDebugButton();
         
@@ -449,7 +457,7 @@ const UIManager = (function() {
             }
         } catch (error) {
             console.error('打開開發者工具時出錯:', error);
-            alert('開發者工具無法通過按鈕打開，請嘗試使用快捷鍵 Ctrl+Shift+I 或 F12');
+            alert(I18N.t('ui.devtoolsHint'));
             tryKeyboardShortcut();
         }
     }
@@ -543,7 +551,7 @@ const UIManager = (function() {
         } catch (error) {
             console.error('主題切換出錯:', error);
             if (window.UIManager && UIManager.showToast) {
-                UIManager.showToast('主題切換失敗: ' + error.message);
+                UIManager.showToast(I18N.t('errors.themeSwitch', { error: error.message }));
             }
         }
     }
@@ -675,7 +683,8 @@ const UIManager = (function() {
     }
     
     // 顯示帶有訊息的加載動畫
-    function showLoadingSpinner(message = '加載中...') {
+    function showLoadingSpinner(message) {
+        message = message || I18N.t('ui.loading');
         if (elements.spinner) {
             // 檢查是否有加載訊息元素
             let messageElement = elements.spinner.querySelector('.loading-message');
@@ -743,11 +752,12 @@ const UIManager = (function() {
             const errorContent = document.getElementById('error-content');
             
             if (errorTitle && errorContent) {
-                errorTitle.textContent = title || '錯誤';
+                errorTitle.textContent = title || I18N.t('errors.genericTitle');
                 
-                let contentHtml = `<p>${message || '發生未知錯誤'}</p>`;
+                // 錯誤訊息可能挾帶 API/伺服器回傳內容，寫入 innerHTML 前必須轉義
+                let contentHtml = `<p>${escapeHtml(message || I18N.t('errors.unknownGeneric'))}</p>`;
                 if (detail) {
-                    contentHtml += `<div class="error-detail"><pre>${detail}</pre></div>`;
+                    contentHtml += `<div class="error-detail"><pre>${escapeHtml(detail)}</pre></div>`;
                 }
                 
                 errorContent.innerHTML = contentHtml;
@@ -755,10 +765,17 @@ const UIManager = (function() {
             }
         } else {
             console.error('錯誤容器不存在，無法顯示錯誤:', message);
-            alert(`錯誤: ${message}`);
+            alert(`${I18N.t('errors.genericTitle')}: ${message}`);
         }
     }
-    
+
+    // 隱藏錯誤訊息
+    function hideError() {
+        if (elements.errorContainer) {
+            elements.errorContainer.style.display = 'none';
+        }
+    }
+
     // 提供公共方法
     return {
         init,
@@ -778,7 +795,8 @@ const UIManager = (function() {
         showLoadingSpinner,
         hideLoadingSpinner,
         showToast,
-        showError
+        showError,
+        hideError
     };
 })();
 

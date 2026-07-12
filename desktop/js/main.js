@@ -36,23 +36,54 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // 初始化用戶選擇功能
     initUserSelection();
-    
-    // 隱藏啟動屏幕並顯示用戶選擇對話框
+
+    // 認證失效 (401) 時由 fetchAPI 發出此事件（令牌已被清除）——帶使用者回登入流程，
+    // 不再以模擬數據掩蓋認證錯誤
+    window.addEventListener('urdiary:auth-expired', function() {
+        console.warn('認證已失效，開啟登入對話框');
+
+        const splashScreen = document.getElementById('splash-screen');
+        if (splashScreen) {
+            splashScreen.style.display = 'flex';
+            splashScreen.classList.add('login-background');
+            document.body.classList.add('splash-active');
+        }
+
+        const userSelectDialog = document.getElementById('user-select-dialog');
+        if (userSelectDialog && userSelectDialog.style.display !== 'block') {
+            userSelectDialog.style.display = 'block';
+            userSelectDialog.style.zIndex = '1000';
+            if (typeof loadUserList === 'function') {
+                loadUserList();
+            }
+        }
+    });
+
+
+    // 隱藏啟動屏幕：有未過期的 JWT 直接進入主畫面，否則顯示登入對話框
     setTimeout(() => {
+        if (typeof ApiService !== 'undefined' &&
+            typeof ApiService.isAuthenticated === 'function' &&
+            ApiService.isAuthenticated()) {
+            console.log('偵測到有效令牌，直接進入主畫面');
+            enterApp(localStorage.getItem('currentUserId') || '');
+            return;
+        }
+
         // 不完全隱藏啟動畫面，而是將其轉換為背景
         const splashScreen = document.getElementById('splash-screen');
         if (splashScreen) {
             splashScreen.classList.add('login-background');
         }
-        
-        // 展示用戶選擇對話框
+
+        // 展示登入對話框
         setTimeout(() => {
             const userSelectDialog = document.getElementById('user-select-dialog');
             if (userSelectDialog) {
                 userSelectDialog.style.display = 'block';
                 // 確保對話框在啟動畫面上方
                 userSelectDialog.style.zIndex = '1000';
-                // 載入用戶列表
+                // 載入本機用戶清單
                 if (typeof loadUserList === 'function') {
                     loadUserList();
                 }
@@ -60,15 +91,11 @@ document.addEventListener('DOMContentLoaded', function() {
         }, 800);
     }, 1000);
     
-    // 為視圖切換按鈕添加事件監聽器
-    const navItems = document.querySelectorAll('.nav-item');
-    navItems.forEach(item => {
-        item.addEventListener('click', function() {
-            const view = this.dataset.view;
-            UIManager.switchView(view);
-        });
-    });
-    
+    // 導航事件已由 UIManager.init() 綁定 (含視圖狀態機)。
+    // 此處不可重複綁定 switchView，否則兩個處理器會同時觸發，
+    // 例如在日記詳情頁點「對話」時 switchView 會強制切回全螢幕聊天，
+    // 蓋掉狀態機原本要顯示的「聊天+詳情」分割畫面。
+
     // 為主題切換按鈕添加事件監聽器
     const themeToggle = document.getElementById('theme-toggle');
     if (themeToggle) {
@@ -133,6 +160,38 @@ function hideSplashScreen() {
     }
 }
 
+// 進入主應用界面（登入成功、或啟動時已有有效令牌）
+function enterApp(username) {
+    // 關閉所有登入相關對話框
+    ['user-select-dialog', 'password-dialog', 'create-user-dialog'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.style.display = 'none';
+    });
+
+    // 完全隱藏啟動畫面
+    const splashScreen = document.getElementById('splash-screen');
+    if (splashScreen) {
+        splashScreen.classList.remove('login-background');
+        splashScreen.classList.add('fade-out');
+        setTimeout(() => {
+            splashScreen.style.display = 'none';
+            document.body.classList.remove('splash-active');
+            splashScreen.classList.remove('fade-out');
+        }, 500);
+    }
+
+    // 顯示主應用界面
+    document.querySelectorAll('.app-header, .app-content, .app-footer').forEach(element => {
+        element.style.display = '';
+    });
+
+    // 更新用戶顯示名稱
+    const userBtn = document.getElementById('user-select-btn');
+    if (userBtn && username) {
+        userBtn.setAttribute('title', I18N.t('tools.currentUser', { username: username }));
+    }
+}
+
 // 初始化API認證
 async function initializeAuth() {
     console.log('初始化API認證...');
@@ -190,18 +249,47 @@ function initUserSelection() {
     const userListContainer = document.getElementById('user-list');
     const passwordDialog = document.getElementById('password-dialog');
     const closePasswordDialogBtn = document.getElementById('close-password-dialog-btn');
+    const loginUsernameInput = document.getElementById('login-username');
     const userPasswordInput = document.getElementById('user-password');
     const verifyPasswordBtn = document.getElementById('verify-password-btn');
     const selectedUserInfo = document.getElementById('selected-user-info');
     const passwordError = document.getElementById('password-error');
     const createPasswordError = document.getElementById('create-password-error');
-    
-    // 保存當前選擇的用戶信息
-    let selectedUser = {
-        id: null,
-        username: null
-    };
-    
+
+    // ---- 本機 profile 清單：只記「這台裝置登入過誰」，密碼一律交後端驗證 ----
+    const PROFILES_KEY = 'urDiary_profiles';
+
+    function getProfiles() {
+        try {
+            const raw = localStorage.getItem(PROFILES_KEY);
+            const list = raw ? JSON.parse(raw) : [];
+            return Array.isArray(list) ? list : [];
+        } catch (error) {
+            console.warn('讀取本機用戶清單失敗:', error);
+            return [];
+        }
+    }
+
+    function saveProfile(userId, username) {
+        const profiles = getProfiles().filter(p => p.username !== username);
+        profiles.unshift({ id: userId, username: username });
+        try {
+            localStorage.setItem(PROFILES_KEY, JSON.stringify(profiles.slice(0, 10)));
+        } catch (error) {
+            console.warn('保存本機用戶清單失敗:', error);
+        }
+    }
+
+    // 前端即時密碼強度檢查（純 UX 提示，真正的門檻在後端 password_validator）
+    function validatePasswordStrength(password) {
+        if (!password || password.length < 8) return { valid: false, message: I18N.t('password.tooShort') };
+        if (!/[A-Z]/.test(password)) return { valid: false, message: I18N.t('password.needUpper') };
+        if (!/[a-z]/.test(password)) return { valid: false, message: I18N.t('password.needLower') };
+        if (!/[0-9]/.test(password)) return { valid: false, message: I18N.t('password.needDigit') };
+        if (!/[!@#$%^&*(),.?":{}|<>]/.test(password)) return { valid: false, message: I18N.t('password.needSpecial') };
+        return { valid: true };
+    }
+
     // 顯示用戶選擇對話框
     if (userSelectBtn) {
         userSelectBtn.addEventListener('click', function() {
@@ -257,42 +345,59 @@ function initUserSelection() {
         });
     }
     
-    // 驗證密碼
+    // 登入：帳號與密碼送後端，由後端以 bcrypt 驗證（不再有本機明文密碼）
     if (verifyPasswordBtn) {
-        verifyPasswordBtn.addEventListener('click', function() {
+        verifyPasswordBtn.addEventListener('click', async function() {
+            const username = loginUsernameInput ? loginUsernameInput.value.trim() : '';
             const password = userPasswordInput ? userPasswordInput.value : '';
-            
-            // 檢查密碼是否為空
-            if (!password) {
-                showPasswordError('請輸入密碼');
+
+            if (!username) {
+                showPasswordError(I18N.t('login.enterUsername'));
+                if (loginUsernameInput) loginUsernameInput.focus();
                 return;
             }
-            
-            // 驗證密碼
-            if (typeof PasswordManager !== 'undefined' && 
-                PasswordManager.verifyPassword && 
-                PasswordManager.verifyPassword(selectedUser.id, password)) {
-                // 密碼正確，登入
-                loginUser(selectedUser.username, selectedUser.id);
-            } else {
-                // 密碼錯誤
-                showPasswordError('密碼錯誤，請重試');
-                if (userPasswordInput) {
-                    userPasswordInput.value = '';
-                    userPasswordInput.focus();
+            if (!password) {
+                showPasswordError(I18N.t('login.enterPassword'));
+                if (userPasswordInput) userPasswordInput.focus();
+                return;
+            }
+
+            verifyPasswordBtn.disabled = true;
+            const originalLabel = verifyPasswordBtn.textContent;
+            verifyPasswordBtn.textContent = I18N.t('login.submitting');
+
+            try {
+                const result = await ApiService.login(username, password);
+                if (result.success) {
+                    saveProfile(result.userId, result.username || username);
+                    loginUser(result.username || username, result.userId);
+                } else {
+                    showPasswordError(result.error || I18N.t('login.failed'));
+                    if (userPasswordInput) {
+                        userPasswordInput.value = '';
+                        userPasswordInput.focus();
+                    }
                 }
+            } catch (error) {
+                console.error('登入失敗:', error);
+                showPasswordError(error.message || I18N.t('login.failed'));
+            } finally {
+                verifyPasswordBtn.disabled = false;
+                verifyPasswordBtn.textContent = originalLabel;
             }
         });
     }
-    
-    // 當用戶在密碼輸入框按下Enter鍵時
-    if (userPasswordInput) {
-        userPasswordInput.addEventListener('keypress', function(e) {
-            if (e.key === 'Enter' && verifyPasswordBtn) {
-                verifyPasswordBtn.click();
-            }
-        });
-    }
+
+    // 當用戶在帳號/密碼輸入框按下Enter鍵時送出
+    [loginUsernameInput, userPasswordInput].forEach(input => {
+        if (input) {
+            input.addEventListener('keypress', function(e) {
+                if (e.key === 'Enter' && verifyPasswordBtn) {
+                    verifyPasswordBtn.click();
+                }
+            });
+        }
+    });
     
     // 提交創建用戶表單
     if (submitNewUserBtn) {
@@ -303,22 +408,20 @@ function initUserSelection() {
             
             // 檢查用戶名
             if (!username) {
-                showCreatePasswordError('請輸入用戶名稱');
+                showCreatePasswordError(I18N.t('login.enterUsername'));
                 return;
             }
-            
-            // 檢查密碼
-            if (typeof PasswordManager !== 'undefined' && PasswordManager.validatePassword) {
-                const passwordValidation = PasswordManager.validatePassword(password);
-                if (!passwordValidation.valid) {
-                    showCreatePasswordError(passwordValidation.message);
-                    return;
-                }
+
+            // 前端即時強度提示（後端會再驗一次）
+            const passwordValidation = validatePasswordStrength(password);
+            if (!passwordValidation.valid) {
+                showCreatePasswordError(passwordValidation.message);
+                return;
             }
-            
+
             // 檢查密碼一致性
             if (password !== confirmPassword) {
-                showCreatePasswordError('兩次輸入的密碼不一致');
+                showCreatePasswordError(I18N.t('create.mismatch'));
                 return;
             }
             
@@ -359,192 +462,151 @@ function initUserSelection() {
         }
     }
     
-    // 載入用戶列表
+    // 載入本機用戶清單（不再向後端無認證列出全部使用者 —— 該端點已改為僅回傳自己）
     window.loadUserList = function() {
-        if (userListContainer) {
-            userListContainer.innerHTML = '<p>正在載入用戶列表...</p>';
-        }
-        
-        fetch('http://localhost:8000/users/')
-            .then(response => response.json())
-            .then(users => {
-                if (Array.isArray(users) && users.length > 0) {
-                    renderUserList(users);
-                } else if (userListContainer) {
-                    userListContainer.innerHTML = '<p>沒有找到用戶，請創建新用戶。</p>';
-                }
-            })
-            .catch(error => {
-                console.error('獲取用戶列表出錯:', error);
-                if (userListContainer) {
-                    userListContainer.innerHTML = '<p>無法載入用戶列表，請檢查API連接。</p>';
-                }
-            });
-    }
-    
-    // 渲染用戶列表
-    function renderUserList(users) {
-        // 獲取當前用戶ID
-        const currentNumericUserId = parseInt(localStorage.getItem('numericUserId') || '1');
-        
+        if (!userListContainer) return;
+
+        const profiles = getProfiles();
         let html = '';
-        users.forEach(user => {
-            const isActive = user.user_id === currentNumericUserId;
+
+        profiles.forEach(profile => {
+            // 用戶名寫入 innerHTML 與 data-* 屬性，必須轉義
+            const safeUsername = escapeHtml(profile.username);
             html += `
-                <div class="user-item ${isActive ? 'active' : ''}" data-id="${user.user_id}" data-username="${user.username}">
-                    <div>${user.username}</div>
-                    <div>ID: ${user.user_id}</div>
+                <div class="user-item" data-username="${safeUsername}">
+                    <div>${safeUsername}</div>
+                    <div>${I18N.t('userDialog.loggedInBefore')}</div>
                 </div>
             `;
         });
-        
-        if (userListContainer) {
-            userListContainer.innerHTML = html;
+
+        if (profiles.length === 0) {
+            html += `<p>${I18N.t('userDialog.noAccounts')}</p>`;
         }
-        
-        // 添加點擊事件
-        document.querySelectorAll('.user-item').forEach(item => {
+
+        // 永遠提供以任意帳號登入的入口
+        html += `
+            <div class="user-item" data-username="">
+                <div>${I18N.t('userDialog.otherAccount')}</div>
+            </div>
+        `;
+
+        userListContainer.innerHTML = html;
+
+        // 添加點擊事件：帶上用戶名開啟登入對話框
+        userListContainer.querySelectorAll('.user-item').forEach(item => {
             item.addEventListener('click', function() {
-                const userId = this.dataset.id;
-                const username = this.dataset.username;
-                openPasswordDialog(userId, username);
+                openPasswordDialog(this.dataset.username || '');
             });
         });
     }
-    
-    // 打開密碼驗證對話框
-    function openPasswordDialog(userId, username) {
-        // 保存選擇的用戶信息
-        selectedUser.id = userId;
-        selectedUser.username = username;
-        
-        // 顯示用戶信息
+
+    // 打開登入對話框（username 可為空 —— 讓使用者自行輸入帳號）
+    function openPasswordDialog(username) {
         if (selectedUserInfo) {
-            selectedUserInfo.innerHTML = `<strong>用戶:</strong> ${username} (ID: ${userId})`;
+            selectedUserInfo.textContent = '';
         }
-        
+
         // 我們現在使用啟動畫面作為背景，不需要單獨的背景遮罩
         // 確保啟動畫面處於背景模式
         const splashScreen = document.getElementById('splash-screen');
         if (splashScreen) {
             splashScreen.classList.add('login-background');
         }
-        
-        // 清空密碼輸入框和錯誤信息
+
+        // 預填帳號、清空密碼與錯誤信息
+        if (loginUsernameInput) {
+            loginUsernameInput.value = username || '';
+        }
         if (userPasswordInput) {
             userPasswordInput.value = '';
         }
         if (passwordError) {
             passwordError.style.display = 'none';
         }
-        
-        // 隱藏用戶選擇對話框，顯示密碼驗證對話框
+
+        // 隱藏用戶選擇對話框，顯示登入對話框
         if (userSelectDialog) userSelectDialog.style.display = 'none';
         if (passwordDialog) {
             passwordDialog.style.display = 'block';
-            // 確保密碼對話框在啟動畫面上方
+            // 確保登入對話框在啟動畫面上方
             passwordDialog.style.zIndex = '1000';
         }
-        
-        // 聚焦到密碼輸入框
-        if (userPasswordInput) userPasswordInput.focus();
+
+        // 聚焦：已有帳號聚焦密碼，否則聚焦帳號
+        if (username && userPasswordInput) {
+            userPasswordInput.focus();
+        } else if (loginUsernameInput) {
+            loginUsernameInput.focus();
+        }
     }
     
-    // 登入用戶
+    // 登入成功後的處理（JWT 已由 ApiService.login 取得並保存）
     function loginUser(username, userId) {
         console.log(`登入用戶: ${username} (ID: ${userId})`);
-        
+
         if (typeof ApiService !== 'undefined' && ApiService.setUserId) {
             ApiService.setUserId(username, userId);
         }
-        
-        // 同時進行JWT登入
-        if (typeof ApiService !== 'undefined' && ApiService.login) {
-            ApiService.login(username)
-                .then(result => {
-                    console.log('JWT登入結果:', result);
-                })
-                .catch(error => {
-                    console.error('JWT登入失敗:', error);
-                });
-        }
-        
-        if (passwordDialog) passwordDialog.style.display = 'none';
-        
-        // 完全隱藏啟動畫面
-        const splashScreen = document.getElementById('splash-screen');
-        if (splashScreen) {
-            splashScreen.classList.remove('login-background');
-            splashScreen.classList.add('fade-out');
-            setTimeout(() => {
-                splashScreen.style.display = 'none';
-                document.body.classList.remove('splash-active');
-            }, 500);
-        }
-        
-        // 顯示主應用界面
-        const appContent = document.querySelectorAll('.app-header, .app-content, .app-footer');
-        appContent.forEach(element => {
-            element.style.display = '';
-        });
-        
-        // 更新用戶顯示名稱
-        updateUserDisplay(username);
-        
+
+        // 進入主應用界面
+        enterApp(username);
+
         // 重置和重新初始化聊天模塊
         if (typeof ChatModule !== 'undefined') {
             if (ChatModule.reset) ChatModule.reset();
             if (ChatModule.init) ChatModule.init();
         }
-        
+
         // 重置和重新初始化日記模塊
         if (typeof DiaryModule !== 'undefined') {
             if (DiaryModule.reset) DiaryModule.reset();
             if (DiaryModule.init) DiaryModule.init();
         }
     }
-    
-    // 更新用戶顯示名稱
-    function updateUserDisplay(username) {
-        const userBtn = document.getElementById('user-select-btn');
-        if (userBtn) {
-            // 添加用戶名提示
-            userBtn.setAttribute('title', `當前用戶: ${username}`);
-        }
-    }
-    
-    // 創建新用戶
+
+    // 創建新用戶：密碼隨請求送後端做強度檢查與 bcrypt 雜湊，本機不留任何密碼
     function createNewUser(username, password) {
         console.log(`創建新用戶: ${username}`);
-        
-        fetch('http://localhost:8000/users/create', {
+
+        const baseUrl = (typeof CONFIG !== 'undefined' && CONFIG.API && CONFIG.API.BASE_URL) ?
+            CONFIG.API.BASE_URL : 'http://localhost:8001';
+
+        fetch(`${baseUrl}/users/create`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
             },
-            body: JSON.stringify({ username: username })
+            body: JSON.stringify({ username: username, password: password })
         })
-        .then(response => response.json())
-        .then(data => {
-            if (data.user_id && data.username) {
-                console.log(`用戶創建成功: ${data.username} (ID: ${data.user_id})`);
-                
-                // 保存密碼
-                if (typeof PasswordManager !== 'undefined' && PasswordManager.setPassword) {
-                    PasswordManager.setPassword(data.user_id, password);
-                }
-                
-                if (createUserDialog) createUserDialog.style.display = 'none';
-                
-                // 登入新用戶
-                loginUser(data.username, data.user_id);
-            } else {
-                showCreatePasswordError('創建用戶失敗: ' + (data.detail || '未知錯誤'));
+        .then(async response => {
+            const data = await response.json().catch(() => ({}));
+            if (!response.ok) {
+                // 後端會回傳具體原因（重複帳號、密碼強度不足等）
+                throw new Error(data.detail || I18N.t('create.failedHttp', { status: response.status }));
             }
+            return data;
+        })
+        .then(async data => {
+            if (!data.user_id || !data.username) {
+                throw new Error(I18N.t('create.badResponse'));
+            }
+
+            console.log(`用戶創建成功: ${data.username} (ID: ${data.user_id})`);
+
+            // 直接以新帳號登入取得 JWT
+            const result = await ApiService.login(data.username, password);
+            if (!result.success) {
+                throw new Error(result.error || I18N.t('create.autoLoginFailed'));
+            }
+
+            saveProfile(data.user_id, data.username);
+            if (createUserDialog) createUserDialog.style.display = 'none';
+            loginUser(data.username, data.user_id);
         })
         .catch(error => {
             console.error('創建用戶出錯:', error);
-            showCreatePasswordError('創建用戶失敗，請稍後再試。');
+            showCreatePasswordError(error.message || I18N.t('create.failedGeneric'));
         });
     }
 }

@@ -7,22 +7,39 @@ const CONFIG = (function() {
     const defaultConfig = {
         // API配置
         API: {
-            BASE_URL: 'http://localhost:8000',
+            BASE_URL: 'http://localhost:8001',
             TIMEOUT: 30000,  // 默認超時時間（毫秒）
             AUTO_RETRY: true, // 自動重試失敗的請求
             MAX_RETRIES: 2,  // 最大重試次數
             ENDPOINTS: {
                 CHAT: '/chat/enhanced/',
-                END_CHAT: '/diary/enhanced-generate',
-                DIARIES: '/diaries/'
+                END_CHAT: '/chat/end/',
+                DIARIES: '/diaries/',
+                NOTES: '/interaction-notes'
             }
         },
-        // 模型配置
+        // LLM 供應商定義（API Key 存於 Electron safeStorage，不在此處也不進 localStorage）
+        // 模型 ID 會隨時間變動，DEFAULT_MODEL 只是未自訂時的預設值，設定面板可改；
+        // SUGGESTED_MODELS 供設定面板下拉建議（打錯 ID 會被供應商 404，例如
+        // claude-sonnet-5 誤打成 claude-sonnet-5-0）
+        PROVIDERS: {
+            grok:   { LABEL: 'Grok (xAI)',            DEFAULT_MODEL: 'grok-4.3',        NEEDS_BASE_URL: false,
+                      SUGGESTED_MODELS: ['grok-4.3'] },
+            openai: { LABEL: 'ChatGPT (OpenAI)',      DEFAULT_MODEL: 'gpt-5.5',         NEEDS_BASE_URL: false,
+                      SUGGESTED_MODELS: ['gpt-5.5', 'gpt-5.6'] },
+            claude: { LABEL: 'Claude (Anthropic)',    DEFAULT_MODEL: 'claude-opus-4-8', NEEDS_BASE_URL: false,
+                      SUGGESTED_MODELS: ['claude-opus-4-8', 'claude-sonnet-5', 'claude-haiku-4-5'] },
+            gemini: { LABEL: 'Gemini (Google)',       DEFAULT_MODEL: 'gemini-3-flash',  NEEDS_BASE_URL: false,
+                      SUGGESTED_MODELS: ['gemini-3-flash', 'gemini-2.5-flash'] },
+            local:  { LABEL: '本地自架 (OpenAI 相容)', DEFAULT_MODEL: '',                NEEDS_BASE_URL: true,
+                      SUGGESTED_MODELS: [] }
+        },
+        // 舊版短鍵模型設定（已由 PROVIDERS + 設定面板取代，保留避免舊引用炸掉）
         MODELS: {
-            DEFAULT: 'grok3',  // 默認使用 Grok 3
-            AVAILABLE: ['grok2', 'grok3'],  // 可用模型列表
-            AUTO_SWITCH: true,  // 如果一個模型不可用，是否自動切換到另一個
-            DISPLAY_NAMES: {  // 用於顯示的模型名稱
+            DEFAULT: 'grok3',
+            AVAILABLE: ['grok2', 'grok3'],
+            AUTO_SWITCH: true,
+            DISPLAY_NAMES: {
                 'grok2': 'Grok 2',
                 'grok3': 'Grok 3'
             }
@@ -45,7 +62,7 @@ const CONFIG = (function() {
             LOG_LEVEL: 'info',
             MAX_LOGS: 1000,
             MAX_CHAT_HISTORY: 100,
-            USE_MOCK_DATA: true,
+            USE_MOCK_DATA: false,
             AUTO_SWITCH_TO_DIARY_AFTER_END: true,
             THEME: {
                 LIGHT: 'light',
@@ -63,19 +80,19 @@ const CONFIG = (function() {
         DEBUG: {
             ENABLED: true,       // 是否啟用調試模式
             LOG_API_CALLS: true, // 是否記錄API調用
-            MOCK_API: false      // 是否使用模擬API響應
+            MOCK_API: false      // 唯一的模擬數據開發者旗標：API 失敗時回傳模擬數據（僅供除錯，預設關閉）
         },
-        // 使用模擬數據（如果API不可用）
-        USE_MOCK_DATA: true,
-        // 自動切換到模擬數據模式
-        AUTO_SWITCH_TO_MOCK: true
+        // 已停用：錯誤必須如實回報，不得以模擬數據掩蓋（除錯請用 DEBUG.MOCK_API）
+        USE_MOCK_DATA: false,
+        AUTO_SWITCH_TO_MOCK: false
     };
     
     // 加載配置
     let loadedConfig = {};
     try {
         // 嘗試從localStorage加載設置
-        const storedConfig = localStorage.getItem('urDiary_config');
+        // v3: 升版儲存鍵，捨棄舊快取中 USE_MOCK_DATA=true 的殘留值 (v2 為 8000→8001 埠號升版)
+        const storedConfig = localStorage.getItem('urDiary_config_v3');
         if (storedConfig) {
             loadedConfig = JSON.parse(storedConfig);
             console.log('已從localStorage載入配置');
@@ -91,12 +108,12 @@ const CONFIG = (function() {
     if (loadedConfig.AUTH) Object.assign(config.AUTH, loadedConfig.AUTH);
     if (loadedConfig.DEBUG) Object.assign(config.DEBUG, loadedConfig.DEBUG);
     if (loadedConfig.MODELS) Object.assign(config.MODELS, loadedConfig.MODELS);
-    if (loadedConfig.USE_MOCK_DATA !== undefined) config.USE_MOCK_DATA = loadedConfig.USE_MOCK_DATA;
+    // USE_MOCK_DATA 不再從儲存合併：避免被舊設定悄悄重新啟用，除錯一律走 DEBUG.MOCK_API
     
-    // 保存配置
+    // 保存配置 (鍵名須與上方載入的 urDiary_config_v3 一致，否則存了讀不回)
     function saveConfig() {
         try {
-            localStorage.setItem('urDiary_config', JSON.stringify(config));
+            localStorage.setItem('urDiary_config_v3', JSON.stringify(config));
             console.log('配置已保存到localStorage');
         } catch (error) {
             console.error('保存配置時出錯:', error);
@@ -110,8 +127,7 @@ const CONFIG = (function() {
         if (newConfig.AUTH) Object.assign(config.AUTH, newConfig.AUTH);
         if (newConfig.DEBUG) Object.assign(config.DEBUG, newConfig.DEBUG);
         if (newConfig.MODELS) Object.assign(config.MODELS, newConfig.MODELS);
-        if (newConfig.USE_MOCK_DATA !== undefined) config.USE_MOCK_DATA = newConfig.USE_MOCK_DATA;
-        
+
         // 保存到localStorage
         saveConfig();
         

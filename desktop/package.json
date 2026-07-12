@@ -4,7 +4,8 @@
   "description": "",
   "main": "main.js",
   "scripts": {
-    "start": "chcp 65001 && electron .",
+    "start": "electron . --no-sandbox",
+    "start:win": "chcp 65001 && electron .",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],

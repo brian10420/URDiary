@@ -1,0 +1,54 @@
+Based on today's conversation with the user, and the background from the interaction notes, write today's diary entry. Write it from the user's point of view (first person), summarizing today's experiences, feelings, and reflections.
+
+[Today's conversation]
+{chat_history}
+
+[Interaction notes for reference]
+{interaction_note}
+
+[Time sensitivity]
+Important: every item in the interaction notes carries a date tag. When writing today's diary, focus only on today's conversation and items dated today. Past-dated information is background only and must not be described as happening today.
+
+[Structure]
+Write the diary in these four parts:
+
+## 1. Today
+Describe the main events and activities of the user's day, concretely and briefly. Focus on what they invested emotion or time in. Use specific details and the user's own way of speaking. Include only events mentioned in today's conversation.
+
+## 2. Feelings
+Describe the user's emotional responses in depth — capture the layers and complexity. Tie each feeling to what triggered it. Use vivid, specific emotion words; avoid vague labels.
+
+## 3. Reflections
+From the user's perspective, make meaning of today. This may include:
+- Connections to past experiences (mark them clearly as connections to the past)
+- Patterns or themes they noticed
+- Values or priorities that became clearer
+- New understanding of their own reactions
+
+## 4. Tomorrow
+Offer 1-3 small, concrete, doable steps. They should:
+- Fit the user's capacity and current situation
+- Be small and specific enough to actually do
+- Connect directly to today's events or emotional needs
+- Provide gentle structure, not commands
+- End with one warm, genuine line of encouragement
+
+[Writing guide]
+- First person ("I"), in the user's voice
+- If there isn't much material, keep the diary short — never invent
+- Match the user's personality and way of speaking
+- 100-600 words, concise but with depth
+- Avoid being overly positive or overly negative; stay real and balanced
+- No clichéd encouragement or hollow advice
+- Do not reveal that this is AI-generated
+- Keep the diary strictly about "today"
+
+[Output format]
+Write the diary body first (four parts above). Then, on a new final line, output a single-line JSON object (no code fences, no extra text):
+
+{{"title": "diary title", "summary": "one-line summary", "valence": 0.7, "arousal": 0.3}}
+
+- title: within ~8 words, concrete and close to today's core event or feeling, so the user can recognize this day at a glance (e.g., "Finally submitted the midterm report")
+- summary: one line within ~25 words, covering today's main events and mood, for future search and recall
+- valence: 0-1 (pleasantness; 0 = very negative, 1 = very positive)
+- arousal: 0-1 (intensity; 0 = very calm, 1 = very intense)

@@ -91,68 +91,72 @@ const ChatModule = (function() {
         console.log('聊天模塊初始化完成');
     }
     
-    // 初始化模型選擇器
+    // 是否已註冊設定變更監聽（init 會被重複呼叫，避免重複綁定）
+    let llmChangeListenerBound = false;
+
+    // 初始化 AI 供應商選擇器（金鑰與模型細節在 ⚙ 設定面板調整）
     function initModelSelector() {
         // 查找聊天行為區域，如果是input-wrapper，查找其父級
-        const inputArea = document.querySelector('.chat-input-area') || 
+        const inputArea = document.querySelector('.chat-input-area') ||
                           document.querySelector('.chat-input-wrapper')?.parentElement;
-        
+
         if (!inputArea) {
-            console.warn('無法找到聊天輸入區域，無法添加模型選擇器');
+            console.warn('無法找到聊天輸入區域，無法添加供應商選擇器');
             return;
         }
-        
-        // 檢查是否已有模型選擇器
-        if (document.getElementById('model-selector')) {
-            modelSelectorElement = document.getElementById('model-selector');
-            console.log('模型選擇器已存在');
-            return;
-        }
-        
-        // 創建模型選擇器元素
+
+        const providers = (typeof CONFIG !== 'undefined' && CONFIG.PROVIDERS) ? CONFIG.PROVIDERS : {};
+        const active = (typeof SettingsModule !== 'undefined' && SettingsModule.getActiveLLM) ?
+            SettingsModule.getActiveLLM() : { provider: 'grok', model: '', label: 'Grok (xAI)' };
+
+        // 創建選擇器元素（供應商下拉 + 目前模型顯示）
         const selectorDiv = document.createElement('div');
         selectorDiv.className = 'model-selector-container';
         selectorDiv.style.cssText = 'margin: 0 15px 10px; text-align: right; font-size: 12px; color: #666;';
-        
-        // 獲取可用模型
-        const availableModels = CONFIG?.MODELS?.AVAILABLE || ['grok2', 'grok3'];
-        const defaultModel = CONFIG?.MODELS?.DEFAULT || 'grok3';
-        
-        // 設置當前模型
-        currentModel = localStorage.getItem('urDiary_current_model') || defaultModel;
-        
-        // 創建選擇器HTML
         selectorDiv.innerHTML = `
-            <label for="model-selector" style="margin-right: 5px;">模型: </label>
+            <label for="model-selector" style="margin-right: 5px;">AI: </label>
             <select id="model-selector" style="padding: 4px 8px; border-radius: 4px; border: 1px solid #ddd;">
-                ${availableModels.map(model => {
-                    const displayName = CONFIG?.MODELS?.DISPLAY_NAMES?.[model] || model;
-                    return `<option value="${model}" ${model === currentModel ? 'selected' : ''}>${displayName}</option>`;
-                }).join('')}
+                ${Object.keys(providers).map(id =>
+                    `<option value="${id}" ${id === active.provider ? 'selected' : ''}>${id === 'local' ? I18N.t('provider.local') : providers[id].LABEL}</option>`
+                ).join('')}
             </select>
+            <span id="model-selector-model" style="margin-left: 6px;">${active.model || ''}</span>
         `;
-        
+
         // 如果有原有選擇器，則替換，否則插入到輸入區域前
         const existingSelector = document.querySelector('.model-selector-container');
         if (existingSelector) {
-            inputArea.replaceChild(selectorDiv, existingSelector);
+            existingSelector.replaceWith(selectorDiv);
         } else {
             inputArea.insertBefore(selectorDiv, inputArea.firstChild);
         }
-        
+
         // 獲取選擇器元素
         modelSelectorElement = document.getElementById('model-selector');
-        
-        // 綁定變更事件
+
+        // 切換供應商 → 交給設定模塊持久化（實際標頭由 fetchAPI 統一附上）
         if (modelSelectorElement) {
             modelSelectorElement.addEventListener('change', function(e) {
-                currentModel = e.target.value;
-                console.log(`模型已切換為: ${currentModel}`);
-                localStorage.setItem('urDiary_current_model', currentModel);
-                
-                // 添加系統提示消息
-                const displayName = CONFIG?.MODELS?.DISPLAY_NAMES?.[currentModel] || currentModel;
-                addSystemMessage(`已切換到模型: ${displayName}`);
+                if (typeof SettingsModule !== 'undefined' && SettingsModule.setActiveProvider) {
+                    SettingsModule.setActiveProvider(e.target.value);
+                }
+            });
+        }
+
+        // 設定變更（含 ⚙ 面板儲存）→ 同步選單與模型顯示
+        if (!llmChangeListenerBound) {
+            llmChangeListenerBound = true;
+            window.addEventListener('urdiary:llm-settings-changed', function(e) {
+                const llm = e.detail || (typeof SettingsModule !== 'undefined' ? SettingsModule.getActiveLLM() : null);
+                if (!llm) return;
+
+                const selector = document.getElementById('model-selector');
+                if (selector) selector.value = llm.provider;
+
+                const modelSpan = document.getElementById('model-selector-model');
+                if (modelSpan) modelSpan.textContent = llm.model || '';
+
+                addSystemMessage(I18N.t('chat.providerSwitched', { label: llm.label, model: llm.model || I18N.t('chat.defaultModel') }));
             });
         }
     }
@@ -240,6 +244,12 @@ const ChatModule = (function() {
         });
     }
     
+    // 靜態歡迎詞（後端無法提供每日問候時的後備）——取值延遲到使用當下，
+    // 確保語言切換重載後拿到正確語言
+    function WELCOME_MESSAGE_TEXT() {
+        return I18N.t('chat.welcome');
+    }
+
     // 載入聊天歷史
     function loadChatHistory() {
         try {
@@ -249,89 +259,119 @@ const ChatModule = (function() {
                 console.warn('無法獲取用戶ID，無法載入聊天歷史');
                 return;
             }
-            
+
             // 使用與用戶ID關聯的存儲鍵
             const storageKey = `${CONFIG.STORAGE.CHAT_HISTORY}_${userId}`;
             const savedHistory = localStorage.getItem(storageKey);
-            
+            let renderedToday = false;
+
             if (savedHistory) {
                 const parsedHistory = JSON.parse(savedHistory);
-                
-                // 檢查是否有聊天記錄
-                if (parsedHistory.length > 0) {
-                    // 檢查最後一條消息是否為今日
-                    const isToday = checkIfChatIsFromToday(parsedHistory);
-                    
-                    if (isToday) {
-                        console.log('載入今日聊天記錄');
-                        chatHistory = parsedHistory;
-                        
-                        // 渲染聊天歷史
-                        chatMessagesContainer.innerHTML = '';
-                        
-                        chatHistory.forEach(msg => {
-                            if (msg.type === 'user') {
-                                addUserMessage(msg.content, false);
-                            } else {
-                                addSystemMessage(msg.content, false);
-                            }
-                        });
-                        
-                        scrollToBottom();
-                    } else {
-                        console.log('聊天記錄不是今日的，顯示新的歡迎消息');
-                        chatHistory = [];
-                        chatMessagesContainer.innerHTML = '';
-                        addSystemMessage("您好！我是您的情緒日記助手。今天想聊些什麼呢？");
-                    }
-                } else {
-                    // 沒有聊天記錄，顯示歡迎消息
-                    addSystemMessage("您好！我是您的情緒日記助手。今天想聊些什麼呢？");
+
+                // 只還原「今日」的聊天記錄（凌晨 5 點換日，與後端一致）
+                if (parsedHistory.length > 0 && checkIfChatIsFromToday(parsedHistory)) {
+                    console.log('載入今日聊天記錄');
+                    chatHistory = parsedHistory;
+
+                    // 渲染聊天歷史
+                    chatMessagesContainer.innerHTML = '';
+
+                    chatHistory.forEach(msg => {
+                        if (msg.type === 'user') {
+                            addUserMessage(msg.content, false);
+                        } else {
+                            addSystemMessage(msg.content, false);
+                        }
+                    });
+
+                    scrollToBottom();
+                    renderedToday = true;
                 }
-            } else {
-                // 沒有保存的聊天記錄，顯示歡迎消息
-                addSystemMessage("您好！我是您的情緒日記助手。今天想聊些什麼呢？");
             }
+
+            if (!renderedToday) {
+                chatHistory = [];
+                chatMessagesContainer.innerHTML = '';
+            }
+
+            // 每日 check-in：今日首次開啟時由 AI 主動問候（依昨日日記與時段）。
+            // 後端為準：已問候過/未設金鑰時回 checkin:false，畫面空著才補靜態歡迎詞。
+            requestDailyCheckin(renderedToday);
         } catch (error) {
             console.error('載入聊天歷史失敗:', error);
             chatHistory = [];
             // 顯示歡迎消息
-            addSystemMessage("您好！我是您的情緒日記助手。今天想聊些什麼呢？");
+            addSystemMessage(WELCOME_MESSAGE_TEXT());
         }
     }
-    
-    // 檢查聊天記錄是否為今日
+
+    // 每日問候只發一次（init 可能被重複呼叫，兩個非同步請求賽跑會加出兩句歡迎詞）
+    let checkinInFlight = false;
+
+    // 向後端請求每日開場問候
+    async function requestDailyCheckin(hasRenderedHistory) {
+        if (checkinInFlight) return;
+        checkinInFlight = true;
+        let thinkingMessageId = null;
+
+        // 靜態歡迎詞保底：僅在對話仍是空的時候補上，避免重複
+        function fallbackWelcome() {
+            if (!hasRenderedHistory && chatHistory.length === 0) {
+                addSystemMessage(WELCOME_MESSAGE_TEXT());
+            }
+        }
+
+        try {
+            if (typeof ApiService === 'undefined' || !ApiService.checkIn ||
+                !ApiService.isAuthenticated || !ApiService.isAuthenticated()) {
+                fallbackWelcome();
+                return;
+            }
+
+            thinkingMessageId = addThinkingMessage();
+            const result = await ApiService.checkIn();
+
+            const thinkingMessage = document.getElementById(thinkingMessageId);
+            if (thinkingMessage) thinkingMessage.remove();
+            thinkingMessageId = null;
+
+            if (result && result.checkin && result.message) {
+                // AI 的主動問候：進入畫面與本地歷史（後端也已存入正式對話歷史）
+                addSystemMessage(result.message);
+                saveChatHistory();
+            } else {
+                fallbackWelcome();
+            }
+        } catch (error) {
+            // 問候失敗不打擾使用者（不彈錯誤），保底顯示靜態歡迎詞
+            const thinkingMessage = thinkingMessageId ? document.getElementById(thinkingMessageId) : null;
+            if (thinkingMessage) thinkingMessage.remove();
+            console.warn('每日問候略過:', error);
+            fallbackWelcome();
+        } finally {
+            checkinInFlight = false;
+        }
+    }
+
+    // 「日記日」字串：凌晨 5 點前算前一天（與後端 time_utils 的換日規則一致）
+    function diaryDayString(date) {
+        const shifted = new Date(date.getTime() - 5 * 60 * 60 * 1000);
+        return `${shifted.getFullYear()}-${shifted.getMonth() + 1}-${shifted.getDate()}`;
+    }
+
+    // 檢查聊天記錄是否為今日（依 5 點換日）
     function checkIfChatIsFromToday(history) {
         if (!history || history.length === 0) {
             return false;
         }
-        
+
         // 獲取最後一條消息的時間戳
         const lastMessage = history[history.length - 1];
         if (!lastMessage || !lastMessage.timestamp) {
             return false;
         }
-        
-        // 解析最後一條消息的時間
-        const messageDate = new Date(lastMessage.timestamp);
-        
-        // 獲取今天的日期 (年、月、日)
-        const today = new Date();
-        const todayDate = today.getDate();
-        const todayMonth = today.getMonth();
-        const todayYear = today.getFullYear();
-        
-        // 獲取消息的日期 (年、月、日)
-        const messageDay = messageDate.getDate();
-        const messageMonth = messageDate.getMonth();
-        const messageYear = messageDate.getFullYear();
-        
-        // 比較日期是否相同
-        return (
-            messageDay === todayDate &&
-            messageMonth === todayMonth &&
-            messageYear === todayYear
-        );
+
+        return diaryDayString(new Date(lastMessage.timestamp)) === diaryDayString(new Date());
     }
     
     // 發送消息
@@ -360,10 +400,15 @@ const ChatModule = (function() {
     
     // 處理用戶輸入
     async function processUserInput(userInput) {
+        // 必須宣告在 try 之外：catch 區塊也要用它移除「思考中」動畫。
+        // 若宣告在 try 內，const 的區塊作用域會讓 catch 取用時拋出 ReferenceError，
+        // 導致錯誤訊息永遠顯示不出來、思考動畫卡住不消失。
+        let thinkingMessageId = null;
+
         try {
             // 添加思考中消息
-            const thinkingMessageId = addThinkingMessage();
-            
+            thinkingMessageId = addThinkingMessage();
+
             // 檢查ApiService是否存在
             if (typeof ApiService === 'undefined') {
                 console.error('ApiService未定義，無法發送消息');
@@ -376,12 +421,8 @@ const ChatModule = (function() {
                 throw new Error('API服務不完整，缺少sendChatMessage方法');
             }
             
-            // 獲取當前選擇的模型
-            const selectedModel = currentModel || CONFIG?.MODELS?.DEFAULT || 'grok3';
-            console.log(`使用模型 ${selectedModel} 處理用戶輸入`);
-            
-            // 調用API服務發送消息
-            const response = await ApiService.sendChatMessage(userInput, selectedModel);
+            // 供應商與模型由 fetchAPI 依設定面板統一附上 (X-LLM-* 標頭)
+            const response = await ApiService.sendChatMessage(userInput);
             
             // 移除思考中消息
             const thinkingMessage = document.getElementById(thinkingMessageId);
@@ -405,43 +446,29 @@ const ChatModule = (function() {
                 messageContent = response.response;
             } else {
                 // 默認錯誤消息
-                messageContent = '抱歉，我無法理解您的請求。';
-            }
-            
-            // 添加模型信息到消息末尾（如果有）
-            const modelUsed = response.model_used || selectedModel;
-            if (modelUsed && typeof messageContent === 'string') {
-                const modelDisplayName = CONFIG?.MODELS?.DISPLAY_NAMES?.[modelUsed] || modelUsed;
-                messageContent = messageContent;
+                messageContent = I18N.t('chat.cantUnderstand');
             }
             
             // 添加系統消息
             addSystemMessage(messageContent);
-            
-            // 如果響應中包含模型信息，但和當前選擇的不同，更新選擇器
-            if (response.model_used && response.model_used !== selectedModel && modelSelectorElement) {
-                modelSelectorElement.value = response.model_used;
-                currentModel = response.model_used;
-                localStorage.setItem('urDiary_current_model', currentModel);
-            }
-            
+
             // 保存聊天歷史
             saveChatHistory();
         } catch (error) {
             console.error('處理用戶輸入失敗:', error);
-            
+
             // 移除思考中消息
-            const thinkingMessage = document.getElementById(thinkingMessageId);
+            const thinkingMessage = thinkingMessageId ? document.getElementById(thinkingMessageId) : null;
             if (thinkingMessage) {
                 thinkingMessage.remove();
             }
             
             // 添加錯誤消息
-            addSystemMessage('抱歉，我遇到了一些問題: ' + error.message);
+            addSystemMessage(I18N.t('chat.errorPrefix', { error: error.message }));
             
             // 如果是API服務未定義的錯誤，顯示更詳細的錯誤信息
             if (error.message.includes('API服務未初始化')) {
-                addSystemMessage('請嘗試刷新頁面，或者檢查API服務是否已啟動。如果問題持續，請聯繫技術支持。');
+                addSystemMessage(I18N.t('chat.tryRefresh'));
             }
         } finally {
             // 恢復輸入狀態
@@ -577,16 +604,12 @@ const ChatModule = (function() {
             if (isProcessing) {
                 console.warn('正在處理其他請求，請稍後再試');
                 if (typeof UIManager !== 'undefined' && UIManager.showToast) {
-                    UIManager.showToast('正在處理中，請稍後再試');
+                    UIManager.showToast(I18N.t('chat.busy'));
                 } else {
-                    alert('正在處理中，請稍後再試');
+                    alert(I18N.t('chat.busy'));
                 }
                 return;
             }
-            
-            // 獲取當前選擇的模型
-            const selectedModel = currentModel || CONFIG?.MODELS?.DEFAULT || 'grok3';
-            console.log(`使用模型 ${selectedModel} 結束聊天並生成日記`);
             
             // 設置處理狀態
             isProcessing = true;
@@ -597,13 +620,13 @@ const ChatModule = (function() {
             
             // 顯示載入狀態
             try {
-                UIManager.showLoadingSpinner('生成日記中...');
+                UIManager.showLoadingSpinner(I18N.t('chat.generatingDiary'));
             } catch (error) {
                 console.warn('無法顯示載入動畫:', error);
             }
             
-            // 調用API服務結束聊天
-            const response = await ApiService.endChat(selectedModel);
+            // 調用API服務結束聊天（供應商/模型由 fetchAPI 統一附上）
+            const response = await ApiService.endChat();
             
             // 處理響應
             console.log('結束聊天API響應:', response);
@@ -613,7 +636,7 @@ const ChatModule = (function() {
             saveChatHistory();
             
             // 顯示日記已生成消息
-            const diaryMessage = response.message || '日記已生成，您可以在日記頁面查看。';
+            const diaryMessage = response.message || I18N.t('chat.diaryDone');
             addSystemMessage(diaryMessage);
             
             // 檢查配置是否自動切換到日記視圖
@@ -651,7 +674,7 @@ const ChatModule = (function() {
             console.error('結束聊天失敗:', error);
             
             // 顯示錯誤信息
-            let errorMessage = '生成日記時出錯: ' + error.message;
+            let errorMessage = I18N.t('chat.diaryError', { error: error.message });
             addSystemMessage(errorMessage);
             
             // 如果可能，添加一條更詳細的錯誤消息
@@ -679,7 +702,7 @@ const ChatModule = (function() {
     // 清空聊天
     function clearChat() {
         // 確認對話框
-        if (confirm('確定要清空當前對話嗎？')) {
+        if (confirm(I18N.t('chat.confirmClear'))) {
             // 清空聊天歷史
             chatHistory = [];
             
@@ -690,7 +713,7 @@ const ChatModule = (function() {
             chatMessagesContainer.innerHTML = '';
             
             // 添加新的歡迎消息
-            addSystemMessage('您好！我是您的情緒日記助手。今天想聊些什麼呢？');
+            addSystemMessage(WELCOME_MESSAGE_TEXT());
         }
     }
     
@@ -731,18 +754,21 @@ const ChatModule = (function() {
     }
     
     // 格式化消息內容 (處理換行等)
+    // 內容會寫入 innerHTML，且可能來自 AI 回應 —— 必須先轉義再換成 <br>，
+    // 否則模型或伺服器回傳的 HTML 標籤會在 nodeIntegration 環境下執行任意程式碼
     function formatMessageContent(content) {
         // 添加防錯處理，確保content不是undefined或null
         if (!content) return '';
-        
+
         // 確保content是字符串
         const contentStr = typeof content === 'string' ? content : String(content);
-        return contentStr.replace(/\n/g, '<br>');
+        return escapeHtml(contentStr).replace(/\n/g, '<br>');
     }
     
     // 格式化時間顯示
     function formatTime(date) {
-        return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        const locale = (typeof I18N !== 'undefined') ? I18N.dateLocale() : [];
+        return date.toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' });
     }
     
     // 滾動到底部
