@@ -3,6 +3,7 @@ from providers.base import LLMConfig
 from memory_manager import get_chat_history, append_chat_messages, format_chat_content
 from database import crud, db_session
 from database.models import InteractionNote
+from services.calendar_service import build_calendar_context
 from services.diary_draft import DiaryDraft, parse_diary_output
 from services.prompt_loader import load_prompt, get_role
 from services.prompt_builder import build_conversation_system, build_checkin_prompt
@@ -181,12 +182,19 @@ def enhanced_chat_with_context(chat_id: str, numeric_user_id: int, message: str,
     relevant_memories = get_relevant_memories(
         numeric_user_id, message, chat_history, semantic=semantic)
 
+    # 行事曆脈絡 (昨天 ~ +7 天)。自管 session 且在 LLM 呼叫之前就取完；
+    # 用真實本地日期，不是日記的 5am 換日日 (見 calendar_service 模組註解)。
+    # 失敗時內部降級為置底句，不擋聊天。
+    calendar_context = build_calendar_context(
+        numeric_user_id, get_local_now().date(), lang)
+
     # 分層組裝系統提示詞 (人格核心 → 對話框架與記憶 → 危機模式附錄)
     system_prompt = build_conversation_system(
         lang=lang,
         interaction_note=interaction_context,
         relevant_memories=relevant_memories,
         today_date=get_diary_date().strftime("%Y-%m-%d"),
+        calendar_context=calendar_context,
         crisis=crisis,
     )
 
@@ -341,6 +349,12 @@ def daily_checkin(chat_id: str, numeric_user_id: int, cfg: Optional[LLMConfig] =
             user_profile = ("（你們還不熟，這可能是最初幾次見面）" if lang != "en"
                             else "(you barely know each other yet — this may be one of your first meetings)")
 
+    # 行事曆脈絡：讀階段的 session 已關閉，build_calendar_context 自管自己的
+    # 短交易並在回傳前關掉，接下來的 llm.chat 仍不持有任何 DB 連線。
+    # 日期用真實本地日 (get_local_now)，不是上面那個 5am 換日的日記日 today。
+    calendar_block = build_calendar_context(
+        numeric_user_id, get_local_now().date(), lang)
+
     # LLM 階段 (不持有 DB 連線)。LLMError 往上拋，由路由層轉為 checkin:false。
     prompt = build_checkin_prompt(
         lang=lang,
@@ -348,6 +362,7 @@ def daily_checkin(chat_id: str, numeric_user_id: int, cfg: Optional[LLMConfig] =
         today_date=today.strftime("%Y-%m-%d"),
         last_diary_block=last_diary_block,
         user_profile=user_profile,
+        calendar_block=calendar_block,
     )
     messages = [
         {"role": "system", "content": get_role("companion", lang)},

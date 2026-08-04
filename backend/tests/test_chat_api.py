@@ -90,6 +90,36 @@ def test_contextual_sensitive_word_adds_crisis_prompt_without_support_message(
     assert crisis_text in system_prompt
 
 
+def test_enhanced_chat_system_prompt_contains_upcoming_calendar_event(
+    client, auth_header, mock_llm, llm_headers
+):
+    """明天的行事曆事件要進得了 enhanced 對話的 system prompt（未來 7 天視窗）。"""
+    from datetime import timedelta
+    from database import crud, SessionLocal
+    from utils.time_utils import get_local_now
+
+    headers, user_id = auth_header
+    tomorrow = get_local_now().date() + timedelta(days=1)
+
+    db = SessionLocal()
+    try:
+        crud.create_calendar_event(
+            db, user_id, "資格考口試", tomorrow,
+            category="study", event_time="09:30",
+        )
+    finally:
+        db.close()
+
+    mock_llm.respond("好啊，那就聊聊今天吧。")
+    resp = client.post(
+        "/chat/enhanced/", json={"message": "在嗎"}, headers={**headers, **llm_headers}
+    )
+
+    assert resp.status_code == 200
+    system_prompt = mock_llm.calls[-1]["messages"][0]["content"]
+    assert "資格考口試" in system_prompt
+
+
 def test_mock_llm_failure_returns_503_and_does_not_write_history(
     client, auth_header, mock_llm, llm_headers
 ):
