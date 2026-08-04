@@ -207,83 +207,92 @@ describe('CalendarModule 純函式', () => {
     });
 
     /**
-     * PUT 的欄位差異計算。後端 update_event 會濾掉值為 None 的欄位，
-     * 因此「只送有改動的欄位」與「哪些欄位是使用者想清空、但後端做不到」
-     * 這兩件事都得在前端算對 —— 前者算錯會動到重複事件的起始日，
-     * 後者算錯會讓使用者以為改動生效了。
+     * 事件表單的預填值計算（開表單時：occurrence → 表單欄位）。
+     *
+     * 後端 PUT 現在明確區分「欄位缺席＝維持原值」與「欄位為 null＝清空」
+     * (exclude_unset 語意)，因此儲存時可以直接送出表單完整狀態，不必再
+     * 由前端自己 diff 出「有改動的欄位」——但表單「日期」欄位的語意換了：
+     * 使用者編輯的是整個重複系列，不是被點開的那一次展開日，所以這裡
+     * 必須讀 occurrence.event_date（系列錨定日），不能讀 occurrence.date
+     * （那一次展開出來的發生日）。算錯的話，全狀態送出時就會把整個系列的
+     * 起始日搬到使用者點開的那一次發生日——這是本函式最重要的不變量。
      */
-    describe('buildUpdatePayload(next, initial)', () => {
-        const initial = {
-            title: '看牙醫',
-            note: '記得帶健保卡',
-            category: 'health',
-            event_date: '2026-08-05',
-            event_time: '14:00',
-            recurrence: 'none',
-            recurrence_until: null,
-            reminder_minutes: 30
-        };
-
-        function next(overrides) {
-            return Object.assign({}, initial, overrides);
+    describe('buildFormValues(occurrence, presetDateIso)', () => {
+        function occurrence(overrides) {
+            return Object.assign({
+                event_id: 7,
+                title: '看牙醫',
+                note: '記得帶健保卡',
+                category: 'health',
+                date: '2026-08-05',
+                time: '14:30',
+                recurrence: 'none',
+                event_date: '2026-08-05',
+                recurrence_until: null,
+                reminder_minutes: 30
+            }, overrides);
         }
 
-        it('沒有任何改動 → changed 與 cleared 都是空的', () => {
-            const r = CalendarModule.buildUpdatePayload(next({}), initial);
-            expect(r.changed).toEqual({});
-            expect(r.cleared).toEqual([]);
+        it('新增事件（occurrence 為 null）時，日期用 presetDateIso，其餘為預設空值', () => {
+            const values = CalendarModule.buildFormValues(null, '2026-08-09');
+            expect(values).toEqual({
+                title: '',
+                note: '',
+                category: 'other',
+                event_date: '2026-08-09',
+                event_time: null,
+                recurrence: 'none',
+                recurrence_until: null,
+                reminder_minutes: null
+            });
         });
 
-        it('只改標題 → 只送 title（不連帶送 event_date，否則會移動重複事件的起始日）', () => {
-            const r = CalendarModule.buildUpdatePayload(next({ title: '看牙醫（改期）' }), initial);
-            expect(r.changed).toEqual({ title: '看牙醫（改期）' });
-            expect(r.cleared).toEqual([]);
+        it('新增事件且沒有 presetDateIso 時，日期退回今天', () => {
+            const values = CalendarModule.buildFormValues(null, '');
+            expect(values.event_date).toBe(CalendarModule.toIsoDate(new Date()));
         });
 
-        it('同時改多個欄位 → 全部送出', () => {
-            const r = CalendarModule.buildUpdatePayload(
-                next({ title: '回診', category: 'family', reminder_minutes: 60 }), initial);
-            expect(r.changed).toEqual({ title: '回診', category: 'family', reminder_minutes: 60 });
+        it('編輯事件時，title/note/category/event_time/recurrence/reminder_minutes 直接取自 occurrence', () => {
+            const values = CalendarModule.buildFormValues(occurrence({}), '2026-01-01');
+            expect(values.title).toBe('看牙醫');
+            expect(values.note).toBe('記得帶健保卡');
+            expect(values.category).toBe('health');
+            expect(values.event_time).toBe('14:30');
+            expect(values.recurrence).toBe('none');
+            expect(values.reminder_minutes).toBe(30);
         });
 
-        it('把有時間的事件改成全天 → event_time 進 cleared，不進 changed', () => {
-            const r = CalendarModule.buildUpdatePayload(next({ event_time: null }), initial);
-            expect(r.cleared).toEqual(['event_time']);
-            expect(r.changed).toEqual({});
+        it('編輯事件時，日期欄讀 occurrence.event_date（系列錨定日），不是 occurrence.date（被點開的那次發生日）', () => {
+            // 模擬使用者點開 weekly 系列「之後」某一次展開：date 與 event_date 刻意不同
+            const occ = occurrence({ date: '2026-09-08', event_date: '2026-08-04', recurrence: 'weekly' });
+            const values = CalendarModule.buildFormValues(occ, '2026-01-01');
+            expect(values.event_date).toBe('2026-08-04');
+            expect(values.event_date).not.toBe(occ.date);
         });
 
-        it('清空備註與提醒 → 兩者都進 cleared', () => {
-            const r = CalendarModule.buildUpdatePayload(next({ note: null, reminder_minutes: null }), initial);
-            expect(r.cleared.sort()).toEqual(['note', 'reminder_minutes']);
-            expect(r.changed).toEqual({});
+        it('編輯事件時，recurrence_until 直接取自 occurrence.recurrence_until（有值）', () => {
+            const occ = occurrence({ recurrence_until: '2026-12-31' });
+            expect(CalendarModule.buildFormValues(occ, '').recurrence_until).toBe('2026-12-31');
         });
 
-        it('混合「改一個 + 清一個」→ changed 與 cleared 同時有值（合併提示的觸發條件）', () => {
-            const r = CalendarModule.buildUpdatePayload(
-                next({ title: '改過的標題', event_time: null }), initial);
-            expect(r.changed).toEqual({ title: '改過的標題' });
-            expect(r.cleared).toEqual(['event_time']);
+        it('編輯事件時，recurrence_until 為 null 時原樣保留 null', () => {
+            const occ = occurrence({ recurrence_until: null });
+            expect(CalendarModule.buildFormValues(occ, '').recurrence_until).toBeNull();
         });
 
-        it('reminder_minutes 改成 0 是有效改動，不是「清空」', () => {
-            const r = CalendarModule.buildUpdatePayload(next({ reminder_minutes: 0 }), initial);
-            expect(r.changed).toEqual({ reminder_minutes: 0 });
-            expect(r.cleared).toEqual([]);
+        it('編輯事件時，note 為 null 或 undefined 都正規化為空字串', () => {
+            expect(CalendarModule.buildFormValues(occurrence({ note: null }), '').note).toBe('');
+            expect(CalendarModule.buildFormValues(occurrence({ note: undefined }), '').note).toBe('');
         });
 
-        it('把 null 的欄位設成有值 → 進 changed（recurrence_until 由無到有）', () => {
-            const r = CalendarModule.buildUpdatePayload(
-                next({ recurrence: 'weekly', recurrence_until: '2026-12-31' }), initial);
-            expect(r.changed).toEqual({ recurrence: 'weekly', recurrence_until: '2026-12-31' });
-            expect(r.cleared).toEqual([]);
+        it('編輯全天事件時，event_time 為 null', () => {
+            const occ = occurrence({ time: null });
+            expect(CalendarModule.buildFormValues(occ, '').event_time).toBeNull();
         });
 
-        it('initial 缺漏時（GET 沒回 event_date/recurrence_until）不誤判成清空', () => {
-            const partial = { title: '看牙醫', event_time: '14:00' };
-            const r = CalendarModule.buildUpdatePayload(
-                { title: '看牙醫', event_time: '14:00', recurrence_until: null }, partial);
-            expect(r.changed).toEqual({});
-            expect(r.cleared).toEqual([]);
+        it('編輯事件時，reminder_minutes = 0 要原樣保留（不是「未設提醒」）', () => {
+            const occ = occurrence({ reminder_minutes: 0 });
+            expect(CalendarModule.buildFormValues(occ, '').reminder_minutes).toBe(0);
         });
     });
 });

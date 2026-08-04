@@ -183,17 +183,45 @@ def test_sort_all_day_before_timed_on_same_day_then_by_date():
 # --- occurrence 欄位齊全 ---------------------------------------------------------
 
 def test_occurrence_dict_has_all_expected_fields():
+    """occurrence dict 除了展開結果 (date/time) 外，還要帶回系列的原始欄位
+    (event_date 錨定日、recurrence_until 系列截止日)，供前端編輯表單預填。"""
     ev = _ev(event_id=42, title="牙醫", note="記得帶健保卡", category="health",
               event_date=date(2026, 8, 5), event_time="14:30",
-              recurrence="none", reminder_minutes=30)
+              recurrence="none", recurrence_until=None, reminder_minutes=30)
 
     occ = expand_occurrences([ev], date(2026, 8, 1), date(2026, 8, 10))
 
     assert occ[0] == {
         "event_id": 42, "title": "牙醫", "note": "記得帶健保卡",
         "category": "health", "date": "2026-08-05", "time": "14:30",
-        "recurrence": "none", "reminder_minutes": 30,
+        "recurrence": "none", "event_date": "2026-08-05",
+        "recurrence_until": None, "reminder_minutes": 30,
     }
+
+
+def test_occurrence_dict_recurrence_until_serialized_as_iso_string():
+    ev = _ev(event_date=date(2026, 8, 5), recurrence="weekly",
+              recurrence_until=date(2026, 9, 5))
+
+    occ = expand_occurrences([ev], date(2026, 8, 1), date(2026, 8, 10))
+
+    assert occ[0]["recurrence_until"] == "2026-09-05"
+
+
+def test_weekly_occurrences_share_same_anchor_event_date_while_dates_differ():
+    """weekly 事件展開出多筆 occurrence 時，每一筆的 event_date（系列錨定日）
+    都必須是同一個值 —— 即使 date（該筆的實際發生日）逐筆不同。這是編輯表單
+    能正確預填「系列」而非「被點開的那一次」的前提；若這裡算錯，前端編輯
+    weekly 事件時就可能把系列起始日誤植成使用者點開的那一次發生日。"""
+    ev = _ev(event_date=date(2026, 7, 20), recurrence="weekly")
+
+    occ = expand_occurrences([ev], date(2026, 7, 1), date(2026, 8, 15))
+
+    dates = [o["date"] for o in occ]
+    anchors = {o["event_date"] for o in occ}
+    assert len(dates) > 1
+    assert len(set(dates)) == len(dates)          # 每筆的 date 各不相同
+    assert anchors == {"2026-07-20"}               # 但 event_date 全部同一個錨定日
 
 
 # ==============================================================================

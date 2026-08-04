@@ -19,7 +19,6 @@ const CalendarModule = (function() {
     const MAX_DOTS_PER_CELL = 3;        // 一格最多幾個色點，其餘顯示 +N
     const REMINDER_TICK_MS = 60000;     // 提醒輪詢間隔
     const REMINDED_PREFIX = 'urdiary_reminded_';
-    const TOAST_LONG_MS = 6000;         // 合併了「無法清空」說明的 toast，字多、需要久一點
 
     // --- 純函式（僅為 vitest 單元測試曝光，行為不變）-------------------------
 
@@ -124,9 +123,7 @@ const CalendarModule = (function() {
     let todaysOccurrences = [];             // 「今天」的 occurrence 快照，專供提醒用
     let todaysSnapshotDate = null;          // 上面那份快照對應的日期，null = 尚未取得
     let isRefreshingToday = false;          // refreshTodaysOccurrences 的併發防護
-    let rawById = {};                       // event_id → 後端回傳的完整事件（POST/PUT 的回應）
     let editingEventId = null;              // 表單目前編輯中的事件 id（新增時為 null）
-    let formInitial = null;                 // 開表單當下的欄位值，PUT 時用來只送有改動的欄位
     let loadedOnce = false;                 // 惰性首載旗標
     let isLoading = false;
     let listenersBound = false;             // init() 可重複呼叫（切換帳號時），監聽器只綁一次
@@ -601,32 +598,44 @@ const CalendarModule = (function() {
     }
 
     /**
+     * ★ 純函式：依 occurrence（或新增時的預填日期）組出事件表單要顯示的欄位值
+     * @param {Object|null} occurrence - 編輯時的 occurrence；新增時為 null
+     * @param {string} presetDateIso - 新增時預填的日期
+     * @returns {Object} 表單欄位值，形狀與後端 CalendarEventCreate/Update 一致
+     *
+     * 日期欄位刻意讀 occurrence.event_date（系列錨定日），不是 occurrence.date
+     * （使用者點開的那一次展開日）——後端 GET /calendar/events 的每個
+     * occurrence 現在都帶回系列的原始欄位（event_date/recurrence_until），
+     * 編輯重複事件時使用者改的是整個系列，不是單次發生，用 event_date
+     * 預填才不會在儲存時把系列起始日誤植成被點開的那一次發生日。
+     */
+    function buildFormValues(occurrence, presetDateIso) {
+        return {
+            title: occurrence ? occurrence.title : '',
+            note: (occurrence && occurrence.note) ? occurrence.note : '',
+            category: occurrence ? occurrence.category : 'other',
+            event_date: occurrence ? occurrence.event_date : (presetDateIso || toIsoDate(new Date())),
+            event_time: occurrence ? occurrence.time : null,
+            recurrence: occurrence ? occurrence.recurrence : 'none',
+            recurrence_until: occurrence ? occurrence.recurrence_until : null,
+            reminder_minutes: occurrence ? occurrence.reminder_minutes : null
+        };
+    }
+
+    /**
      * 開啟事件表單
      * @param {Object|null} occurrence - 編輯時的 occurrence；新增時為 null
      * @param {string} presetDateIso - 新增時預填的日期
      *
-     * 編輯時的原始欄位來源有兩層：rawById（本次工作階段 POST/PUT 的完整
-     * 回應，含 event_date 與 recurrence_until）優先；沒有的話退回 occurrence
-     * ——後端 GET /calendar/events 只回展開後的 occurrence，不含這兩個欄位。
-     * 所以送 PUT 時一律只送「使用者真的改過」的欄位（見 saveEvent），
-     * 不會誤把重複事件的起始日改成被點到的那一次 occurrence 的日期。
+     * 表單欄位值交給 buildFormValues 組裝（純函式，見上）；不必再像先前
+     * 那樣另外快取一份 POST/PUT 回應（rawById）來補齊 event_date /
+     * recurrence_until——GET /calendar/events 的 occurrence 現在就有這兩欄。
      */
     function openEventForm(occurrence, presetDateIso) {
         if (!dialogElement) return;
 
-        const raw = occurrence ? rawById[occurrence.event_id] : null;
         editingEventId = occurrence ? occurrence.event_id : null;
-
-        const values = {
-            title: occurrence ? occurrence.title : '',
-            note: (occurrence && occurrence.note) ? occurrence.note : '',
-            category: occurrence ? occurrence.category : 'other',
-            event_date: raw ? raw.event_date : (occurrence ? occurrence.date : (presetDateIso || toIsoDate(new Date()))),
-            event_time: occurrence ? occurrence.time : null,
-            recurrence: occurrence ? occurrence.recurrence : 'none',
-            recurrence_until: raw ? raw.recurrence_until : null,
-            reminder_minutes: occurrence ? occurrence.reminder_minutes : null
-        };
+        const values = buildFormValues(occurrence, presetDateIso);
 
         setValue('event-title', values.title);
         setValue('event-note', values.note);
@@ -641,7 +650,6 @@ const CalendarModule = (function() {
         const allDayInput = document.getElementById('event-all-day');
         if (allDayInput) allDayInput.checked = !values.event_time;
 
-        formInitial = values;
         syncAllDayState();
         syncRecurrenceState();
         showFormError('');
@@ -662,7 +670,6 @@ const CalendarModule = (function() {
     function closeEventForm() {
         if (dialogElement) dialogElement.style.display = 'none';
         editingEventId = null;
-        formInitial = null;
     }
 
     // 全天時停用時間欄位（後端以 event_time = null 表示全天）
@@ -673,12 +680,17 @@ const CalendarModule = (function() {
         timeInput.disabled = allDayInput.checked;
     }
 
-    // 不重複時隱藏「重複到」欄位
+    // 不重複時隱藏「重複到」欄位與「編輯套用整個系列」提示；兩者顯示條件相同
     function syncRecurrenceState() {
         const recurrenceInput = document.getElementById('event-recurrence');
+        if (!recurrenceInput) return;
+        const isRecurring = recurrenceInput.value !== 'none';
+
         const untilRow = document.getElementById('event-until-row');
-        if (!recurrenceInput || !untilRow) return;
-        untilRow.style.display = (recurrenceInput.value === 'none') ? 'none' : '';
+        if (untilRow) untilRow.style.display = isRecurring ? '' : 'none';
+
+        const seriesHint = document.getElementById('event-series-hint');
+        if (seriesHint) seriesHint.style.display = isRecurring ? '' : 'none';
     }
 
     // 從表單讀出一份完整的事件欄位（值的形狀與後端 schema 一致）
@@ -718,38 +730,19 @@ const CalendarModule = (function() {
         if (saveBtn) saveBtn.disabled = true;
 
         try {
-            let response;
-            // 後端 PUT 以「欄位為 None = 維持原值」為語意，無法把欄位清成空
-            // （schemas.CalendarEventUpdate 的文件已載明此限制）。這個提示**必須**
-            // 和「已儲存」合併成同一則 toast：showToast 會先移除既有 toast，
-            // 分兩次呼叫的話，本機後端十幾毫秒就回來，第二則會在第一則還沒
-            // 顯示出來前就把它刪掉，使用者只看到「已儲存」而誤以為清空生效了。
-            let clearNotice = null;
-
+            // 後端 PUT 現在明確區分「欄位缺席＝維持原值」與「欄位為 null＝清空」
+            // (model_dump(exclude_unset=True))，因此可以直接送出表單完整狀態，
+            // 不必再自己 diff 出「有改動的欄位」。編輯時 payload.event_date
+            // 是系列錨定日（見 buildFormValues/openEventForm 的預填邏輯），
+            // 不是被點開的那一次 occurrence 的日期，所以整包送出不會誤把
+            // 重複事件的起始日搬到使用者點開的那一次發生日。
             if (editingEventId !== null && editingEventId !== undefined) {
-                const diff = buildUpdatePayload(payload, formInitial);
-                if (diff.cleared.length > 0) {
-                    clearNotice = I18N.t('calendar.clearUnsupported');
-                }
-                if (Object.keys(diff.changed).length === 0) {
-                    if (clearNotice) UIManager.showToast(clearNotice, TOAST_LONG_MS);
-                    closeEventForm();
-                    return;
-                }
-                response = await ApiService.updateCalendarEvent(editingEventId, diff.changed);
+                await ApiService.updateCalendarEvent(editingEventId, payload);
             } else {
-                response = await ApiService.createCalendarEvent(payload);
+                await ApiService.createCalendarEvent(payload);
             }
 
-            if (response && response.event && response.event.event_id !== undefined) {
-                rawById[response.event.event_id] = response.event;
-            }
-
-            if (clearNotice) {
-                UIManager.showToast(I18N.t('calendar.savedWithNotice', { notice: clearNotice }), TOAST_LONG_MS);
-            } else {
-                UIManager.showToast(I18N.t('calendar.saved'));
-            }
+            UIManager.showToast(I18N.t('calendar.saved'));
             closeEventForm();
             await loadMonth();
             // CRUD 可能動到今天的事件；若這次 loadMonth 的範圍不含今天（正在看別的月份），
@@ -764,48 +757,12 @@ const CalendarModule = (function() {
         }
     }
 
-    /**
-     * PUT 只送「使用者真的改動過」的欄位
-     * @returns {{changed: Object, cleared: string[]}} cleared 是「想清空但後端做不到」的欄位名
-     *
-     * 兩個理由必須這樣做：
-     * 1. GET 回傳的 occurrence 沒有 event_date / recurrence_until，全欄位覆寫
-     *    會把重複事件的起始日改成被點到的那一次 occurrence 的日期。
-     * 2. 後端 update_event 會濾掉值為 None 的欄位，送 null 不但無效，還會讓
-     *    「只改標題」變成一次看似成功、實際部分未套用的請求。
-     */
-    function buildUpdatePayload(next, initial) {
-        const changed = {};
-        const cleared = [];
-        const base = initial || {};
-
-        Object.keys(next).forEach(field => {
-            const before = normalizeForCompare(base[field]);
-            const after = normalizeForCompare(next[field]);
-            if (before === after) return;
-
-            if (next[field] === null || next[field] === '') {
-                cleared.push(field);   // 後端無法清空欄位
-                return;
-            }
-            changed[field] = next[field];
-        });
-
-        return { changed: changed, cleared: cleared };
-    }
-
-    function normalizeForCompare(value) {
-        if (value === null || value === undefined || value === '') return '';
-        return String(value);
-    }
-
     async function confirmDelete(eventId) {
         if (eventId === null || eventId === undefined) return;
         if (!window.confirm(I18N.t('calendar.deleteConfirm'))) return;
 
         try {
             await ApiService.deleteCalendarEvent(eventId);
-            delete rawById[eventId];
             UIManager.showToast(I18N.t('calendar.deleted'));
             closeEventForm();
             await loadMonth();
@@ -924,11 +881,9 @@ const CalendarModule = (function() {
         // 提醒快照也要清 —— 換帳號後不能再拿前一個帳號的事件發通知
         todaysOccurrences = [];
         todaysSnapshotDate = null;
-        rawById = {};
         selectedDate = toIsoDate(new Date());
         loadedOnce = false;
         editingEventId = null;
-        formInitial = null;
 
         closeEventForm();
         if (gridElement) gridElement.innerHTML = '';
@@ -952,6 +907,6 @@ const CalendarModule = (function() {
         monthGridRange: monthGridRange,
         computeReminderTimes: computeReminderTimes,
         rangeCoversDate: rangeCoversDate,
-        buildUpdatePayload: buildUpdatePayload
+        buildFormValues: buildFormValues
     };
 })();

@@ -140,7 +140,6 @@ const I18N = (function() {
             'calendar.cancel': '取消',
             'calendar.noEvents': '這天沒有安排任何事件。',
             'calendar.saved': '事件已儲存',
-            'calendar.savedWithNotice': '事件已儲存；{notice}',
             'calendar.deleted': '事件已刪除',
             'calendar.loadFailed': '載入行事曆失敗，請確認後端服務是否啟動',
             'calendar.saveFailed': '儲存事件失敗，請稍後再試',
@@ -149,7 +148,7 @@ const I18N = (function() {
             'calendar.allDayLabel': '整天',
             'calendar.titleRequired': '請輸入事件標題',
             'calendar.dateRequired': '請選擇事件日期',
-            'calendar.clearUnsupported': '部分欄位無法清空（後端只接受「維持原值」或新值），該欄位維持原本設定',
+            'calendar.editSeriesHint': '重複事件的編輯會套用到整個系列',
 
             'category.work': '工作',
             'category.study': '學業',
@@ -345,7 +344,6 @@ const I18N = (function() {
             'calendar.cancel': 'Cancel',
             'calendar.noEvents': 'Nothing scheduled for this day.',
             'calendar.saved': 'Event saved',
-            'calendar.savedWithNotice': 'Event saved; {notice}',
             'calendar.deleted': 'Event deleted',
             'calendar.loadFailed': 'Failed to load the calendar — is the backend running?',
             'calendar.saveFailed': 'Failed to save the event, please try again later',
@@ -354,7 +352,7 @@ const I18N = (function() {
             'calendar.allDayLabel': 'All day',
             'calendar.titleRequired': 'Please enter an event title',
             'calendar.dateRequired': 'Please pick an event date',
-            'calendar.clearUnsupported': 'Some fields cannot be cleared (the backend only accepts a new value or "keep as is") — they were left unchanged',
+            'calendar.editSeriesHint': 'Edits to a repeating event apply to the whole series',
 
             'category.work': 'Work',
             'category.study': 'Study',

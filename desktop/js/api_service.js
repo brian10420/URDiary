@@ -784,7 +784,8 @@ const ApiService = (function() {
         return await fetchAPI('/calendar/events', { method: 'POST', body: data });
     }
 
-    // 更新事件 → { message, event }；未提供的欄位代表「維持原值」
+    // 更新事件 → { message, event }；欄位缺席代表「維持原值」，明確傳 null
+    // 則清空該欄位（僅 event_time/recurrence_until/reminder_minutes/note 可清空）
     async function updateCalendarEvent(eventId, data) {
         return await fetchAPI(`/calendar/events/${encodeURIComponent(eventId)}`, { method: 'PUT', body: data });
     }

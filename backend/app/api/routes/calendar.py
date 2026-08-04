@@ -24,6 +24,12 @@ router = APIRouter()
 # GET /calendar/events 查詢區間上限 (天)；超過視為濫用/前端誤用，直接拒絕
 MAX_RANGE_DAYS = 62
 
+# PUT 的「不可清空」欄位：即使 CalendarEventUpdate 為了支援 exclude_unset
+# 語意而把它們宣告成 Optional，這四個欄位在業務邏輯上仍不允許為 NULL
+# (title/category/recurrence 是 model 上的 not-null 欄位，event_date 是
+# 事件必須落地的日期)。出現在請求裡且為 null 時視為無效輸入。
+NOT_CLEARABLE_FIELDS = ("title", "category", "recurrence", "event_date")
+
 
 def _serialize_event(event) -> Dict[str, Any]:
     return {
@@ -94,12 +100,22 @@ def list_events(start: date, end: date,
 
 @router.put("/events/{event_id}", response_model=Dict[str, Any],
            summary="更新行事曆事件",
-           description="更新自己的行事曆事件欄位 (至少一個欄位有值)")
+           description="更新自己的行事曆事件欄位；未出現的欄位維持原值，"
+                       "可清空欄位 (event_time/recurrence_until/reminder_minutes/note) "
+                       "明確傳 null 即清空")
 def update_event(event_id: int, payload: CalendarEventUpdate,
                  db: Session = Depends(get_db),
                  current_user: User = Depends(get_current_user),
                  lang: str = Depends(get_language)):
-    """更新行事曆事件 (僅限本人的事件；不是自己的一律回 404，不洩漏存在性)"""
+    """更新行事曆事件 (僅限本人的事件；不是自己的一律回 404，不洩漏存在性)
+
+    用 `model_dump(exclude_unset=True)` 取得請求裡「實際出現過」的欄位
+    (含明確的 null)，藉此區分「未提供 (維持原值)」與「明確清空 (寫
+    NULL)」——這是本端點的特化寫法 (PATCH 語意的標準作法)，不影響 diary
+    PUT 沿用的 `.dict()` + `is not None` 慣例。
+    `crud.update_calendar_event` 本來就是 kwargs setattr sink，傳入 None
+    會直接寫 NULL，不需要跟著改。
+    """
     existing = crud.get_calendar_event(db, event_id)
     if not existing or existing.user_id != current_user.id:
         api_logger.warning(f"行事曆事件不存在或無權更新: event_id={event_id}, token_user={current_user.id}")
@@ -108,12 +124,23 @@ def update_event(event_id: int, payload: CalendarEventUpdate,
             detail=msg("event_not_found", lang)
         )
 
-    update_data = {k: v for k, v in payload.dict().items() if v is not None}
+    update_data = payload.model_dump(exclude_unset=True)
     if not update_data:
         api_logger.warning(f"未提供任何更新數據: event_id={event_id}")
         raise BadRequestError(
             error_code=ErrorCode.INVALID_INPUT,
             detail=msg("no_update_data", lang)
+        )
+
+    # 不可清空欄位若出現且為 null：整個請求視為無效輸入並拒絕 (all-or-nothing，
+    # 不是把該欄位濾掉、其餘欄位照常套用——後者會讓「混合請求」看似成功，
+    # 實際上悄悄漏掉使用者以為已經清空的欄位)。
+    nulled_fields = [f for f in NOT_CLEARABLE_FIELDS if f in update_data and update_data[f] is None]
+    if nulled_fields:
+        api_logger.warning(f"嘗試把不可清空欄位設為 null: event_id={event_id}, fields={nulled_fields}")
+        raise BadRequestError(
+            error_code=ErrorCode.INVALID_INPUT,
+            detail=msg("field_not_clearable", lang, fields=", ".join(nulled_fields))
         )
 
     event = crud.update_calendar_event(db, event_id, **update_data)

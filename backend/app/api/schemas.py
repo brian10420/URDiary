@@ -43,11 +43,22 @@ class CalendarEventCreate(BaseModel):
 
 
 class CalendarEventUpdate(BaseModel):
-    """PUT /calendar/events/{event_id} 的請求 body：全部 Optional。
+    """PUT /calendar/events/{event_id} 的請求 body：全部欄位 Optional。
 
-    至少要有一個欄位有值，否則路由層回 400 (比照 diary PUT 的
-    no_update_data 慣例；未設值的欄位一律代表「維持原值」，因此無法用
-    這個 schema 把某欄位明確清成 None，跟現行 diary PUT 是同一種限制)。
+    路由層用 `model_dump(exclude_unset=True)` (本端點的特化寫法，PATCH
+    語意的標準作法；不影響 diary PUT 沿用的 `.dict()` + `is not None`
+    慣例) 取得請求裡「實際出現過」的欄位，藉此區分兩種情況：
+    - 欄位完全不出現在 body 裡 → 維持原值。
+    - 欄位出現且值為 null → 依欄位分兩類：
+      - 可清空欄位 (event_time/recurrence_until/reminder_minutes/note)：
+        寫入 NULL (例如把定時事件改成全天、取消提醒、移除重複截止日、
+        清空備註)。
+      - 不可清空欄位 (title/category/recurrence/event_date)：這幾個在
+        業務邏輯上不允許為 NULL，路由層會回 400 invalid_input (見
+        api/routes/calendar.py 的 update_event)。
+
+    body 完全沒有任何欄位 (exclude_unset 後為空 dict) → 路由層回 400
+    no_update_data (比照 diary PUT 慣例)。
     """
     title: Optional[str] = Field(default=None, min_length=1, max_length=120)
     note: Optional[str] = Field(default=None, max_length=2000)

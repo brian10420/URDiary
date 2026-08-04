@@ -383,6 +383,13 @@
     cursor: not-allowed;
 }
 
+/* 「編輯套用整個系列」提示：小字、非搶眼，只在 recurrence≠none 時顯示 (JS 控制顯隱) */
+#event-dialog .form-hint {
+    margin: 4px 0 0;
+    font-size: var(--font-size-xs);
+    color: var(--text-secondary, #666);
+}
+
 /* 視窗較窄時，日面板改到月曆下方 */
 @media (max-width: 900px) {
     .calendar-body {

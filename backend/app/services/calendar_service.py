@@ -94,7 +94,10 @@ def expand_occurrences(events, range_start, range_end, cap=MAX_OCCURRENCES) -> l
 
     每筆 occurrence dict：
     {event_id, title, note, category, date:"YYYY-MM-DD", time (None 或
-    "HH:MM"), recurrence, reminder_minutes}
+    "HH:MM"), recurrence, event_date:"YYYY-MM-DD" (系列錨定日——同一系列
+    展開出的每個 occurrence 都相同，跟 date 不是同一件事；供前端編輯表單
+    預填，讓「編輯」動到的是整個系列而不是被點開的那一次發生日),
+    recurrence_until:"YYYY-MM-DD" 或 None (系列結束日), reminder_minutes}
     """
     occurrences = []
     for ev in events:
@@ -214,6 +217,11 @@ def _occurrence_dict(ev, d: date) -> dict:
         "date": d.isoformat(),
         "time": ev.event_time,
         "recurrence": ev.recurrence,
+        # 系列的原始欄位 (與 date 不同：date 是這一筆 occurrence 的展開發生日，
+        # event_date 是整個系列的錨定日，同一系列所有 occurrence 皆相同)。
+        # 前端編輯表單靠這兩個欄位預填，不必再另外快取 POST/PUT 的完整回應。
+        "event_date": ev.event_date.isoformat(),
+        "recurrence_until": ev.recurrence_until.isoformat() if ev.recurrence_until else None,
         "reminder_minutes": ev.reminder_minutes,
     }
 

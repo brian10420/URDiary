@@ -93,6 +93,10 @@ MESSAGES = {
         "zh-TW": "行事曆事件已刪除",
         "en": "Calendar event deleted",
     },
+    "field_not_clearable": {
+        "zh-TW": "欄位 {fields} 不可清空為 null，若要維持原值請不要提供該欄位",
+        "en": "Field(s) {fields} cannot be cleared to null — omit them to keep the existing value",
+    },
 }
 
 
