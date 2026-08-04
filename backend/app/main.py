@@ -114,7 +114,3 @@ async def startup_event():
 @app.on_event("shutdown")
 async def shutdown_event():
     app_logger.info("URDiary后端服务正在关闭")
-
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)

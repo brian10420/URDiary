@@ -1,19 +1,20 @@
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Optional
 from pydantic import BaseModel
 
+import llm
 from api.deps import get_db, get_current_user, get_llm_config, get_language
+from api.schemas import UserDiaryCreate
 from database.models import User
 from utils.messages import msg
 from providers.base import LLMConfig, LLMError
 from utils.api_exceptions import BadRequestError, ForbiddenError, NotFoundError, ServerError, ServiceUnavailableError
 from utils.error_codes import ErrorCode
 from utils.logger import api_logger, log_error
-from database import crud, SessionLocal
-from services.diary_service import save_diary_for_user
+from database import crud
+from services.diary_service import save_diary_for_user, run_end_of_chat_pipeline
 from services.interaction_service import (
-    generate_enhanced_diary,
     process_interaction_note_update,
     get_latest_interaction_note
 )
@@ -21,12 +22,7 @@ from services.analytics_service import analyze_emotion_trends
 
 router = APIRouter()
 
-# 身分一律由 JWT 導出（get_current_user），body 內的 user_id/numeric_user_id
-# 僅為相容舊客戶端而保留欄位，伺服器端一律忽略
-class UserDiaryCreate(BaseModel):
-    user_id: Optional[str] = None  # 已忽略，身分取自 token
-    numeric_user_id: Optional[int] = None  # 已忽略，身分取自 token
-    exclude_interaction_notes: bool = False
+# UserDiaryCreate 與 chat.py 共用，定義移至 api/schemas.py
 
 class DiaryUpdate(BaseModel):
     content: Optional[str] = None
@@ -265,12 +261,15 @@ def generate_enhanced_diary_api(user_input: UserDiaryCreate,
     api_logger.info(f"開始生成增強版日記: user_id={user_id}")
 
     try:
-        # 使用增強版日記生成 (LLM 呼叫，期間不持有 DB 連線)
-        draft = generate_enhanced_diary(
+        # 補齊供應商設定 (早期解析，與 /chat/end/ 統一——缺金鑰在任何 LLM 呼叫
+        # 前就報錯，不必等真正呼叫模型才發現)
+        cfg = llm.resolve_config(llm_config)
+        # 生成日記 → 短交易存檔 → 更新互動筆記 (與 /chat/end/ 共用管線)
+        result = run_end_of_chat_pipeline(
             user_id,
             numeric_user_id,
             user_input.exclude_interaction_notes,
-            llm_config,
+            cfg,
             lang=lang
         )
     except LLMError as e:
@@ -280,59 +279,12 @@ def generate_enhanced_diary_api(user_input: UserDiaryCreate,
             detail=msg("diary_not_generated", lang, error=e)
         )
 
-    # 保存日記 (短交易；絕不可在持有 session 時做下面的互動筆記 LLM 呼叫)
-    db = SessionLocal()
-    try:
-        diary = crud.create_diary(
-            db=db,
-            user_id=numeric_user_id,
-            content=draft.content,
-            valence=draft.valence,
-            arousal=draft.arousal,
-            title=draft.title,
-            summary=draft.summary,
-        )
-        diary_payload = {
-            "diary_id": diary.id,
-            "title": diary.title,
-            "summary": diary.summary,
-            "content": diary.content,
-            "valence": diary.valence,
-            "arousal": diary.arousal,
-            "created_at": diary.created_at.isoformat()
-        }
-    except Exception as e:
-        db.rollback()
-        log_error(e, {"user_id": user_id, "action": "enhanced_diary_generate"})
-        raise ServerError(
-            error_code=ErrorCode.DIARY_CREATION_FAILED,
-            detail=msg("diary_create_failed", lang, error=str(e))
-        )
-    finally:
-        db.close()
-
-    # 更新互動筆記 (又一次 LLM 呼叫，自行管理連線)。
-    # 日記此時已存檔成功，筆記失敗回報部分成功，與 /chat/end/ 語意一致。
-    note_result = None
-    note_error = None
-    try:
-        note_result = process_interaction_note_update(
-            user_id,
-            numeric_user_id,
-            draft.content,
-            llm_config,
-            lang=lang
-        )
-    except LLMError as e:
-        note_error = str(e)
-        log_error(e, {"user_id": user_id, "action": "enhanced_diary_update_note"})
-
-    api_logger.info(f"增強版日記生成成功: user_id={user_id}, diary_id={diary_payload['diary_id']}")
+    api_logger.info(f"增強版日記生成成功: user_id={user_id}, diary_id={result['diary']['diary_id']}")
     return {
-        "message": "增強版日記生成成功" if note_error is None else "日記已生成，但互動筆記更新失敗",
-        "diary": diary_payload,
-        "interaction_note": note_result,
-        "interaction_note_error": note_error
+        "message": "增強版日記生成成功" if result["interaction_note_error"] is None else "日記已生成，但互動筆記更新失敗",
+        "diary": result["diary"],
+        "interaction_note": result["interaction_note"],
+        "interaction_note_error": result["interaction_note_error"]
     }
 
 @router.get("/interaction-notes/{user_id}", response_model=Dict[str, Any],

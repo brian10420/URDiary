@@ -68,19 +68,6 @@ class ForbiddenError(APIError):
         )
 
 
-# 409錯誤：資源衝突
-class ConflictError(APIError):
-    """資源衝突錯誤"""
-    
-    def __init__(self, error_code: str = ErrorCode.OPERATION_FAILED, detail: str = None, headers: dict = None):
-        super().__init__(
-            status_code=status.HTTP_409_CONFLICT,
-            error_code=error_code,
-            detail=detail,
-            headers=headers
-        )
-
-
 # 500錯誤：服務器內部錯誤
 class ServerError(APIError):
     """伺服器內部錯誤"""

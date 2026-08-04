@@ -1,6 +1,6 @@
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
-from datetime import datetime, timedelta
+from datetime import timedelta
 from typing import List, Optional
 from database import models
 from utils.time_utils import get_diary_datetime  # 修正导入路径
@@ -21,10 +21,6 @@ def get_user(db: Session, user_id: int):
 def get_user_by_username(db: Session, username: str):
     """Get a user by username"""
     return db.query(models.User).filter(models.User.username == username).first()
-
-def get_users(db: Session, skip: int = 0, limit: int = 100):
-    """Get a list of users"""
-    return db.query(models.User).offset(skip).limit(limit).all()
 
 # Diary CRUD operations
 def create_diary(db: Session, user_id: int, content: str,
@@ -153,10 +149,3 @@ def get_user_embeddings(db: Session, user_id: int, model: str):
             .filter(models.Diary.user_id == user_id,
                     models.DiaryEmbedding.model == model)
             .all())
-
-# InteractionNote CRUD operations
-def get_latest_interaction_note(db: Session, user_id: int):
-    """Get the latest interaction note for a user (highest version)"""
-    return db.query(models.InteractionNote).filter(
-        models.InteractionNote.user_id == user_id
-    ).order_by(models.InteractionNote.version.desc()).first()

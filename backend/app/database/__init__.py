@@ -1,11 +1,11 @@
 # database/__init__.py
+from contextlib import contextmanager
+
 from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker
 from config import DB_PATH
 import logging
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # SQLite 單檔資料庫 (純本地部署，無外部服務)。
@@ -40,9 +40,18 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 logger.info(f"SQLite database at {DB_PATH}")
 
 
-def get_db():
-    """
-    依賴注入函數，用於獲取數據庫會話
+@contextmanager
+def db_session():
+    """服務層用的資料庫 session context manager (yield session、finally close)。
+
+    取代各處手寫的 `db = SessionLocal(); try: ...; finally: db.close()` 樣板。
+    不自動 commit/rollback：commit 邏輯多半已在對應的 CRUD 函式內完成，
+    發生例外時是否 rollback 由呼叫端視需要自行處理 (與原本樣板行為一致)；
+    這裡只保證連線一定會被關閉。
+
+    絕對不可把兩段「概念上獨立」的 session (例如讀取階段與寫入階段中間
+    夾了一次 LLM 呼叫) 合併成同一個 with 區塊——session 範圍不得跨 LLM
+    呼叫，否則連線會在等待模型回應的數十秒內被釘住。
     """
     db = SessionLocal()
     try:

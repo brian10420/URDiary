@@ -1,23 +1,17 @@
-from fastapi import APIRouter, HTTPException, Depends
-from sqlalchemy.orm import Session
+from fastapi import APIRouter, Depends
 from typing import Dict, Any, Optional
 from pydantic import BaseModel
 
 import llm
-from api.deps import get_db, get_current_user, get_llm_config, get_memory_prefs, get_language
+from api.deps import get_current_user, get_llm_config, get_memory_prefs, get_language
+from api.schemas import UserDiaryCreate
 from utils.messages import msg
 from database.models import User
 from providers.base import LLMConfig, LLMError
 from llm_compat import send_to_grok
 from memory_manager import clear_chat_history
-from services.diary_service import check_sensitive_content, get_support_message
-from services.interaction_service import (
-    enhanced_chat_with_context,
-    generate_enhanced_diary,
-    process_interaction_note_update,
-    daily_checkin
-)
-from database import SessionLocal, crud
+from services.diary_service import check_sensitive_content, get_support_message, run_end_of_chat_pipeline
+from services.interaction_service import enhanced_chat_with_context, daily_checkin
 from utils.api_exceptions import ServiceUnavailableError
 from utils.error_codes import ErrorCode
 from utils.logger import log_error
@@ -39,11 +33,7 @@ class EnhancedChatInput(BaseModel):
     message: str
     model: Optional[str] = None  # 已忽略，模型取自 X-LLM-Model 標頭
 
-class UserDiaryCreate(BaseModel):
-    user_id: Optional[str] = None  # 已忽略，身分取自 token
-    numeric_user_id: Optional[int] = None  # 已忽略，身分取自 token
-    exclude_interaction_notes: bool = False
-    model: Optional[str] = None  # 已忽略，模型取自 X-LLM-Model 標頭
+# UserDiaryCreate 與 diary.py 共用，定義移至 api/schemas.py
 
 @router.post("/", response_model=Dict[str, str],
            summary="發送聊天消息",
@@ -172,11 +162,11 @@ def end_chat_session(user_input: UserDiaryCreate,
         )
     model = cfg.model
 
-    # 1. 生成今日對話筆記 (LLM 呼叫，期間不持有 DB 連線)
-    #    失敗時直接回 503 —— 絕不可把 "Error: ..." 當成日記內容寫進資料庫，
-    #    也不清除對話歷史，讓使用者可以重試。
+    # 生成日記 → 短交易存檔 → 更新互動筆記 (與 /diary/enhanced-generate 共用管線)。
+    # 失敗時直接回 503 —— 絕不可把 "Error: ..." 當成日記內容寫進資料庫，
+    # 也不清除對話歷史，讓使用者可以重試。
     try:
-        draft = generate_enhanced_diary(
+        result = run_end_of_chat_pipeline(
             user_id,
             numeric_user_id,
             user_input.exclude_interaction_notes,
@@ -190,57 +180,13 @@ def end_chat_session(user_input: UserDiaryCreate,
             detail=msg("diary_failed_retry", lang, error=e)
         )
 
-    # 2. 保存日記到數據庫 (短交易，取出需要的欄位後立即關閉)
-    db = SessionLocal()
-    try:
-        diary = crud.create_diary(
-            db=db,
-            user_id=numeric_user_id,
-            content=draft.content,
-            valence=draft.valence,
-            arousal=draft.arousal,
-            title=draft.title,
-            summary=draft.summary,
-        )
-        diary_payload = {
-            "diary_id": diary.id,
-            "title": diary.title,
-            "summary": diary.summary,
-            "content": diary.content,
-            "valence": diary.valence,
-            "arousal": diary.arousal,
-            "created_at": diary.created_at.isoformat(),
-        }
-    except Exception as e:
-        db.rollback()
-        log_error(e, {"user_id": user_id, "action": "end_chat_save_diary"})
-        raise
-    finally:
-        db.close()
-
-    # 3. 更新互動筆記 (又一次 LLM 呼叫，自行管理連線)
-    #    日記此時已存檔成功，筆記失敗不該讓整個請求失敗 —— 回報部分成功即可。
-    note_result = None
-    note_error = None
-    try:
-        note_result = process_interaction_note_update(
-            user_id,
-            numeric_user_id,
-            draft.content,
-            cfg,
-            lang=lang
-        )
-    except LLMError as e:
-        note_error = str(e)
-        log_error(e, {"user_id": user_id, "action": "end_chat_update_note"})
-
-    # 4. 清除 Redis 中的當前對話歷史 (日記已安全存檔)
+    # 清除目前對話歷史 (SQLite chat_messages 表；日記已安全存檔) —— /chat/end/ 特有尾段
     clear_chat_history(user_id)
 
     return {
-        "message": "對話已結束並生成摘要" if note_error is None else "日記已生成，但互動筆記更新失敗",
+        "message": "對話已結束並生成摘要" if result["interaction_note_error"] is None else "日記已生成，但互動筆記更新失敗",
         "model_used": model,
-        "diary": diary_payload,
-        "interaction_note": note_result,
-        "interaction_note_error": note_error,
+        "diary": result["diary"],
+        "interaction_note": result["interaction_note"],
+        "interaction_note_error": result["interaction_note_error"],
     }

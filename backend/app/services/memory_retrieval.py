@@ -18,7 +18,7 @@ import re
 import threading
 from itertools import chain, zip_longest
 
-from database import SessionLocal, crud
+from database import db_session, crud
 from services.diary_draft import derive_summary, derive_title
 from utils.time_utils import get_diary_date, get_diary_datetime
 
@@ -139,8 +139,7 @@ def _keyword_hits(user_id: int, terms: list, today) -> list:
     """回傳 [(snapshot, score)]，分數由高至低。"""
     if not terms:
         return []
-    db = SessionLocal()
-    try:
+    with db_session() as db:
         candidates = crud.search_diaries_by_terms(
             db, user_id, terms, limit=CANDIDATE_LIMIT)
         scored = []
@@ -153,8 +152,6 @@ def _keyword_hits(user_id: int, terms: list, today) -> list:
             scored.append((_snapshot(diary), match * _recency_emotion_factor(diary)))
         scored.sort(key=lambda pair: -pair[1])
         return scored[:TOP_N]
-    finally:
-        db.close()
 
 
 # --- 語意軌 (選配) -----------------------------------------------------------
@@ -174,7 +171,7 @@ def semantic_available() -> bool:
 
 
 def _get_embedder():
-    """惰性載入 embedding 模型 (首次會下載 ~100MB ONNX 模型)。"""
+    """惰性載入 embedding 模型 (首次會下載 ~220MB ONNX 模型)。"""
     global _embedder, _embedder_failed
     if _embedder is not None:
         return _embedder
@@ -233,12 +230,9 @@ def _index_diary_safe(diary_id: int, title, summary, content) -> None:
         if not vectors:
             return
         vec = vectors[0]
-        db = SessionLocal()
-        try:
+        with db_session() as db:
             crud.upsert_diary_embedding(
                 db, diary_id, EMBED_MODEL_NAME, vec.tobytes(), int(vec.shape[0]))
-        finally:
-            db.close()
     except Exception as e:
         logger.warning(f"日記語意索引失敗 (diary_id={diary_id}): {e}")
 
@@ -252,8 +246,7 @@ def _semantic_hits(user_id: int, query: str, today) -> list:
     qvec = vectors[0]
     qnorm = float(np.linalg.norm(qvec)) or 1e-9
 
-    db = SessionLocal()
-    try:
+    with db_session() as db:
         rows = crud.get_user_embeddings(db, user_id, EMBED_MODEL_NAME)
         scored = []
         for embedding, diary in rows:
@@ -268,8 +261,6 @@ def _semantic_hits(user_id: int, query: str, today) -> list:
             scored.append((_snapshot(diary), cosine * _recency_emotion_factor(diary)))
         scored.sort(key=lambda pair: -pair[1])
         return scored[:TOP_N]
-    finally:
-        db.close()
 
 
 # --- 對外入口 ----------------------------------------------------------------
@@ -337,14 +328,11 @@ def backfill_embeddings() -> None:
         return
     from database.models import Diary, DiaryEmbedding
 
-    db = SessionLocal()
-    try:
+    with db_session() as db:
         indexed = {row.diary_id for row in db.query(DiaryEmbedding.diary_id).filter(
             DiaryEmbedding.model == EMBED_MODEL_NAME)}
         pending = [(d.id, d.title, d.summary, d.content)
                    for d in db.query(Diary).all() if d.id not in indexed]
-    finally:
-        db.close()
 
     print(f"待補索引: {len(pending)} 篇")
     for i, (diary_id, title, summary, content) in enumerate(pending, 1):

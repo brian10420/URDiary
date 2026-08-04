@@ -1,10 +1,6 @@
 import time
 import uuid
-from fastapi import Request, status
-from fastapi.responses import JSONResponse
-from fastapi.exceptions import RequestValidationError
-from sqlalchemy.exc import SQLAlchemyError
-from starlette.exceptions import HTTPException as StarletteHTTPException
+from fastapi import Request
 
 # 使用統一的日誌工具 (相對 logs/ 目錄，本機與容器皆可寫入)
 from utils.logger import create_logger
@@ -12,117 +8,48 @@ from utils.logger import create_logger
 logger = create_logger("app.error_handler", "app_errors.log")
 
 class ErrorHandler:
-    """全局錯誤處理中間件"""
-    
+    """輕量中間件：只負責 request-id 產生與請求起訖 timing logging。
+
+    例外一律 re-raise，統一交由 middleware/exception_handlers.py 的
+    FastAPI exception handler 轉成 JSON。原本這裡也會攔截例外並自行組
+    JSONResponse，但 FastAPI 的 ExceptionMiddleware 位於本中間件更內層
+    (見 Starlette build_middleware_stack：僅 bare Exception 的 handler
+    會被拉到最外層的 ServerErrorMiddleware，其餘已註冊的例外類型都在
+    ExceptionMiddleware 攔截)，所以 HTTPException/RequestValidationError/
+    SQLAlchemyError 一律不會走到這裡；未註冊的例外則會一路往外拋到
+    ServerErrorMiddleware，改由 exception_handlers.py 的
+    general_exception_handler 處理——兩者輸出的 JSON 完全相同。
+    也就是說底下的例外分支原本就是死碼，這裡不再重複維護。
+    """
+
     async def __call__(self, request: Request, call_next):
-        # 生成請求ID用於跟蹤
+        # 生成請求ID用於跟蹤；exception_handlers.py 會從 request.state 讀出
+        # 同一個值一併寫進錯誤回應，讓成功/失敗的請求都能用同一個 ID 追蹤。
         request_id = str(uuid.uuid4())
         request.state.request_id = request_id
-        
-        # 記錄請求開始
+
         start_time = time.time()
         method = request.method
         url = str(request.url)
         logger.info(f"Request started: {method} {url} - ID: {request_id}")
-        
+
         try:
-            # 執行請求
             response = await call_next(request)
-            
-            # 記錄成功的請求
+        except Exception:
             process_time = time.time() - start_time
-            logger.info(
-                f"Request completed: {method} {url} - ID: {request_id} "
-                f"Status: {response.status_code} - Time: {process_time:.3f}s"
-            )
-            
-            return response
-            
-        except Exception as e:
-            # 計算處理時間
-            process_time = time.time() - start_time
-            
-            # 根據異常類型處理
-            return await self.handle_exception(e, request, request_id, process_time)
-    
-    async def handle_exception(self, exc, request, request_id, process_time):
-        """根據異常類型返回適當的響應"""
-        
-        client_host = request.client.host if request.client else "unknown"
-        url = str(request.url)
-        method = request.method
-        
-        if isinstance(exc, RequestValidationError):
-            # 請求驗證錯誤（如參數類型不匹配）
-            status_code = status.HTTP_422_UNPROCESSABLE_ENTITY
             logger.error(
-                f"Validation error: {method} {url} - ID: {request_id} - "
-                f"Client: {client_host} - Time: {process_time:.3f}s",
+                f"Request raised: {method} {url} - ID: {request_id} - "
+                f"Time: {process_time:.3f}s",
                 exc_info=True
             )
-            return JSONResponse(
-                status_code=status_code,
-                content={
-                    "error": "validation_error",
-                    "detail": str(exc),
-                    "request_id": request_id,
-                    "code": "INVALID_INPUT"
-                }
-            )
-            
-        elif isinstance(exc, StarletteHTTPException):
-            # FastAPI的HTTP異常
-            status_code = exc.status_code
-            logger.error(
-                f"HTTP error {status_code}: {method} {url} - ID: {request_id} - "
-                f"Client: {client_host} - Time: {process_time:.3f}s - Detail: {exc.detail}",
-                exc_info=True
-            )
-            return JSONResponse(
-                status_code=status_code,
-                content={
-                    "error": "http_error",
-                    "detail": exc.detail,
-                    "request_id": request_id,
-                    "code": f"HTTP_{status_code}"
-                }
-            )
-            
-        elif isinstance(exc, SQLAlchemyError):
-            # 數據庫錯誤
-            status_code = status.HTTP_500_INTERNAL_SERVER_ERROR
-            logger.error(
-                f"Database error: {method} {url} - ID: {request_id} - "
-                f"Client: {client_host} - Time: {process_time:.3f}s",
-                exc_info=True
-            )
-            return JSONResponse(
-                status_code=status_code,
-                content={
-                    "error": "database_error",
-                    "detail": "資料庫操作失敗",
-                    "request_id": request_id,
-                    "code": "DB_ERROR"
-                }
-            )
-            
-        else:
-            # 其他未處理的異常
-            status_code = status.HTTP_500_INTERNAL_SERVER_ERROR
-            logger.error(
-                f"Unhandled error: {method} {url} - ID: {request_id} - "
-                f"Client: {client_host} - Time: {process_time:.3f}s",
-                exc_info=True
-            )
-            return JSONResponse(
-                status_code=status_code,
-                content={
-                    "error": "server_error",
-                    "detail": "伺服器內部錯誤",
-                    "request_id": request_id,
-                    "code": "INTERNAL_ERROR"
-                }
-            )
+            raise
+
+        process_time = time.time() - start_time
+        logger.info(
+            f"Request completed: {method} {url} - ID: {request_id} "
+            f"Status: {response.status_code} - Time: {process_time:.3f}s"
+        )
+        return response
 
 # 單例實例
 error_handler = ErrorHandler() 

@@ -4,6 +4,7 @@
 fixture)，避免走 LLM 生成流程；LLM 相關端點才透過 mock_llm 腳本化。
 """
 from datetime import datetime
+from uuid import UUID
 
 
 def _seed_diary(user_id, content, title, summary, valence=0.5, arousal=0.5):
@@ -75,7 +76,13 @@ def test_get_own_single_diary_returns_200(client, auth_header):
 
 
 def test_get_other_users_diary_returns_404_not_403(client, auth_header, other_auth_header):
-    """不是自己的日記一律回 404，不洩漏該日記是否存在 (與 /diaries/ 列表的 403 不同)。"""
+    """不是自己的日記一律回 404，不洩漏該日記是否存在 (與 /diaries/ 列表的 403 不同)。
+
+    同時鎖定錯誤回應的契約形狀 (middleware/exception_handlers.py 為唯一
+    exception->JSON 主人)：body 必須帶 code，且 request_id 是
+    middleware/error_handler.py 產生、寫進 request.state 後再被
+    exception_handlers 讀出的合法 UUID，不是 "unknown" 後備值。
+    """
     headers, _ = auth_header
     other_headers, other_user_id = other_auth_header
     other_diary_id = _seed_diary(other_user_id, "別人的內容", "別人的標題", "別人的摘要")
@@ -83,7 +90,10 @@ def test_get_other_users_diary_returns_404_not_403(client, auth_header, other_au
     resp = client.get(f"/diary/{other_diary_id}", headers=headers)
 
     assert resp.status_code == 404
-    assert resp.json()["code"] == "E4000"  # ErrorCode.DIARY_NOT_FOUND
+    body = resp.json()
+    assert body["code"] == "E4000"  # ErrorCode.DIARY_NOT_FOUND
+    assert body["error"] == "http_error"
+    assert UUID(body["request_id"])  # 合法 UUID，證明 error_handler 有成功注入
 
 
 # --- PUT /diary/{diary_id} --------------------------------------------------------
