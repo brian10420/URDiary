@@ -7,13 +7,15 @@ const UIManager = (function() {
         CHAT_FULL: 'chat_full',             // 狀態1: 全螢幕聊天
         CHAT_DIARY_SPLIT: 'chat_diary',     // 狀態2: 聊天+日記列表分割
         DIARY_DETAIL_SPLIT: 'diary_detail', // 狀態3: 日記列表+日記詳情分割
-        CHAT_DETAIL_SPLIT: 'chat_detail'    // 狀態4: 聊天+日記詳情分割
+        CHAT_DETAIL_SPLIT: 'chat_detail',   // 狀態4: 聊天+日記詳情分割
+        CALENDAR_FULL: 'calendar_full'      // 狀態5: 全螢幕行事曆 (不與聊天/日記分割)
     };
-    
+
     // 視圖基本類型
     const VIEW_TYPE = {
         CHAT: 'chat',
-        DIARY: 'diary'
+        DIARY: 'diary',
+        CALENDAR: 'calendar'
     };
     
     // DOM元素引用
@@ -22,6 +24,7 @@ const UIManager = (function() {
         viewContainers: document.querySelectorAll('.view-container'),
         chatContainer: document.querySelector('#chat-view'),
         diaryContainer: document.querySelector('#diary-view'),
+        calendarContainer: document.querySelector('#calendar-view'),
         spinner: document.querySelector('.loading-spinner'),
         errorContainer: document.querySelector('#error-container'),
         themeToggleBtn: document.querySelector('#theme-toggle'),
@@ -82,6 +85,13 @@ const UIManager = (function() {
         console.log(`處理導航點擊: ${view}, 當前狀態: ${currentViewState}`);
         
         try {
+            // 行事曆是獨立的全螢幕狀態，不與聊天/日記組合分割 ——
+            // 任何狀態點「行事曆」都直接進 CALENDAR_FULL，不必逐狀態列舉
+            if (view === VIEW_TYPE.CALENDAR) {
+                switchToState(VIEW_STATE.CALENDAR_FULL);
+                return;
+            }
+
             // 根據當前狀態和點擊的導航項目決定下一個狀態
             switch (currentViewState) {
                 case VIEW_STATE.CHAT_FULL:
@@ -113,7 +123,18 @@ const UIManager = (function() {
                         switchToState(VIEW_STATE.CHAT_DIARY_SPLIT);
                     }
                     break;
-                    
+
+                case VIEW_STATE.CALENDAR_FULL:
+                    // 狀態5: 全螢幕行事曆 (點擊聊天→狀態1，點擊日記→狀態2)
+                    // 註：離開行事曆一律回到「列表」型的狀態，不還原離開前開著的
+                    // 日記詳情 —— 行事曆是全螢幕狀態，switchToState 進來時已把詳情收起
+                    if (view === VIEW_TYPE.CHAT) {
+                        switchToState(VIEW_STATE.CHAT_FULL);
+                    } else if (view === VIEW_TYPE.DIARY) {
+                        switchToState(VIEW_STATE.CHAT_DIARY_SPLIT);
+                    }
+                    break;
+
                 default:
                     // 默認回到全螢幕聊天
                     switchToState(VIEW_STATE.CHAT_FULL);
@@ -139,7 +160,8 @@ const UIManager = (function() {
         // 獲取視圖容器
         const chatView = document.getElementById('chat-view');
         const diaryView = document.getElementById('diary-view');
-        
+        const calendarView = document.getElementById('calendar-view');
+
         // 獲取日記詳情元素
         const diaryDetail = document.querySelector('.diary-detail');
         const diaryList = document.querySelector('.diary-list');
@@ -218,7 +240,29 @@ const UIManager = (function() {
                 // 高亮聊天導航項
                 updateNavHighlight(VIEW_TYPE.CHAT);
                 break;
-                
+
+            case VIEW_STATE.CALENDAR_FULL:
+                // 狀態5: 全螢幕行事曆（不與聊天/日記分割）
+                if (calendarView) {
+                    calendarView.classList.add('active');
+                }
+
+                // 隱藏日記詳情（如果有）—— 從日記詳情切到行事曆時詳情面板必須
+                // 跟著收起，否則之後回到日記會殘留半開的版面
+                if (diaryDetail) {
+                    diaryDetail.classList.remove('active');
+                    setTimeout(() => {
+                        diaryDetail.style.display = 'none';
+                    }, 300);
+                }
+                if (diaryList) {
+                    diaryList.classList.remove('with-detail');
+                }
+
+                // 高亮行事曆導航項
+                updateNavHighlight(VIEW_TYPE.CALENDAR);
+                break;
+
             default:
                 // 默認回到全螢幕聊天
                 chatView.classList.add('active');
@@ -305,6 +349,7 @@ const UIManager = (function() {
         elements.viewContainers = document.querySelectorAll('.view-container');
         elements.chatContainer = document.querySelector('#chat-view');
         elements.diaryContainer = document.querySelector('#diary-view');
+        elements.calendarContainer = document.querySelector('#calendar-view');
         elements.spinner = document.querySelector('.loading-spinner');
         elements.errorContainer = document.querySelector('#error-container');
         elements.themeToggleBtn = document.querySelector('#theme-toggle');
@@ -320,7 +365,9 @@ const UIManager = (function() {
             const viewType = viewName.toLowerCase();
             
             // 基於當前狀態和目標視圖類型決定下一個狀態
-            if (viewType === VIEW_TYPE.CHAT) {
+            if (viewType === VIEW_TYPE.CALENDAR) {
+                switchToState(VIEW_STATE.CALENDAR_FULL);
+            } else if (viewType === VIEW_TYPE.CHAT) {
                 // 切換到聊天視圖
                 if (currentViewState === VIEW_STATE.DIARY_DETAIL_SPLIT) {
                     // 如果在日記詳情視圖，切換到聊天+日記詳情

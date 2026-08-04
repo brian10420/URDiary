@@ -768,6 +768,32 @@ const ApiService = (function() {
         return diaries;
     }
     
+    // --- 行事曆 -------------------------------------------------------------
+    // 全部走 fetchAPI（自動帶 Authorization / X-Language）。行事曆端點不需要
+    // LLM，所以刻意不加進 fetchAPI 的 LLM_ENDPOINT_PATTERNS —— 不必為了看月曆
+    // 就把 API 金鑰塞進請求標頭。事件的擁有者由後端從 token 導出，前端不送 user_id。
+
+    // 查詢區間內的 occurrences (start/end 為 "YYYY-MM-DD"，後端跨度上限 62 天)
+    async function getCalendarEvents(start, end) {
+        const path = `/calendar/events?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}`;
+        return await fetchAPI(path, { method: 'GET' });
+    }
+
+    // 新增事件 → { message, event }
+    async function createCalendarEvent(data) {
+        return await fetchAPI('/calendar/events', { method: 'POST', body: data });
+    }
+
+    // 更新事件 → { message, event }；未提供的欄位代表「維持原值」
+    async function updateCalendarEvent(eventId, data) {
+        return await fetchAPI(`/calendar/events/${encodeURIComponent(eventId)}`, { method: 'PUT', body: data });
+    }
+
+    // 刪除事件 → { message }
+    async function deleteCalendarEvent(eventId) {
+        return await fetchAPI(`/calendar/events/${encodeURIComponent(eventId)}`, { method: 'DELETE' });
+    }
+
     /**
      * 推導日記標題
      * 後端 diaries 表沒有 title 欄位，若不推導，每篇日記都會顯示「無標題日記」。
@@ -996,6 +1022,10 @@ const ApiService = (function() {
         checkIn: checkIn,
         endChat: endChat,
         getDiaries: getDiaries,
+        getCalendarEvents: getCalendarEvents,
+        createCalendarEvent: createCalendarEvent,
+        updateCalendarEvent: updateCalendarEvent,
+        deleteCalendarEvent: deleteCalendarEvent,
         getLocalData: getLocalData,
         saveLocalData: saveLocalData,
         setUserId: setUserId,

@@ -43,7 +43,10 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // 初始化日記模塊
     DiaryModule.init();
-    
+
+    // 初始化行事曆模塊（資料在首次切到行事曆視圖時才載入）
+    CalendarModule.init();
+
     // 初始化用戶選擇功能
     initUserSelection();
 
@@ -544,6 +547,13 @@ function initUserSelection() {
         if (typeof DiaryModule !== 'undefined') {
             if (DiaryModule.reset) DiaryModule.reset();
             if (DiaryModule.init) DiaryModule.init();
+        }
+
+        // 重置和重新初始化行事曆模塊 —— 不重置的話，切換帳號後仍會顯示
+        // 前一個帳號已載入的月曆事件（惰性首載旗標不會自己歸零）
+        if (typeof CalendarModule !== 'undefined') {
+            if (CalendarModule.reset) CalendarModule.reset();
+            if (CalendarModule.init) CalendarModule.init();
         }
     }
 
