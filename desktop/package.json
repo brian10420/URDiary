@@ -6,7 +6,7 @@
   "scripts": {
     "start": "electron . --no-sandbox",
     "start:win": "chcp 65001 && electron .",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "vitest run"
   },
   "keywords": [],
   "author": "",
@@ -14,7 +14,9 @@
   "type": "commonjs",
   "devDependencies": {
     "electron": "^35.0.0",
-    "electron-packager": "^17.1.2"
+    "electron-packager": "^17.1.2",
+    "jsdom": "^25.0.0",
+    "vitest": "^2.1.0"
   },
   "dependencies": {
     "@electron/remote": "^2.1.2"

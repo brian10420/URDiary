@@ -538,12 +538,7 @@ const UIManager = (function() {
             
             // 觸發主題變更事件
             document.dispatchEvent(new CustomEvent('themeChanged', { detail: { theme: newTheme } }));
-            
-            // 記錄日誌
-            if (window.Logger) {
-                Logger.info(`主題已切換為: ${newTheme}`);
-            }
-            
+
             // 重新應用CSS變量
             applyThemeCSSVariables(newTheme);
             
@@ -668,49 +663,40 @@ const UIManager = (function() {
         }
     }
     
-    // 顯示加載動畫
-    function showSpinner() {
-        if (elements.spinner) {
-            elements.spinner.style.display = 'flex';
-        }
-    }
-    
-    // 隱藏加載動畫
-    function hideSpinner() {
-        if (elements.spinner) {
-            elements.spinner.style.display = 'none';
-        }
-    }
-    
     // 顯示帶有訊息的加載動畫
     function showLoadingSpinner(message) {
         message = message || I18N.t('ui.loading');
         if (elements.spinner) {
             // 檢查是否有加載訊息元素
             let messageElement = elements.spinner.querySelector('.loading-message');
-            
+
             // 如果沒有訊息元素，則創建一個
             if (!messageElement) {
                 messageElement = document.createElement('div');
                 messageElement.className = 'loading-message';
                 elements.spinner.appendChild(messageElement);
             }
-            
+
             // 設置訊息內容
             messageElement.textContent = message;
-            
+
             // 顯示加載動畫
             elements.spinner.style.display = 'flex';
         }
     }
-    
+
     // 隱藏加載動畫
     function hideLoadingSpinner() {
         if (elements.spinner) {
             elements.spinner.style.display = 'none';
         }
     }
-    
+
+    // showSpinner/hideSpinner 為 showLoadingSpinner/hideLoadingSpinner 的別名
+    // （原本是四個各自獨立實作、行為其實相同的函式，合併後呼叫端零改動）
+    const showSpinner = showLoadingSpinner;
+    const hideSpinner = hideLoadingSpinner;
+
     // 顯示提示消息
     function showToast(message, duration = 3000) {
         // 移除現有的提示
@@ -799,12 +785,3 @@ const UIManager = (function() {
         hideError
     };
 })();
-
-// 確保在窗口加載時初始化
-if (document.readyState === 'complete') {
-    UIManager.init();
-} else {
-    window.addEventListener('load', function() {
-        UIManager.init();
-    });
-}

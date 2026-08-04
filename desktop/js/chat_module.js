@@ -7,8 +7,7 @@ const ChatModule = (function() {
     let userAvatar = null;
     let botAvatar = 'assets/icon.jpg';
     let isProcessing = false;
-    let currentModel = null; // 當前使用的模型
-    
+
     // DOM元素
     let chatContainer, chatMessagesContainer, userInputElement, 
         sendButtonElement, endChatBtnElement, clearChatBtnElement, modelSelectorElement;
@@ -224,9 +223,6 @@ const ChatModule = (function() {
     
     // 創建默認機器人頭像
     function createDefaultBotAvatar() {
-        // 檢查assets目錄是否存在
-        const assetsDir = 'assets';
-        
         // 這裡實際上無法直接檢查和創建文件（瀏覽器限制），
         // 但我們可以更換為預設的圖標字符
         botAvatar = null; // 使用null表示使用文字替代
@@ -478,123 +474,92 @@ const ChatModule = (function() {
         }
     }
     
-    // 添加用戶消息
-    function addUserMessage(content, scroll = true) {
-        // 創建消息元素
-        const messageElement = document.createElement('div');
-        messageElement.className = 'chat-message user-message';
-        
-        // 創建頭像和消息內容容器
-        const messageHTML = `
-            <div class="message-avatar">
+    // 組出訊息的頭像 HTML：user 一律有圖，system/thinking 依 botAvatar 是否存在決定
+    // 是否有圖（沒有就純文字 "AI" 替代）。addUserMessage/addSystemMessage/addThinkingMessage
+    // 三處原本各自重複這段樣板，合併到這裡。
+    function buildAvatarHtml(kind) {
+        if (kind === 'user') {
+            return `
                 <img src="${userAvatar}" alt="User" onerror="this.style.display='none';this.nextElementSibling.style.display='flex';">
                 <span class="avatar-text" style="display:none;">U</span>
-            </div>
-            <div class="message-content">
-                <div class="message-bubble">${formatMessageContent(content)}</div>
-                <div class="message-time">${formatTime(new Date())}</div>
-            </div>
-        `;
-        
-        // 設置消息HTML
-        messageElement.innerHTML = messageHTML;
-        
-        // 添加到聊天容器
-        chatMessagesContainer.appendChild(messageElement);
-        
-        // 添加到聊天歷史
-        chatHistory.push({
-            type: 'user',
-            content: content,
-            timestamp: new Date().toISOString()
-        });
-        
-        // 滾動到底部
-        if (scroll) {
-            scrollToBottom();
+            `;
         }
-    }
-    
-    // 添加系統消息
-    function addSystemMessage(content, scroll = true) {
-        // 創建消息元素
-        const messageElement = document.createElement('div');
-        messageElement.className = 'chat-message system-message';
-        
-        // 創建頭像和消息內容容器
-        const messageHTML = `
-            <div class="message-avatar">
-                ${botAvatar ? 
-                    `<img src="${botAvatar}" alt="AI" onerror="this.style.display='none';this.nextElementSibling.style.display='flex';">` : 
+        return `
+                ${botAvatar ?
+                    `<img src="${botAvatar}" alt="AI" onerror="this.style.display='none';this.nextElementSibling.style.display='flex';">` :
                     ''}
                 <span class="avatar-text" ${botAvatar ? 'style="display:none;"' : ''}>AI</span>
-            </div>
+            `;
+    }
+
+    // 組出一則訊息的完整 HTML（頭像 + 內容氣泡，選擇性附時間戳）
+    function buildMessageHtml(kind, bubbleInnerHtml, options = {}) {
+        const showTime = options.showTime !== false;
+        return `
+            <div class="message-avatar">${buildAvatarHtml(kind)}</div>
             <div class="message-content">
-                <div class="message-bubble">${formatMessageContent(content)}</div>
-                <div class="message-time">${formatTime(new Date())}</div>
+                <div class="message-bubble">${bubbleInnerHtml}</div>
+                ${showTime ? `<div class="message-time">${formatTime(new Date())}</div>` : ''}
             </div>
         `;
-        
-        // 設置消息HTML
-        messageElement.innerHTML = messageHTML;
-        
-        // 添加到聊天容器
+    }
+
+    // user/system 訊息共用邏輯：建立 DOM 節點、寫入歷史、選擇性捲動；
+    // 兩者差異只在頭像種類與 chatHistory 記錄的 type，故合併為同一實作
+    function appendChatMessage(type, content, scroll) {
+        const messageElement = document.createElement('div');
+        messageElement.className = type === 'user' ? 'chat-message user-message' : 'chat-message system-message';
+        messageElement.innerHTML = buildMessageHtml(type, formatMessageContent(content));
+
         chatMessagesContainer.appendChild(messageElement);
-        
-        // 添加到聊天歷史
+
         chatHistory.push({
-            type: 'system',
+            type: type,
             content: content,
             timestamp: new Date().toISOString()
         });
-        
-        // 滾動到底部
+
         if (scroll) {
             scrollToBottom();
         }
     }
-    
+
+    // 添加用戶消息
+    function addUserMessage(content, scroll = true) {
+        appendChatMessage('user', content, scroll);
+    }
+
+    // 添加系統消息
+    function addSystemMessage(content, scroll = true) {
+        appendChatMessage('system', content, scroll);
+    }
+
     // 添加"思考中"消息
     function addThinkingMessage() {
         // 創建唯一ID
         const messageId = 'thinking-message-' + Date.now();
-        
+
         // 創建消息元素
         const messageElement = document.createElement('div');
         messageElement.className = 'chat-message system-message thinking';
         messageElement.id = messageId;
-        
-        // 創建頭像和消息內容容器
-        const messageHTML = `
-            <div class="message-avatar">
-                ${botAvatar ? 
-                    `<img src="${botAvatar}" alt="AI" onerror="this.style.display='none';this.nextElementSibling.style.display='flex';">` : 
-                    ''}
-                <span class="avatar-text" ${botAvatar ? 'style="display:none;"' : ''}>AI</span>
-            </div>
-            <div class="message-content">
-                <div class="message-bubble">
+        messageElement.innerHTML = buildMessageHtml('system', `
                     <div class="thinking-dots">
                         <span></span>
                         <span></span>
                         <span></span>
                     </div>
-                </div>
-            </div>
-        `;
-        
-        // 設置消息HTML
-        messageElement.innerHTML = messageHTML;
-        
+                `, { showTime: false });
+
         // 添加到聊天容器
         chatMessagesContainer.appendChild(messageElement);
-        
+
         // 滾動到底部
         scrollToBottom();
-        
+
         return messageId;
     }
-    
+
     // 結束聊天
     async function endChat() {
         try {
@@ -676,14 +641,6 @@ const ChatModule = (function() {
             // 顯示錯誤信息
             let errorMessage = I18N.t('chat.diaryError', { error: error.message });
             addSystemMessage(errorMessage);
-            
-            // 如果可能，添加一條更詳細的錯誤消息
-            if (typeof ErrorHandler !== 'undefined' && typeof ErrorHandler.getDetailedErrorMessage === 'function') {
-                const detailedMessage = ErrorHandler.getDetailedErrorMessage(error, '結束聊天');
-                if (detailedMessage) {
-                    addSystemMessage(detailedMessage);
-                }
-            }
         } finally {
             // 恢復狀態
             isProcessing = false;
@@ -776,11 +733,6 @@ const ChatModule = (function() {
         chatMessagesContainer.scrollTop = chatMessagesContainer.scrollHeight;
     }
     
-    // 添加機器人消息 - 添加定義解決 addBotMessage 未定義問題
-    function addBotMessage(message) {
-        addSystemMessage(message);
-    }
-    
     // 重置聊天模塊
     function reset() {
         console.log('重置聊天模塊');
@@ -810,11 +762,8 @@ const ChatModule = (function() {
         reset: reset,
         sendMessage: sendMessage,
         clearHistory: clearChat,
-        endChat: endChat
+        endChat: endChat,
+        // 純函式，僅為 vitest 單元測試曝光，行為不變
+        diaryDayString: diaryDayString
     };
 })();
-
-// 當DOM加載完成後初始化
-document.addEventListener('DOMContentLoaded', function() {
-    ChatModule.init();
-});

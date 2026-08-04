@@ -7,23 +7,33 @@ document.addEventListener('DOMContentLoaded', function() {
     // 顯示啟動屏幕
     showSplashScreen();
     
+    // js/main.js 是各模塊初始化的唯一 owner：以下順序為固定順序，
+    // 各模塊檔尾原本的自啟動區塊（DOMContentLoaded 自行呼叫 init）已移除，
+    // 避免雙重初始化（事件監聽器綁兩次、autoLogin 跑兩次等）。
+
+    // 初始化錯誤日誌系統（唯一的未捕捉錯誤捕捉路徑，須盡早就緒）
+    if (typeof ErrorLogger !== 'undefined' && typeof ErrorLogger.init === 'function') {
+        ErrorLogger.init();
+    } else {
+        console.warn('ErrorLogger未定義');
+    }
+
     // 确保先初始化ApiService
     if (typeof ApiService !== 'undefined' && typeof ApiService.init === 'function') {
         ApiService.init();
     } else {
         console.error('ApiService未定義或init方法不可用');
     }
-    
+
+    // 初始化 LLM 設定模塊（供應商/模型/金鑰管理面板）
+    if (typeof SettingsModule !== 'undefined' && typeof SettingsModule.init === 'function') {
+        SettingsModule.init();
+    } else {
+        console.warn('SettingsModule未定義');
+    }
+
     // 初始化API認證
     initializeAuth();
-
-    // 初始化錯誤處理 - 檢查ErrorHandler是否存在且有init方法
-    if (typeof ErrorLogger !== 'undefined') {
-        // ErrorLogger已在外部初始化，不需要再次調用init
-        console.log('ErrorLogger已初始化');
-    } else {
-        console.warn('ErrorLogger未定義');
-    }
     
     // 初始化UI管理器
     UIManager.init();
@@ -96,34 +106,6 @@ document.addEventListener('DOMContentLoaded', function() {
     // 例如在日記詳情頁點「對話」時 switchView 會強制切回全螢幕聊天，
     // 蓋掉狀態機原本要顯示的「聊天+詳情」分割畫面。
 
-    // 為主題切換按鈕添加事件監聽器
-    const themeToggle = document.getElementById('theme-toggle');
-    if (themeToggle) {
-        themeToggle.addEventListener('click', function() {
-            UIManager.toggleTheme();
-        });
-    }
-    
-    // 為調試按鈕添加事件監聽器
-    const debugBtn = document.getElementById('debug-btn');
-    if (debugBtn) {
-        debugBtn.addEventListener('click', function() {
-            // 使用Electron API打開開發者工具
-            try {
-                if (window.require) {
-                    const electron = window.require('electron');
-                    if (electron.ipcRenderer) {
-                        electron.ipcRenderer.send('open-dev-tools');
-                    } else if (electron.remote) {
-                        electron.remote.getCurrentWindow().webContents.openDevTools();
-                    }
-                }
-            } catch (error) {
-                console.error('打開開發者工具時出錯:', error);
-            }
-        });
-    }
-    
     console.log('應用初始化完成');
 });
 
@@ -569,8 +551,7 @@ function initUserSelection() {
     function createNewUser(username, password) {
         console.log(`創建新用戶: ${username}`);
 
-        const baseUrl = (typeof CONFIG !== 'undefined' && CONFIG.API && CONFIG.API.BASE_URL) ?
-            CONFIG.API.BASE_URL : 'http://localhost:8001';
+        const baseUrl = CONFIG.getApiBaseUrl();
 
         fetch(`${baseUrl}/users/create`, {
             method: 'POST',
@@ -610,18 +591,3 @@ function initUserSelection() {
         });
     }
 }
-
-// 全局錯誤處理
-window.onerror = function(message, source, lineno, colno, error) {
-    console.error('全局錯誤:', message, error);
-    
-    if (typeof ErrorLogger !== 'undefined') {
-        ErrorLogger.captureError(error || new Error(message), {
-            source: source,
-            lineno: lineno,
-            colno: colno
-        });
-    }
-    
-    return false; // 允許默認處理
-}; 

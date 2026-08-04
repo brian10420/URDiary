@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog, shell, safeStorage } = require('electron');
+const { app, BrowserWindow, ipcMain, safeStorage } = require('electron');
 const path = require('path');
 const fs = require('fs');
 // 引入@electron/remote模塊
@@ -11,37 +11,15 @@ let mainWindow;
 const userDataPath = app.getPath('userData');
 const configPath = path.join(userDataPath, 'config.json');
 
-// 確保資源目錄存在
+// 確保資源目錄存在（僅 logs——assets 下的圖檔隨版控存在，不再由主行程補建空檔）
 function ensureResourceDirectories() {
   try {
-    const directories = [
-      path.join(__dirname, 'assets'),
-      path.join(__dirname, 'assets/images'),
-      path.join(__dirname, 'logs')
-    ];
-    
-    // 檢查並創建每個目錄
-    directories.forEach(dir => {
-      if (!fs.existsSync(dir)) {
-        console.log(`創建目錄: ${dir}`);
-        fs.mkdirSync(dir, { recursive: true });
-      }
-    });
-    
-    // 確保默認頭像圖片存在
-    const defaultAvatarPath = path.join(__dirname, 'assets/images/default-avatar.png');
-    if (!fs.existsSync(defaultAvatarPath)) {
-      // 這裡可以復制一個默認圖片或創建一個空白圖片
-      console.log(`默認頭像不存在，創建空文件: ${defaultAvatarPath}`);
-      fs.writeFileSync(defaultAvatarPath, '');
+    const logsDir = path.join(__dirname, 'logs');
+    if (!fs.existsSync(logsDir)) {
+      console.log(`創建目錄: ${logsDir}`);
+      fs.mkdirSync(logsDir, { recursive: true });
     }
-    
-    const robotAvatarPath = path.join(__dirname, 'assets/icon.jpg');
-    if (!fs.existsSync(robotAvatarPath)) {
-      console.log(`機器人頭像不存在，創建空文件: ${robotAvatarPath}`);
-      fs.writeFileSync(robotAvatarPath, '');
-    }
-    
+
     console.log('資源目錄檢查完成');
     return true;
   } catch (error) {
@@ -98,7 +76,7 @@ function createWindow() {
     minWidth: 800,
     minHeight: 600,
     title: 'URDiary',
-    icon: path.join(__dirname, 'assets/icon.png'),
+    icon: path.join(__dirname, 'assets/icon.jpg'),
     webPreferences: {
       nodeIntegration: true,
       contextIsolation: false,
@@ -193,11 +171,6 @@ app.on('window-all-closed', function () {
   }
 });
 
-// 在主進程中添加自定義功能
-ipcMain.on('show-error-dialog', (event, message) => {
-  dialog.showErrorBox('錯誤', message);
-});
-
 // 保存錯誤日誌到文件
 ipcMain.on('save-error-log', (event, errorInfo) => {
   try {
@@ -239,106 +212,6 @@ ipcMain.on('save-error-log', (event, errorInfo) => {
   } catch (e) {
     console.error('保存錯誤日誌失敗:', e);
   }
-});
-
-// 顯示信息對話框
-ipcMain.handle('show-message-dialog', async (event, options) => {
-  return await dialog.showMessageBox(options);
-});
-
-// 選擇文件對話框
-ipcMain.handle('show-open-dialog', async (event, options) => {
-  return await dialog.showOpenDialog(options);
-});
-
-// 保存文件對話框
-ipcMain.handle('show-save-dialog', async (event, options) => {
-  return await dialog.showSaveDialog(options);
-});
-
-// 獲取配置
-ipcMain.handle('get-config', async () => {
-  return loadConfig();
-});
-
-// 保存配置
-ipcMain.on('save-config', (event, config) => {
-  saveConfig(config);
-});
-
-// 打開外部連結
-ipcMain.on('open-external-link', (event, url) => {
-  shell.openExternal(url);
-});
-
-// 檢查後端服務是否可用
-ipcMain.handle('check-backend-service', async () => {
-  try {
-    const response = await fetch('http://localhost:8001');
-    return response.ok;
-  } catch (error) {
-    console.warn('後端服務不可用:', error.message);
-    return false;
-  }
-});
-
-// 獲取錯誤日誌文件列表
-ipcMain.handle('get-error-log-files', async () => {
-  try {
-    const errorLogsDir = path.join(userDataPath, 'error_logs');
-    
-    // 確保目錄存在
-    if (!fs.existsSync(errorLogsDir)) {
-      fs.mkdirSync(errorLogsDir, { recursive: true });
-      return [];
-    }
-    
-    // 讀取目錄中的所有日誌文件
-    const files = fs.readdirSync(errorLogsDir)
-      .filter(file => file.endsWith('.log'))
-      .map(file => {
-        const filePath = path.join(errorLogsDir, file);
-        const stats = fs.statSync(filePath);
-        return {
-          name: file,
-          path: filePath,
-          size: stats.size,
-          mtime: stats.mtime
-        };
-      })
-      .sort((a, b) => b.mtime - a.mtime); // 按修改時間降序排序
-    
-    return files;
-  } catch (error) {
-    console.error('獲取錯誤日誌文件列表失敗:', error);
-    return [];
-  }
-});
-
-// 讀取錯誤日誌文件內容
-ipcMain.handle('read-error-log-file', async (event, filePath) => {
-  try {
-    if (fs.existsSync(filePath)) {
-      return fs.readFileSync(filePath, 'utf8');
-    }
-    return '文件不存在';
-  } catch (error) {
-    console.error('讀取錯誤日誌文件失敗:', error);
-    return `讀取錯誤: ${error.message}`;
-  }
-});
-
-// 打開錯誤日誌所在目錄
-ipcMain.on('open-error-logs-directory', (event) => {
-  const errorLogsDir = path.join(userDataPath, 'error_logs');
-  
-  // 確保目錄存在
-  if (!fs.existsSync(errorLogsDir)) {
-    fs.mkdirSync(errorLogsDir, { recursive: true });
-  }
-  
-  // 打開目錄
-  shell.openPath(errorLogsDir);
 });
 
 // ---- LLM 供應商金鑰安全儲存 ----
@@ -390,14 +263,6 @@ ipcMain.handle('secure-store-get', async () => {
     return {};
   }
   return readProviderKeys();
-});
-
-// 刪除某個供應商的金鑰
-ipcMain.handle('secure-store-delete', async (event, provider) => {
-  const keys = readProviderKeys();
-  delete keys[provider];
-  writeProviderKeys(keys);
-  return true;
 });
 
 // 打開開發者工具

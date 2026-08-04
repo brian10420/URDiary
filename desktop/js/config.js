@@ -10,13 +10,7 @@ const CONFIG = (function() {
             BASE_URL: 'http://localhost:8001',
             TIMEOUT: 30000,  // 默認超時時間（毫秒）
             AUTO_RETRY: true, // 自動重試失敗的請求
-            MAX_RETRIES: 2,  // 最大重試次數
-            ENDPOINTS: {
-                CHAT: '/chat/enhanced/',
-                END_CHAT: '/chat/end/',
-                DIARIES: '/diaries/',
-                NOTES: '/interaction-notes'
-            }
+            MAX_RETRIES: 2  // 最大重試次數
         },
         // LLM 供應商定義（API Key 存於 Electron safeStorage，不在此處也不進 localStorage）
         // 模型 ID 會隨時間變動，DEFAULT_MODEL 只是未自訂時的預設值，設定面板可改；
@@ -34,20 +28,9 @@ const CONFIG = (function() {
             local:  { LABEL: '本地自架 (OpenAI 相容)', DEFAULT_MODEL: '',                NEEDS_BASE_URL: true,
                       SUGGESTED_MODELS: [] }
         },
-        // 舊版短鍵模型設定（已由 PROVIDERS + 設定面板取代，保留避免舊引用炸掉）
-        MODELS: {
-            DEFAULT: 'grok3',
-            AVAILABLE: ['grok2', 'grok3'],
-            AUTO_SWITCH: true,
-            DISPLAY_NAMES: {
-                'grok2': 'Grok 2',
-                'grok3': 'Grok 3'
-            }
-        },
         // 本地存儲配置
         STORAGE: {
             CHAT_HISTORY: 'urdiary_chat_history',
-            DIARIES: 'urdiary_diaries',
             USER_AVATAR: 'urdiary_user_avatar',
             THEME: 'urdiary_theme'
         },
@@ -62,7 +45,6 @@ const CONFIG = (function() {
             LOG_LEVEL: 'info',
             MAX_LOGS: 1000,
             MAX_CHAT_HISTORY: 100,
-            USE_MOCK_DATA: false,
             AUTO_SWITCH_TO_DIARY_AFTER_END: true,
             THEME: {
                 LIGHT: 'light',
@@ -79,12 +61,8 @@ const CONFIG = (function() {
         // 調試選項
         DEBUG: {
             ENABLED: true,       // 是否啟用調試模式
-            LOG_API_CALLS: true, // 是否記錄API調用
-            MOCK_API: false      // 唯一的模擬數據開發者旗標：API 失敗時回傳模擬數據（僅供除錯，預設關閉）
-        },
-        // 已停用：錯誤必須如實回報，不得以模擬數據掩蓋（除錯請用 DEBUG.MOCK_API）
-        USE_MOCK_DATA: false,
-        AUTO_SWITCH_TO_MOCK: false
+            LOG_API_CALLS: true  // 是否記錄API調用
+        }
     };
     
     // 加載配置
@@ -107,8 +85,6 @@ const CONFIG = (function() {
     if (loadedConfig.API) Object.assign(config.API, loadedConfig.API);
     if (loadedConfig.AUTH) Object.assign(config.AUTH, loadedConfig.AUTH);
     if (loadedConfig.DEBUG) Object.assign(config.DEBUG, loadedConfig.DEBUG);
-    if (loadedConfig.MODELS) Object.assign(config.MODELS, loadedConfig.MODELS);
-    // USE_MOCK_DATA 不再從儲存合併：避免被舊設定悄悄重新啟用，除錯一律走 DEBUG.MOCK_API
     
     // 保存配置 (鍵名須與上方載入的 urDiary_config_v3 一致，否則存了讀不回)
     function saveConfig() {
@@ -126,7 +102,6 @@ const CONFIG = (function() {
         if (newConfig.API) Object.assign(config.API, newConfig.API);
         if (newConfig.AUTH) Object.assign(config.AUTH, newConfig.AUTH);
         if (newConfig.DEBUG) Object.assign(config.DEBUG, newConfig.DEBUG);
-        if (newConfig.MODELS) Object.assign(config.MODELS, newConfig.MODELS);
 
         // 保存到localStorage
         saveConfig();
@@ -140,15 +115,22 @@ const CONFIG = (function() {
         saveConfig();
         return config;
     }
-    
+
+    // 取得 API 基礎 URL（config.API.BASE_URL 讀不到時的唯一後備值來源；
+    // 呼叫端一律用這個函式取代各自重複的字面量後備寫法）
+    function getApiBaseUrl() {
+        return (config.API && config.API.BASE_URL) ? config.API.BASE_URL : 'http://localhost:8001';
+    }
+
     // 導出配置API
     return {
         // 配置屬性
         ...config,
-        
+
         // 配置方法
         updateConfig,
-        resetConfig
+        resetConfig,
+        getApiBaseUrl
     };
 })();
 

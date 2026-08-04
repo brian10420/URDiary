@@ -12,7 +12,8 @@ const ErrorLogger = (function() {
     function init() {
         console.log('錯誤日誌系統初始化');
         
-        // 捕獲全局錯誤
+        // 捕獲全局錯誤 —— 與下方 unhandledrejection 監聽，是本應用唯一的未捕捉錯誤捕捉路徑
+        // (ErrorHandler 的重複 window 'error' 監聽、main.js 的 window.onerror 已移除)
         window.addEventListener('error', function(event) {
             const errorInfo = captureError(event.error || new Error(event.message), {
                 type: 'global',
@@ -20,43 +21,31 @@ const ErrorLogger = (function() {
                 lineno: event.lineno,
                 colno: event.colno
             });
-            
+
             displayErrorInConsole(errorInfo);
             saveErrorToFile(errorInfo);
+            notifyUser(errorInfo);
         });
-        
+
         // 捕獲未處理的Promise錯誤
         window.addEventListener('unhandledrejection', function(event) {
             const errorInfo = captureError(event.reason || new Error('Promise拒絕'), {
                 type: 'promise'
             });
-            
+
             displayErrorInConsole(errorInfo);
             saveErrorToFile(errorInfo);
+            notifyUser(errorInfo);
         });
-        
-        // 重寫console.error以捕獲所有控制台錯誤
-        const originalConsoleError = console.error;
-        console.error = function() {
-            // 調用原始方法
-            originalConsoleError.apply(console, arguments);
-            
-            // 捕獲錯誤信息
-            const errorMessage = Array.from(arguments).map(arg => 
-                typeof arg === 'object' ? JSON.stringify(arg) : String(arg)
-            ).join(' ');
-            
-            const errorInfo = {
-                message: errorMessage,
-                type: 'console',
-                timestamp: new Date().toISOString(),
-                stack: new Error().stack
-            };
-            
-            addErrorLog(errorInfo);
-        };
-        
+
         console.log('錯誤日誌系統已啟動');
+    }
+
+    // 未捕捉錯誤的使用者提示（UIManager 可用時顯示一行 toast；ErrorHandler 移除後這是唯一的提示路徑）
+    function notifyUser(errorInfo) {
+        if (typeof UIManager !== 'undefined' && UIManager.showToast) {
+            UIManager.showToast(errorInfo.message);
+        }
     }
     
     // 捕獲錯誤
@@ -117,9 +106,10 @@ const ErrorLogger = (function() {
     // 保存錯誤到文件
     function saveErrorToFile(errorInfo) {
         try {
-            // 使用Electron IPC發送錯誤到主進程進行保存
-            if (window.electron && window.electron.ipcRenderer) {
-                window.electron.ipcRenderer.send('save-error-log', errorInfo);
+            // 使用Electron IPC發送錯誤到主進程進行保存（feature-guard 比照 secure_store.js：
+            // window.electron 從未存在過，正確的沙箱外露出口是 window.require('electron')）
+            if (window.require) {
+                window.require('electron').ipcRenderer.send('save-error-log', errorInfo);
             }
         } catch (e) {
             console.error('無法保存錯誤到文件:', e);
@@ -145,8 +135,3 @@ const ErrorLogger = (function() {
         clearErrors
     };
 })();
-
-// 初始化錯誤日誌系統
-document.addEventListener('DOMContentLoaded', function() {
-    ErrorLogger.init();
-}); 
