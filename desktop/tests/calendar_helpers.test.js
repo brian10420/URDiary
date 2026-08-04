@@ -173,4 +173,117 @@ describe('CalendarModule 純函式', () => {
             expect(CalendarModule.computeReminderTimes(bad, now)).toEqual([]);
         });
     });
+
+    /**
+     * 提醒快照要不要更新的判斷。這是「翻月之後提醒就再也不會響」那個 bug 的核心：
+     * 月曆索引只服務目前顯示的月份，只有當本次載入的範圍真的涵蓋今天時，
+     * 才能拿它去更新提醒快照；不涵蓋時必須保留舊快照，而不是清成空的。
+     */
+    describe('rangeCoversDate(startIso, endIso, dateIso)', () => {
+        it('今天落在範圍內（含頭含尾）→ true', () => {
+            expect(CalendarModule.rangeCoversDate('2026-07-27', '2026-09-06', '2026-08-05')).toBe(true);
+            expect(CalendarModule.rangeCoversDate('2026-07-27', '2026-09-06', '2026-07-27')).toBe(true); // 起日
+            expect(CalendarModule.rangeCoversDate('2026-07-27', '2026-09-06', '2026-09-06')).toBe(true); // 迄日
+        });
+
+        it('今天落在範圍外 → false（翻到下個月的實際區間）', () => {
+            // 2026-09 的 42 格是 08-31 ~ 10-11，不含 08-05
+            expect(CalendarModule.rangeCoversDate('2026-08-31', '2026-10-11', '2026-08-05')).toBe(false);
+            expect(CalendarModule.rangeCoversDate('2026-07-27', '2026-09-06', '2026-09-07')).toBe(false);
+            expect(CalendarModule.rangeCoversDate('2026-07-27', '2026-09-06', '2026-07-26')).toBe(false);
+        });
+
+        it('跨年比較正確（字串比較不能在年界翻車）', () => {
+            expect(CalendarModule.rangeCoversDate('2025-12-29', '2026-02-08', '2026-01-01')).toBe(true);
+            expect(CalendarModule.rangeCoversDate('2025-12-29', '2026-02-08', '2025-12-28')).toBe(false);
+            expect(CalendarModule.rangeCoversDate('2025-12-01', '2026-01-11', '2026-01-12')).toBe(false);
+        });
+
+        it('非字串輸入一律 false，不丟例外', () => {
+            expect(CalendarModule.rangeCoversDate(null, '2026-09-06', '2026-08-05')).toBe(false);
+            expect(CalendarModule.rangeCoversDate('2026-07-27', undefined, '2026-08-05')).toBe(false);
+            expect(CalendarModule.rangeCoversDate('2026-07-27', '2026-09-06', null)).toBe(false);
+        });
+    });
+
+    /**
+     * PUT 的欄位差異計算。後端 update_event 會濾掉值為 None 的欄位，
+     * 因此「只送有改動的欄位」與「哪些欄位是使用者想清空、但後端做不到」
+     * 這兩件事都得在前端算對 —— 前者算錯會動到重複事件的起始日，
+     * 後者算錯會讓使用者以為改動生效了。
+     */
+    describe('buildUpdatePayload(next, initial)', () => {
+        const initial = {
+            title: '看牙醫',
+            note: '記得帶健保卡',
+            category: 'health',
+            event_date: '2026-08-05',
+            event_time: '14:00',
+            recurrence: 'none',
+            recurrence_until: null,
+            reminder_minutes: 30
+        };
+
+        function next(overrides) {
+            return Object.assign({}, initial, overrides);
+        }
+
+        it('沒有任何改動 → changed 與 cleared 都是空的', () => {
+            const r = CalendarModule.buildUpdatePayload(next({}), initial);
+            expect(r.changed).toEqual({});
+            expect(r.cleared).toEqual([]);
+        });
+
+        it('只改標題 → 只送 title（不連帶送 event_date，否則會移動重複事件的起始日）', () => {
+            const r = CalendarModule.buildUpdatePayload(next({ title: '看牙醫（改期）' }), initial);
+            expect(r.changed).toEqual({ title: '看牙醫（改期）' });
+            expect(r.cleared).toEqual([]);
+        });
+
+        it('同時改多個欄位 → 全部送出', () => {
+            const r = CalendarModule.buildUpdatePayload(
+                next({ title: '回診', category: 'family', reminder_minutes: 60 }), initial);
+            expect(r.changed).toEqual({ title: '回診', category: 'family', reminder_minutes: 60 });
+        });
+
+        it('把有時間的事件改成全天 → event_time 進 cleared，不進 changed', () => {
+            const r = CalendarModule.buildUpdatePayload(next({ event_time: null }), initial);
+            expect(r.cleared).toEqual(['event_time']);
+            expect(r.changed).toEqual({});
+        });
+
+        it('清空備註與提醒 → 兩者都進 cleared', () => {
+            const r = CalendarModule.buildUpdatePayload(next({ note: null, reminder_minutes: null }), initial);
+            expect(r.cleared.sort()).toEqual(['note', 'reminder_minutes']);
+            expect(r.changed).toEqual({});
+        });
+
+        it('混合「改一個 + 清一個」→ changed 與 cleared 同時有值（合併提示的觸發條件）', () => {
+            const r = CalendarModule.buildUpdatePayload(
+                next({ title: '改過的標題', event_time: null }), initial);
+            expect(r.changed).toEqual({ title: '改過的標題' });
+            expect(r.cleared).toEqual(['event_time']);
+        });
+
+        it('reminder_minutes 改成 0 是有效改動，不是「清空」', () => {
+            const r = CalendarModule.buildUpdatePayload(next({ reminder_minutes: 0 }), initial);
+            expect(r.changed).toEqual({ reminder_minutes: 0 });
+            expect(r.cleared).toEqual([]);
+        });
+
+        it('把 null 的欄位設成有值 → 進 changed（recurrence_until 由無到有）', () => {
+            const r = CalendarModule.buildUpdatePayload(
+                next({ recurrence: 'weekly', recurrence_until: '2026-12-31' }), initial);
+            expect(r.changed).toEqual({ recurrence: 'weekly', recurrence_until: '2026-12-31' });
+            expect(r.cleared).toEqual([]);
+        });
+
+        it('initial 缺漏時（GET 沒回 event_date/recurrence_until）不誤判成清空', () => {
+            const partial = { title: '看牙醫', event_time: '14:00' };
+            const r = CalendarModule.buildUpdatePayload(
+                { title: '看牙醫', event_time: '14:00', recurrence_until: null }, partial);
+            expect(r.changed).toEqual({});
+            expect(r.cleared).toEqual([]);
+        });
+    });
 });

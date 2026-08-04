@@ -19,6 +19,7 @@ const CalendarModule = (function() {
     const MAX_DOTS_PER_CELL = 3;        // 一格最多幾個色點，其餘顯示 +N
     const REMINDER_TICK_MS = 60000;     // 提醒輪詢間隔
     const REMINDED_PREFIX = 'urdiary_reminded_';
+    const TOAST_LONG_MS = 6000;         // 合併了「無法清空」說明的 toast，字多、需要久一點
 
     // --- 純函式（僅為 vitest 單元測試曝光，行為不變）-------------------------
 
@@ -119,7 +120,10 @@ const CalendarModule = (function() {
     let viewYear = 0;                       // 目前顯示的年
     let viewMonth = 0;                      // 目前顯示的月（0-based）
     let selectedDate = null;                // 目前選取日 "YYYY-MM-DD"
-    let occurrencesByDate = new Map();      // "YYYY-MM-DD" → occurrence[]
+    let occurrencesByDate = new Map();      // "YYYY-MM-DD" → occurrence[]（**只**服務目前顯示的月份）
+    let todaysOccurrences = [];             // 「今天」的 occurrence 快照，專供提醒用
+    let todaysSnapshotDate = null;          // 上面那份快照對應的日期，null = 尚未取得
+    let isRefreshingToday = false;          // refreshTodaysOccurrences 的併發防護
     let rawById = {};                       // event_id → 後端回傳的完整事件（POST/PUT 的回應）
     let editingEventId = null;              // 表單目前編輯中的事件 id（新增時為 null）
     let formInitial = null;                 // 開表單當下的欄位值，PUT 時用來只送有改動的欄位
@@ -173,6 +177,10 @@ const CalendarModule = (function() {
         if (reminderTimer === null && typeof setInterval === 'function') {
             reminderTimer = setInterval(scheduleReminders, REMINDER_TICK_MS);
         }
+
+        // 先把今天的事件抓進提醒快照：提醒不該以「使用者有沒有打開行事曆」為前提。
+        // 此時若還沒登入完成會直接跳過，由每分鐘的 tick 自我修復。
+        refreshTodaysOccurrences();
 
         // 若使用者在初始化時已經在行事曆視圖（例如重新 init），立即載入
         if (typeof UIManager !== 'undefined' && UIManager.getCurrentState &&
@@ -232,11 +240,12 @@ const CalendarModule = (function() {
         }
     }
 
-    // 首次（或重置後首次）進入行事曆視圖
+    // 進入行事曆視圖（每次都會呼叫，不是只有第一次）
     function handleEnterCalendarView() {
         ensureNotificationPermission();
+        // loadedOnce 由 loadMonth 的**成功**路徑設定：首載失敗（例如後端還沒起來）
+        // 時它維持 false，使用者下次再切進來就會自動重試，不會卡在空月曆
         if (!loadedOnce && !isLoading) {
-            loadedOnce = true;
             loadMonth();
         }
     }
@@ -251,12 +260,17 @@ const CalendarModule = (function() {
         try {
             const response = await ApiService.getCalendarEvents(range.startIso, range.endIso);
             indexOccurrences(response && response.occurrences);
+            // 這次載入的範圍涵蓋今天的話，順手更新提醒用的快照（免一次額外請求）
+            applyTodaysSnapshot(range.startIso, range.endIso);
+            loadedOnce = true;
             renderGrid();
             renderDayPanel(selectedDate);
             scheduleReminders();
         } catch (error) {
             console.error('載入行事曆事件失敗:', error);
-            // 載入失敗時不留舊月份的殘影，避免使用者誤以為新月份沒有事件
+            // 載入失敗時不留舊月份的殘影，避免使用者誤以為新月份沒有事件。
+            // 注意：**不動 todaysOccurrences** —— 提醒是背景功能，不該被某次
+            // 翻月的載入失敗連坐。loadedOnce 也維持原值，讓下次進視圖能重試。
             occurrencesByDate = new Map();
             renderGrid();
             renderDayPanel(selectedDate);
@@ -283,6 +297,75 @@ const CalendarModule = (function() {
         });
 
         occurrencesByDate.forEach(list => list.sort(compareOccurrences));
+    }
+
+    /**
+     * ★ 純函式：[startIso, endIso]（含兩端）是否涵蓋 dateIso
+     *
+     * 三個值都是 "YYYY-MM-DD"，這種格式的字典序等同日期序，直接比字串即可。
+     */
+    function rangeCoversDate(startIso, endIso, dateIso) {
+        if (typeof startIso !== 'string' || typeof endIso !== 'string' || typeof dateIso !== 'string') {
+            return false;
+        }
+        return startIso <= dateIso && dateIso <= endIso;
+    }
+
+    /**
+     * 若本次載入的範圍涵蓋今天，就從月份索引把「今天」的 occurrence 抄進快照
+     *
+     * 範圍不含今天時**保留**既有快照 —— 月曆索引 occurrencesByDate 只服務目前
+     * 顯示的月份，翻到別的月份就不再有今天的資料；提醒若直接讀那份索引，
+     * 使用者一翻月提醒就整個工作階段失效。
+     */
+    function applyTodaysSnapshot(startIso, endIso) {
+        const todayIso = toIsoDate(new Date());
+        if (!rangeCoversDate(startIso, endIso, todayIso)) return false;
+
+        todaysOccurrences = occurrencesByDate.get(todayIso) || [];
+        todaysSnapshotDate = todayIso;
+        return true;
+    }
+
+    /**
+     * 單獨取「今天」的 occurrence（start=end=today 的輕量請求）
+     *
+     * 三種情況需要它，都與使用者有沒有打開行事曆視圖無關：
+     * 1. 使用者整個工作階段都沒進過行事曆 —— 惰性首載不會發生，但提醒該照常運作
+     * 2. App 開著跨過午夜 —— 快照日期不再是「今天」
+     * 3. 目前顯示的月份不涵蓋今天（翻月後又做了 CRUD）
+     *
+     * 靜默失敗：提醒是背景功能，不該為了它跳錯誤提示打斷使用者。
+     */
+    async function refreshTodaysOccurrences(force) {
+        const todayIso = toIsoDate(new Date());
+        if (!force && todaysSnapshotDate === todayIso) return;
+        if (isRefreshingToday) return;
+        // 尚未登入就別打 API：401 會讓 fetchAPI 發出 auth-expired、彈出登入框
+        if (typeof ApiService === 'undefined' ||
+            typeof ApiService.isAuthenticated !== 'function' || !ApiService.isAuthenticated()) {
+            return;
+        }
+
+        isRefreshingToday = true;
+        let updated = false;
+        try {
+            const response = await ApiService.getCalendarEvents(todayIso, todayIso);
+            const list = (response && Array.isArray(response.occurrences)) ? response.occurrences : [];
+            todaysOccurrences = list.slice().sort(compareOccurrences);
+            todaysSnapshotDate = todayIso;
+            updated = true;
+            console.log(`已更新今日提醒快照: ${todaysOccurrences.length} 筆`);
+        } catch (error) {
+            console.warn('更新今日提醒快照失敗（下一個 tick 會再試）:', error);
+        } finally {
+            isRefreshingToday = false;
+        }
+
+        // 拿到新資料就立刻檢查一次，不必再等下一個 60 秒 tick。
+        // 放在 finally 之後、旗標已歸零時呼叫；此時 todaysSnapshotDate 已是今天，
+        // scheduleReminders 內的 refreshTodaysOccurrences 會直接短路返回，不會遞迴。
+        if (updated) scheduleReminders();
     }
 
     // 全天（time 為 null）排最前，其餘依時間；同時間再依標題，讓順序穩定
@@ -636,14 +719,20 @@ const CalendarModule = (function() {
 
         try {
             let response;
+            // 後端 PUT 以「欄位為 None = 維持原值」為語意，無法把欄位清成空
+            // （schemas.CalendarEventUpdate 的文件已載明此限制）。這個提示**必須**
+            // 和「已儲存」合併成同一則 toast：showToast 會先移除既有 toast，
+            // 分兩次呼叫的話，本機後端十幾毫秒就回來，第二則會在第一則還沒
+            // 顯示出來前就把它刪掉，使用者只看到「已儲存」而誤以為清空生效了。
+            let clearNotice = null;
+
             if (editingEventId !== null && editingEventId !== undefined) {
                 const diff = buildUpdatePayload(payload, formInitial);
                 if (diff.cleared.length > 0) {
-                    // 後端 PUT 以「欄位為 None = 維持原值」為語意，無法把欄位清成空
-                    // （schemas.CalendarEventUpdate 的文件已載明此限制），如實告知使用者
-                    UIManager.showToast(I18N.t('calendar.clearUnsupported'));
+                    clearNotice = I18N.t('calendar.clearUnsupported');
                 }
                 if (Object.keys(diff.changed).length === 0) {
+                    if (clearNotice) UIManager.showToast(clearNotice, TOAST_LONG_MS);
                     closeEventForm();
                     return;
                 }
@@ -656,9 +745,16 @@ const CalendarModule = (function() {
                 rawById[response.event.event_id] = response.event;
             }
 
-            UIManager.showToast(I18N.t('calendar.saved'));
+            if (clearNotice) {
+                UIManager.showToast(I18N.t('calendar.savedWithNotice', { notice: clearNotice }), TOAST_LONG_MS);
+            } else {
+                UIManager.showToast(I18N.t('calendar.saved'));
+            }
             closeEventForm();
             await loadMonth();
+            // CRUD 可能動到今天的事件；若這次 loadMonth 的範圍不含今天（正在看別的月份），
+            // 上面的 applyTodaysSnapshot 不會更新快照，這裡強制補一次
+            await refreshTodaysOccurrences(true);
         } catch (error) {
             console.error('儲存行事曆事件失敗:', error);
             showFormError(I18N.t('calendar.saveFailed'));
@@ -713,6 +809,8 @@ const CalendarModule = (function() {
             UIManager.showToast(I18N.t('calendar.deleted'));
             closeEventForm();
             await loadMonth();
+            // 同 saveEvent：刪掉的可能是今天的事件，快照要跟著更新
+            await refreshTodaysOccurrences(true);
         } catch (error) {
             console.error('刪除行事曆事件失敗:', error);
             UIManager.showToast(I18N.t('calendar.deleteFailed'));
@@ -750,9 +848,13 @@ const CalendarModule = (function() {
 
         if (Notification.permission !== 'granted') return;
 
-        const now = new Date();
-        const todaysOccurrences = occurrencesByDate.get(toIsoDate(now)) || [];
+        // 快照過期（跨日）或還沒取得（沒進過行事曆視圖）時補一次；非同步，
+        // 取回來會自己再呼叫一次 scheduleReminders，這裡先用手上的資料繼續
+        refreshTodaysOccurrences();
 
+        const now = new Date();
+
+        // 讀專用快照，不讀 occurrencesByDate —— 後者只有目前顯示的月份，翻月即失效
         computeReminderTimes(todaysOccurrences, now).forEach(item => {
             if (now.getTime() < item.fireAt.getTime()) return;   // 還沒到提醒時刻
 
@@ -819,6 +921,9 @@ const CalendarModule = (function() {
         console.log('重置行事曆模塊');
 
         occurrencesByDate = new Map();
+        // 提醒快照也要清 —— 換帳號後不能再拿前一個帳號的事件發通知
+        todaysOccurrences = [];
+        todaysSnapshotDate = null;
         rawById = {};
         selectedDate = toIsoDate(new Date());
         loadedOnce = false;
@@ -839,9 +944,14 @@ const CalendarModule = (function() {
         loadMonth: loadMonth,
         openEventForm: openEventForm,
         scheduleReminders: scheduleReminders,
-        // 以下三個是純函式，僅為 vitest 單元測試曝光，行為不變
+        refreshTodaysOccurrences: refreshTodaysOccurrences,
+        // 提醒快照的現況，供 CDP 驗證與除錯（回複本，外部改不到內部狀態）
+        getReminderSnapshot: () => ({ date: todaysSnapshotDate, occurrences: todaysOccurrences.slice() }),
+        // 以下五個是純函式，僅為 vitest 單元測試曝光，行為不變
         toIsoDate: toIsoDate,
         monthGridRange: monthGridRange,
-        computeReminderTimes: computeReminderTimes
+        computeReminderTimes: computeReminderTimes,
+        rangeCoversDate: rangeCoversDate,
+        buildUpdatePayload: buildUpdatePayload
     };
 })();
