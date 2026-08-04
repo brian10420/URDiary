@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { describe, it, expect, beforeAll } from 'vitest';
+import { describe, it, expect, beforeAll, beforeEach } from 'vitest';
 import { loadCoreScripts, loadScript } from './helpers/load.js';
 
 /**
@@ -293,6 +293,64 @@ describe('CalendarModule 純函式', () => {
         it('編輯事件時，reminder_minutes = 0 要原樣保留（不是「未設提醒」）', () => {
             const occ = occurrence({ reminder_minutes: 0 });
             expect(CalendarModule.buildFormValues(occ, '').reminder_minutes).toBe(0);
+        });
+    });
+
+    /**
+     * 全天事件 + 提醒 的防呆：全天事件沒有時間點，computeReminderTimes 永遠不會
+     * 對它算出 fireAt（見上面「全天事件（time = null）排除」），提醒選了也不會
+     * 觸發。syncAllDayState 要在勾選全天時連帶停用提醒選單，readForm 再把「停用
+     * 中的提醒選單」一律讀成未設提醒——兩者合起來才能保證不會把一個使用者以為
+     * 設了、實際上永遠不會響的提醒悄悄存進資料庫，且完全無回饋。
+     *
+     * syncAllDayState / readForm 都會直接讀寫 DOM（不是純函式），但對缺失元素
+     * 安全、不丟例外，因此在這裡用最小的假 DOM fixture 驅動即可，不需要
+     * CalendarModule.init() 那一整套（grid/day panel/按鈕等）。
+     */
+    describe('syncAllDayState() / readForm()：全天事件停用提醒', () => {
+        beforeEach(() => {
+            document.body.innerHTML = `
+                <input type="checkbox" id="event-all-day">
+                <input type="time" id="event-time" value="09:00">
+                <select id="event-reminder">
+                    <option value="">不提醒</option>
+                    <option value="30" selected>30 分鐘前</option>
+                </select>
+                <input id="event-title" value="事件">
+                <input id="event-date" value="2026-08-10">
+                <input id="event-category" value="other">
+                <input id="event-note" value="">
+                <input id="event-recurrence" value="none">
+                <input id="event-until" value="">
+            `;
+        });
+
+        it('勾選全天：時間欄位與提醒欄位一起停用', () => {
+            document.getElementById('event-all-day').checked = true;
+            CalendarModule.syncAllDayState();
+            expect(document.getElementById('event-time').disabled).toBe(true);
+            expect(document.getElementById('event-reminder').disabled).toBe(true);
+        });
+
+        it('取消全天：時間欄位與提醒欄位一起恢復可用', () => {
+            const allDay = document.getElementById('event-all-day');
+            allDay.checked = true;
+            CalendarModule.syncAllDayState();
+            allDay.checked = false;
+            CalendarModule.syncAllDayState();
+            expect(document.getElementById('event-time').disabled).toBe(false);
+            expect(document.getElementById('event-reminder').disabled).toBe(false);
+        });
+
+        it('提醒選單停用中：即使還殘留先前選的值，readForm 讀出 reminder_minutes = null', () => {
+            document.getElementById('event-all-day').checked = true;
+            CalendarModule.syncAllDayState();
+            expect(document.getElementById('event-reminder').value).toBe('30'); // 值還在，只是被停用
+            expect(CalendarModule.readForm().reminder_minutes).toBeNull();
+        });
+
+        it('未勾全天（提醒選單為一般可用狀態）：readForm 照常讀出選取的分鐘數', () => {
+            expect(CalendarModule.readForm().reminder_minutes).toBe(30);
         });
     });
 });

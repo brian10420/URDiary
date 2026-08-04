@@ -78,8 +78,8 @@ MESSAGES = {
         "en": "Calendar event not found",
     },
     "invalid_date_range": {
-        "zh-TW": "查詢區間無效：結束日期不可早於起始日期，且跨度不可超過 62 天",
-        "en": "Invalid date range: the end date must not be before the start date, and the span cannot exceed 62 days",
+        "zh-TW": "查詢區間無效：結束日期不可早於起始日期，且跨度不可超過 63 天",
+        "en": "Invalid date range: the end date must not be before the start date, and the span cannot exceed 63 days",
     },
     "event_created": {
         "zh-TW": "行事曆事件已新增",

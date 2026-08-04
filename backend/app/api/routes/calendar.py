@@ -21,7 +21,10 @@ from utils.messages import msg
 
 router = APIRouter()
 
-# GET /calendar/events 查詢區間上限 (天)；超過視為濫用/前端誤用，直接拒絕
+# GET /calendar/events 查詢區間上限；超過視為濫用/前端誤用，直接拒絕。
+# 比較對象是 (end-start).days（差值，不含起點自身那一天），所以能通過的
+# 最大「含頭含尾」跨度是 MAX_RANGE_DAYS + 1 = 63 天，訊息文字 (invalid_date_range)
+# 用的正是這個含頭含尾的 63，兩邊需保持一致。
 MAX_RANGE_DAYS = 62
 
 # PUT 的「不可清空」欄位：即使 CalendarEventUpdate 為了支援 exclude_unset
@@ -72,7 +75,7 @@ def create_event(payload: CalendarEventCreate,
 
 @router.get("/events", response_model=Dict[str, Any],
            summary="查詢行事曆事件 (展開重複規則)",
-           description="查詢 [start, end] 區間內的行事曆事件 occurrences，跨度上限 62 天")
+           description="查詢 [start, end] 區間內的行事曆事件 occurrences，跨度上限 63 天")
 def list_events(start: date, end: date,
                 current_user: User = Depends(get_current_user),
                 lang: str = Depends(get_language)):
@@ -112,7 +115,7 @@ def update_event(event_id: int, payload: CalendarEventUpdate,
     用 `model_dump(exclude_unset=True)` 取得請求裡「實際出現過」的欄位
     (含明確的 null)，藉此區分「未提供 (維持原值)」與「明確清空 (寫
     NULL)」——這是本端點的特化寫法 (PATCH 語意的標準作法)，不影響 diary
-    PUT 沿用的 `.dict()` + `is not None` 慣例。
+    PUT 沿用的 `.model_dump()` + `is not None` 慣例。
     `crud.update_calendar_event` 本來就是 kwargs setattr sink，傳入 None
     會直接寫 NULL，不需要跟著改。
     """

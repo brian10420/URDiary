@@ -55,6 +55,13 @@ document.addEventListener('DOMContentLoaded', function() {
     window.addEventListener('urdiary:auth-expired', function() {
         console.warn('認證已失效，開啟登入對話框');
 
+        // 重置行事曆模塊，避免下一位登入者仍沿用前一個帳號的月曆索引與
+        // 提醒快照（提醒快照含使用者資料，換帳號流程沒有回到前一步驟時
+        // 必須清掉，比照 initUserSelection 切換帳號時的既有作法）
+        if (typeof CalendarModule !== 'undefined') {
+            CalendarModule.reset();
+        }
+
         const splashScreen = document.getElementById('splash-screen');
         if (splashScreen) {
             splashScreen.style.display = 'flex';

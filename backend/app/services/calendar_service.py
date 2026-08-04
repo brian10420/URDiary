@@ -90,7 +90,9 @@ def expand_occurrences(events, range_start, range_end, cap=MAX_OCCURRENCES) -> l
     - yearly：每年同月日；2/29 只在閏年出現
     - recurrence_until 含當日 (<= until 的 occurrence 才收)
     - event_date 之前不展開 (首次發生日即 event_date 本身)
-    - 輸出依 (date, time is None 排前, time) 排序；總數達 cap 即停
+    - 輸出先展開再整體排序，最後才截斷到 cap 筆（不是展開途中數量一到 cap
+      就提前停止）；依 (date, time is None 排前, time) 排序後再截斷，結果具
+      決定性，且保留的必為全域最早的 occurrences，不受各事件展開順序影響
 
     每筆 occurrence dict：
     {event_id, title, note, category, date:"YYYY-MM-DD", time (None 或

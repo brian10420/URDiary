@@ -672,12 +672,17 @@ const CalendarModule = (function() {
         editingEventId = null;
     }
 
-    // 全天時停用時間欄位（後端以 event_time = null 表示全天）
+    // 全天時停用時間欄位與提醒欄位（後端以 event_time = null 表示全天；全天事件
+    // 沒有時間點可供 computeReminderTimes 換算 fireAt，提醒選了也永遠不會觸發——
+    // 停用選單並讓 readForm() 把停用中的選單視為未設提醒，避免悄悄存進一個使用者
+    // 以為設了、實際上永遠不會響的提醒）
     function syncAllDayState() {
         const allDayInput = document.getElementById('event-all-day');
         const timeInput = document.getElementById('event-time');
+        const reminderInput = document.getElementById('event-reminder');
         if (!allDayInput || !timeInput) return;
         timeInput.disabled = allDayInput.checked;
+        if (reminderInput) reminderInput.disabled = allDayInput.checked;
     }
 
     // 不重複時隱藏「重複到」欄位與「編輯套用整個系列」提示；兩者顯示條件相同
@@ -698,7 +703,10 @@ const CalendarModule = (function() {
         const allDay = document.getElementById('event-all-day');
         const recurrence = getValue('event-recurrence') || 'none';
         const until = getValue('event-until');
-        const reminder = getValue('event-reminder');
+        const reminderInput = document.getElementById('event-reminder');
+        // 全天時提醒欄位被 syncAllDayState 停用；停用中的選單即使還殘留先前選的
+        // 值，也一律視為未設提醒，不能把它當成使用者這次的選擇送出。
+        const reminder = (reminderInput && reminderInput.disabled) ? '' : getValue('event-reminder');
         const note = (getValue('event-note') || '').trim();
 
         return {
@@ -907,6 +915,11 @@ const CalendarModule = (function() {
         monthGridRange: monthGridRange,
         computeReminderTimes: computeReminderTimes,
         rangeCoversDate: rangeCoversDate,
-        buildFormValues: buildFormValues
+        buildFormValues: buildFormValues,
+        // 同樣僅為 vitest 曝光：會讀/寫 DOM，但對缺失元素安全（不丟例外），
+        // 用來回歸測試「全天事件連帶停用提醒欄位」與「停用中的提醒選單一律
+        // 視為未設提醒」這條規則
+        syncAllDayState: syncAllDayState,
+        readForm: readForm
     };
 })();

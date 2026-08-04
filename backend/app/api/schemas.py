@@ -6,7 +6,7 @@ calendar.py 一個 router 使用，仍放在這裡集中管理 request schema。
 """
 from datetime import date
 from typing import Literal, Optional
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 class UserDiaryCreate(BaseModel):
@@ -41,12 +41,21 @@ class CalendarEventCreate(BaseModel):
     recurrence_until: Optional[date] = None
     reminder_minutes: Optional[int] = Field(default=None, ge=0, le=10080)
 
+    @model_validator(mode="after")
+    def _check_recurrence_until_not_before_event_date(self):
+        """recurrence_until 早於 event_date 的事件，expand_occurrences 永遠展開不出
+        任何 occurrence（起點就在查詢範圍能到達之前）——等於悄悄建立一筆使用者永遠
+        看不到的事件。event_date 是必填欄位一定有值，只需檢查 recurrence_until。"""
+        if self.recurrence_until is not None and self.recurrence_until < self.event_date:
+            raise ValueError("recurrence_until must not be before event_date")
+        return self
+
 
 class CalendarEventUpdate(BaseModel):
     """PUT /calendar/events/{event_id} 的請求 body：全部欄位 Optional。
 
     路由層用 `model_dump(exclude_unset=True)` (本端點的特化寫法，PATCH
-    語意的標準作法；不影響 diary PUT 沿用的 `.dict()` + `is not None`
+    語意的標準作法；不影響 diary PUT 沿用的 `.model_dump()` + `is not None`
     慣例) 取得請求裡「實際出現過」的欄位，藉此區分兩種情況：
     - 欄位完全不出現在 body 裡 → 維持原值。
     - 欄位出現且值為 null → 依欄位分兩類：
@@ -68,3 +77,18 @@ class CalendarEventUpdate(BaseModel):
     recurrence: Optional[_CalendarRecurrence] = None
     recurrence_until: Optional[date] = None
     reminder_minutes: Optional[int] = Field(default=None, ge=0, le=10080)
+
+    @model_validator(mode="after")
+    def _check_recurrence_until_not_before_event_date(self):
+        """partial update：event_date / recurrence_until 都可能整個不出現在這次請求裡
+        (exclude_unset 語意)，只有當兩者都真的出現在請求裡、且皆非 null 時，才有足夠
+        資訊比較新舊順序，因此只在這個交集情況下驗證。已知限制：只送其中一個欄位
+        (例如只改 recurrence_until、event_date 沿用資料庫既有值) 時這裡驗證不到——
+        要擋下那種情況得先查出另一欄的現值，不在 schema 驗證的職責範圍內，刻意不做，
+        維持簡單。"""
+        fields_set = self.model_fields_set
+        if ('event_date' in fields_set and 'recurrence_until' in fields_set
+                and self.event_date is not None and self.recurrence_until is not None
+                and self.recurrence_until < self.event_date):
+            raise ValueError("recurrence_until must not be before event_date")
+        return self

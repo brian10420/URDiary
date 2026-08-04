@@ -82,6 +82,26 @@ def test_create_event_empty_title_returns_422(client, auth_header):
     assert resp.status_code == 422
 
 
+# --- recurrence_until 不可早於 event_date（否則展開不出任何 occurrence，事件永遠不可見）---
+
+def test_create_event_recurrence_until_before_event_date_returns_422(client, auth_header):
+    headers, _ = auth_header
+
+    resp = _create_event(client, headers, event_date="2026-08-10",
+                         recurrence="weekly", recurrence_until="2026-08-01")
+
+    assert resp.status_code == 422
+
+
+def test_create_event_recurrence_until_equal_event_date_succeeds(client, auth_header):
+    headers, _ = auth_header
+
+    resp = _create_event(client, headers, event_date="2026-08-10",
+                         recurrence="weekly", recurrence_until="2026-08-10")
+
+    assert resp.status_code in (200, 201)
+
+
 # --- GET /calendar/events ------------------------------------------------------
 
 def test_get_events_expands_weekly_three_times_and_none_once_in_three_week_window(
@@ -152,6 +172,23 @@ def test_put_own_event_updates_fields_and_bumps_updated_at(client, auth_header):
     assert updated["title"] == "新標題"
     assert updated["category"] == "work"
     assert updated["updated_at"] >= original_updated_at
+
+
+def test_put_recurrence_until_before_event_date_when_both_present_returns_422(client, auth_header):
+    """schema 的交叉驗證只在 event_date 與 recurrence_until 兩者都真的出現在
+    這次請求裡才生效（partial update 的已知限制，見 schemas.py 的註解）——
+    這裡兩者都送，驗證應該生效並拒絕。"""
+    headers, _ = auth_header
+    create_resp = _create_event(client, headers, event_date="2026-08-10", recurrence="weekly")
+    event_id = create_resp.json()["event"]["event_id"]
+
+    resp = client.put(
+        f"/calendar/events/{event_id}",
+        json={"event_date": "2026-08-10", "recurrence_until": "2026-08-01"},
+        headers=headers,
+    )
+
+    assert resp.status_code == 422
 
 
 def test_put_empty_body_returns_400(client, auth_header):

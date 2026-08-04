@@ -181,7 +181,7 @@ def update_diary(diary_id: int, diary_update: DiaryUpdate, db: Session = Depends
         )
 
     # 執行更新
-    update_data = {k: v for k, v in diary_update.dict().items() if v is not None}
+    update_data = {k: v for k, v in diary_update.model_dump().items() if v is not None}
 
     if not update_data:
         api_logger.warning(f"未提供任何更新數據: diary_id={diary_id}")
