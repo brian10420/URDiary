@@ -65,7 +65,7 @@ API docs are at http://localhost:8001/docs while the backend is running.
 
 ### Calendar
 
-Open the **Calendar** tab to jot down events: give each one a category (work, study, health, family, anniversary, or other), an optional repeat (daily/weekly/monthly/yearly), and a reminder. Your companion knows what's on it — the same way it remembers your diary entries, it'll naturally bring up today's or upcoming plans during a daily check-in or a chat, and ask how something went afterward. It only comes up when it fits the conversation, and at most once — it's context your companion already has, not a nagging assistant.
+Open the **Calendar** tab to jot down events: give each one a category (work, study, health, family, anniversary, or other), an optional repeat (daily/weekly/monthly/yearly), and a reminder (fires only while URDiary is running). Your companion knows what's on it — the same way it remembers your diary entries, it'll naturally bring up today's or upcoming plans during a daily check-in or a chat, and ask how something went afterward. It only comes up when it fits the conversation, and at most once — it's context your companion already has, not a nagging assistant.
 
 ### Optional: semantic memory search
 
@@ -172,7 +172,7 @@ npm start
 
 ### 行事曆
 
-打開**行事曆**分頁記事：選個分類（工作／學業／健康／家人／紀念日／其他）、可以設定重複（每天／每週／每月／每年）、加個提醒。陪伴者也看得到這些——就像它記得你的日記一樣，問候或聊天聊到相關話題時，會自然提起今天或接下來的安排，事後也會問一句後續怎麼樣。只在順著話題時才提，而且最多一次——這是它本來就知道的事，不是多一個催你辦事的助理。
+打開**行事曆**分頁記事：選個分類（工作／學業／健康／家人／紀念日／其他）、可以設定重複（每天／每週／每月／每年）、加個提醒（限 App 仍在執行時才會觸發）。陪伴者也看得到這些——就像它記得你的日記一樣，問候或聊天聊到相關話題時，會自然提起今天或接下來的安排，事後也會問一句後續怎麼樣。只在順著話題時才提，而且最多一次——這是它本來就知道的事，不是多一個催你辦事的助理。
 
 ### 選配：語意記憶檢索
 
