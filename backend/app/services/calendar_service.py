@@ -19,6 +19,7 @@ services.memory_retrieval 的守讀→關→處理模式。
 """
 import calendar as _calendar
 import logging
+import re
 from collections import namedtuple
 from datetime import date, timedelta
 
@@ -51,6 +52,12 @@ _WEEKDAY_ZH = ("週一", "週二", "週三", "週四", "週五", "週六", "週�
 _WEEKDAY_EN = ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
 _STEP_DAYS = {"daily": 1, "weekly": 7}
 _NOTE_PREVIEW_CHARS = 40
+# note 是最長 2000 字的自由文字 (Text 欄位)，換行是正常輸入、不是攻擊。
+# 一個 occurrence 在 build_calendar_context 的輸出裡必須恆為一個物理行——
+# 否則換行會撐爆 CONTEXT_MAX_LINES 的行數上限，且續行沒有 `- [MM/DD…]`
+# 前綴，模型會把它誤讀成獨立、不明來源的文字混進 prompt。涵蓋 \n / \r\n /
+# \r，並把連續多個換行 (例如空行) 合併成一個空白，不留下多餘的雙空白。
+_NOTE_NEWLINE_RE = re.compile(r"[\r\n]+")
 
 
 def snapshot_event(ev) -> EventSnapshot:
@@ -255,6 +262,8 @@ def _format_line(occ: dict, today: date, lang: str) -> str:
     """單行格式：`- [MM/DD(週幾) HH:MM]《title》(分類標籤) note前40字`
 
     全天事件的時間位置寫「整天」/"all day"；昨天的事件行尾加註記。
+    note 一律先去除換行才截斷 (見 _NOTE_NEWLINE_RE)，確保回傳值恆為一個
+    物理行——即使換行剛好落在第 40 字邊界上也不會有殘留的裸換行字元。
     """
     occ_date = date.fromisoformat(occ["date"])
     md = occ_date.strftime("%m/%d")
@@ -273,7 +282,10 @@ def _format_line(occ: dict, today: date, lang: str) -> str:
     line = f"- [{md}({weekday_label}) {time_label}]《{occ['title']}》({category_label})"
 
     if occ["note"]:
-        line += f" {occ['note'][:_NOTE_PREVIEW_CHARS]}"
+        # 先消毒換行、再截斷：即使原始 note 前 40 字剛好在換行處被切斷，
+        # 輸出也保證不含任何裸 \n/\r (單一 occurrence 恆為單一物理行)。
+        note_preview = _NOTE_NEWLINE_RE.sub(" ", occ["note"])[:_NOTE_PREVIEW_CHARS]
+        line += f" {note_preview}"
 
     if occ_date == today - timedelta(days=1):
         line += "（昨天）" if lang == "zh-TW" else " (yesterday)"

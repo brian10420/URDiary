@@ -273,6 +273,51 @@ def test_build_calendar_context_truncates_note_to_40_chars(auth_header):
     assert "OVERFLOW-SHOULD-NOT-APPEAR" not in result
 
 
+def test_build_calendar_context_multiline_note_renders_as_single_line(auth_header):
+    """note 內的換行 (\\n) 不可讓一個 occurrence 撐成多個物理行——否則續行
+    會缺少 `- [MM/DD...]` 前綴，且會撐爆 CONTEXT_MAX_LINES 的行數契約
+    (下一個任務直接把這段文字嵌進 prompt，格式必須守住)。"""
+    _, user_id = auth_header
+    today = date(2026, 8, 4)
+    _seed_event(user_id, title="看牙醫", event_date=today,
+                note="帶健保卡\n順便領藥")
+
+    result = build_calendar_context(user_id, today, "zh-TW")
+
+    lines = result.split("\n")
+    assert len(lines) == 1  # 一筆事件恆為一個物理行
+    assert "帶健保卡 順便領藥" in lines[0]  # 換行以空白接續兩段
+
+
+def test_build_calendar_context_crlf_note_also_renders_as_single_line(auth_header):
+    """\\r\\n (CRLF) 換行同樣要處理，不可留下裸 \\r。"""
+    _, user_id = auth_header
+    today = date(2026, 8, 4)
+    _seed_event(user_id, title="打掃", event_date=today,
+                note="拖地\r\n倒垃圾")
+
+    result = build_calendar_context(user_id, today, "zh-TW")
+
+    lines = result.split("\n")
+    assert len(lines) == 1
+    assert "拖地 倒垃圾" in lines[0]
+    assert "\r" not in result
+
+
+def test_build_calendar_context_multiline_notes_do_not_exceed_max_lines(auth_header):
+    """就算每一筆事件的 note 都帶換行，總行數仍不可超過 CONTEXT_MAX_LINES
+    (換行消毒必須發生在「數行數」的截斷邏輯之前，不能讓換行偷渡出額外行)。"""
+    _, user_id = auth_header
+    today = date(2026, 8, 4)
+    for i in range(CONTEXT_MAX_LINES + 5):
+        _seed_event(user_id, title=f"事件{i}", event_date=today,
+                    event_time=f"{i:02d}:00", note=f"第一行{i}\n第二行{i}")
+
+    result = build_calendar_context(user_id, today, "zh-TW")
+
+    assert len(result.split("\n")) == CONTEXT_MAX_LINES
+
+
 def test_build_calendar_context_normalizes_lang_en_us_variant(auth_header):
     _, user_id = auth_header
     today = date(2026, 8, 4)
