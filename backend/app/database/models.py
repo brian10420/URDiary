@@ -1,6 +1,6 @@
 # app/database/models.py
 from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy import Column, Integer, String, DateTime, Text, Float, ForeignKey, LargeBinary
+from sqlalchemy import Column, Integer, String, DateTime, Date, Text, Float, ForeignKey, LargeBinary
 from sqlalchemy.orm import relationship
 from datetime import datetime
 
@@ -89,3 +89,20 @@ class InteractionNote(Base):
 
 # 在 User 類中添加
 User.interaction_notes = relationship("InteractionNote", back_populates="user")
+
+class CalendarEvent(Base):
+    """行事曆事件。未來若加欄位必須 nullable (ensure_schema 限制)。"""
+    __tablename__ = "calendar_events"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    title = Column(String(120), nullable=False)
+    note = Column(Text, nullable=True)
+    category = Column(String(20), nullable=False, default="other")   # work/study/health/family/anniversary/other
+    event_date = Column(Date, nullable=False, index=True)  # 真實本地牆上日期 (非 5am 日記日，見 calendar_service 說明)
+    event_time = Column(String(5), nullable=True)          # "HH:MM"；NULL = 全天
+    recurrence = Column(String(10), nullable=False, default="none")  # none/daily/weekly/monthly/yearly
+    recurrence_until = Column(Date, nullable=True)         # 含當日
+    reminder_minutes = Column(Integer, nullable=True)      # NULL = 不提醒 (前端 in-app 通知用)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
