@@ -158,3 +158,32 @@
     color: var(--primary-color);
     margin-right: 8px;
 }
+
+/* 錯誤提示區域（原本在 .app-container 之外沒有任何樣式，落在 100vh 容器與
+   body overflow:hidden 之下，UIManager.showError 永遠不可見） */
+#error-container {
+    position: fixed;
+    top: 20%;
+    left: 50%;
+    transform: translateX(-50%);
+    max-width: 560px;
+    width: calc(100% - 2 * var(--spacing-lg));
+    z-index: 1100;
+    background: var(--card-background, #fff);
+    border: 1px solid var(--danger-color, #e74c3c);
+    border-radius: var(--border-radius-md);
+    box-shadow: var(--shadow-lg, 0 4px 20px rgba(0,0,0,.2));
+    padding: var(--spacing-md);
+}
+
+#error-container .error-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+#error-container .error-detail pre {
+    max-height: 200px;
+    overflow: auto;
+    white-space: pre-wrap;
+}
