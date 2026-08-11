@@ -102,9 +102,15 @@ function llmCalls(calls) {
     return calls.filter(call => call.url.includes('/users/me/llm'));
 }
 
+let toastSpy;
+
 beforeEach(() => {
     localStorage.clear();
     document.body.innerHTML = SETTINGS_DIALOG_HTML;
+    // settings_module 的 toast() 會用 UIManager.showToast（沒有就 console.log）；
+    // 「有沒有回報成功」正是這次要驗的事，所以要看得到這一層
+    toastSpy = vi.fn();
+    window.UIManager = { showToast: toastSpy };
 });
 
 describe('SecureStore.isAvailable()', () => {
@@ -251,6 +257,88 @@ describe('設定面板（瀏覽器模式）', () => {
         const error = document.getElementById('settings-error');
         expect(error.textContent.length).toBeGreaterThan(0);
         expect(error.style.display).not.toBe('none');
+        expect(toastSpy).not.toHaveBeenCalled();
+    });
+
+    it('用著伺服器共用金鑰的人改了供應商卻沒填金鑰：一樣要擋，不能回報成功', async () => {
+        // 家庭情境的多數案例：user_credential 是 null（用伺服器預設）。
+        // 這裡放行的話，偏好只會寫進 localStorage（瀏覽器模式根本不送
+        // X-LLM-* 標頭，等於毫無作用），畫面卻彈出「已切換到 Claude」。
+        const calls = installFetch([
+            ['GET /users/me/llm', SERVER_DEFAULT_STATUS],
+            ['PUT /users/me/llm', STORED_STATUS],
+        ]);
+        SettingsModule.init();
+        SettingsModule.openDialog();
+        await flush();
+
+        document.getElementById('settings-provider').value = 'claude';
+        document.getElementById('settings-api-key').value = '';
+        document.getElementById('settings-save').click();
+        await flush();
+
+        expect(llmCalls(calls).some(call => call.method === 'PUT')).toBe(false);
+        expect(toastSpy, '什麼都沒送出去，不可以回報「已切換」').not.toHaveBeenCalled();
+        const error = document.getElementById('settings-error');
+        expect(error.textContent.length).toBeGreaterThan(0);
+        expect(error.style.display).not.toBe('none');
+        // 面板保持開啟：使用者的變更沒有被套用，不能讓人以為結束了
+        expect(document.getElementById('settings-dialog').style.display).toBe('block');
+    });
+
+    it('什麼都還沒設定的人改了供應商卻沒填金鑰：一樣要擋', async () => {
+        const calls = installFetch([
+            ['GET /users/me/llm', EMPTY_STATUS],
+            ['PUT /users/me/llm', STORED_STATUS],
+        ]);
+        SettingsModule.init();
+        SettingsModule.openDialog();
+        await flush();
+
+        document.getElementById('settings-provider').value = 'claude';
+        document.getElementById('settings-api-key').value = '';
+        document.getElementById('settings-save').click();
+        await flush();
+
+        expect(llmCalls(calls).some(call => call.method === 'PUT')).toBe(false);
+        expect(toastSpy).not.toHaveBeenCalled();
+        expect(document.getElementById('settings-error').textContent.length).toBeGreaterThan(0);
+    });
+
+    it('沒動到 AI 設定時照常儲存（不要過度攔截：改語言/進階記憶不需要金鑰）', async () => {
+        const calls = installFetch([
+            ['GET /users/me/llm', SERVER_DEFAULT_STATUS],
+            ['PUT /users/me/llm', STORED_STATUS],
+        ]);
+        SettingsModule.init();
+        SettingsModule.openDialog();
+        await flush();
+
+        // 只改「進階記憶」開關，AI 欄位維持面板打開時的樣子
+        document.getElementById('settings-semantic-memory').checked = true;
+        document.getElementById('settings-api-key').value = '';
+        document.getElementById('settings-save').click();
+        await flush();
+
+        expect(llmCalls(calls).some(call => call.method === 'PUT')).toBe(false);
+        expect(document.getElementById('settings-error').textContent).toBe('');
+        expect(localStorage.getItem('urDiary_semantic_memory')).toBe('1');
+        expect(toastSpy).toHaveBeenCalled();
+        expect(document.getElementById('settings-dialog').style.display).toBe('none');
+    });
+
+    it('用伺服器共用金鑰時，面板顯示的供應商就是實際生效的那一個', async () => {
+        // 沒有這個同步，表單會顯示 localStorage 的預設 grok，於是「什麼都沒改」
+        // 的儲存會被誤判成改了設定（過度攔截），或反過來讓使用者以為自己在用
+        // 一個其實沒生效的供應商。
+        localStorage.setItem('urDiary_active_provider', 'claude');
+        installFetch([['GET /users/me/llm', SERVER_DEFAULT_STATUS]]);
+        SettingsModule.init();
+        SettingsModule.openDialog();
+        await flush();
+
+        expect(document.getElementById('settings-provider').value).toBe('grok');
+        expect(document.getElementById('settings-model').value).toBe('grok-4.3');
     });
 
     it('查詢狀態失敗時如實顯示，不會整個面板掛掉', async () => {

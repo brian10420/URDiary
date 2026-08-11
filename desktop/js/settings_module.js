@@ -27,6 +27,8 @@ const SettingsModule = (function() {
     // null = 還沒查 / 查失敗，物件 = GET /users/me/llm 的回應（只含遮罩）
     let serverLlmStatus = null;
     let serverLlmStatusFailed = false;
+    // 打開面板當下表單上的 AI 設定；「什麼都還沒設定」時拿它當「有沒有被改動」的基準
+    let llmSelectionAtOpen = null;
 
     /**
      * 這台裝置能不能用本機安全儲存放金鑰。
@@ -178,23 +180,52 @@ const SettingsModule = (function() {
         return def && def.NEEDS_BASE_URL ? I18N.t('settings.keyLocalHint') : I18N.t('settings.keyNone');
     }
 
+    /**
+     * 這個帳號的請求「現在實際會用到」的那組設定（GET /users/me/llm 的頂層）。
+     *
+     * 可能來自自己的憑證、伺服器共用金鑰或 .env 後備——對設定面板而言三者
+     * 是同一件事：都是「已經生效、而且沒有金鑰就改不動」的一組值。
+     * 什麼都還沒設定（或狀態查不到）時回 null。
+     */
+    function effectiveLlmSelection() {
+        if (!serverLlmStatus || !serverLlmStatus.configured) return null;
+        return {
+            provider: serverLlmStatus.provider || '',
+            model: serverLlmStatus.model || '',
+            baseUrl: serverLlmStatus.base_url || ''
+        };
+    }
+
+    /** 目前表單上的 AI 設定（base_url 只在該供應商真的需要時才算數） */
+    function currentLlmSelection() {
+        const provider = providerSelect ? providerSelect.value : '';
+        const def = getProviders()[provider] || {};
+        return {
+            provider: provider,
+            model: modelInput ? modelInput.value.trim() : '',
+            baseUrl: (def.NEEDS_BASE_URL && baseUrlInput) ? baseUrlInput.value.trim() : ''
+        };
+    }
+
     /** 查詢伺服器上的金鑰狀態（只會拿到遮罩，永遠拿不到明文） */
     async function refreshServerLlmStatus() {
         serverLlmStatus = null;
         serverLlmStatusFailed = false;
         try {
             serverLlmStatus = await ApiService.getLlmCredential();
-            // 面板顯示的供應商/模型以伺服器上那組為準——瀏覽器不送 X-LLM-*
-            // 標頭，localStorage 裡的偏好在這個環境不會影響任何請求，拿它
-            // 當顯示值只會誤導。
-            const credential = serverLlmStatus && serverLlmStatus.user_credential;
-            if (credential && providerSelect && getProviders()[credential.provider]) {
-                providerSelect.value = credential.provider;
-                if (credential.model) {
-                    saveModelOverride(credential.provider, credential.model);
+            // 面板顯示的供應商/模型以「這個帳號實際會用到的那組」為準：先是
+            // 自己的憑證，沒有的話就是伺服器共用金鑰／.env 後備。瀏覽器不送
+            // X-LLM-* 標頭，localStorage 裡的偏好在這個環境不影響任何請求，
+            // 拿它當顯示值不只誤導，還會讓下面「有沒有被改動」的比較從一開始
+            // 就對不上——只是打開面板改個語言的人會被誤判成「改了 AI 設定」。
+            const effective = effectiveLlmSelection();
+            if (effective && providerSelect && getProviders()[effective.provider]) {
+                providerSelect.value = effective.provider;
+                if (effective.model) {
+                    saveModelOverride(effective.provider, effective.model);
                 }
-                if (credential.base_url) {
-                    localStorage.setItem(LOCAL_BASE_URL_KEY, credential.base_url);
+                if (effective.baseUrl) {
+                    localStorage.setItem(LOCAL_BASE_URL_KEY, effective.baseUrl);
                 }
             }
         } catch (error) {
@@ -202,6 +233,7 @@ const SettingsModule = (function() {
             serverLlmStatusFailed = true;
         }
         renderFields();
+        llmSelectionAtOpen = currentLlmSelection();
     }
 
     /** 瀏覽器模式的儲存路徑：把金鑰（與同一組設定）送到伺服器加密保存 */
@@ -215,16 +247,36 @@ const SettingsModule = (function() {
     }
 
     /**
-     * 沒填金鑰、但把 AI 設定改掉了 —— 伺服器上存的是「一整組」設定，
-     * 而金鑰拿不回來，所以無法只換其中一個欄位。與其安靜地不生效，
-     * 不如直接說「請重新輸入金鑰」。
+     * 這次儲存有沒有「改了 AI 設定卻沒給金鑰」（瀏覽器模式）。
+     *
+     * 伺服器上存的是**一整組**設定，而金鑰依設計拿不回來，所以沒有金鑰就
+     * 無法只換其中一個欄位。這種情況必須擋下來並說明白：不擋的話，
+     * 表單會把偏好寫進 localStorage（在瀏覽器模式完全不影響任何請求，因為
+     * 根本不送 X-LLM-* 標頭），再彈一句「已切換到 Claude」——伺服器上什麼
+     * 都沒變，卻回報成功。
+     *
+     * 比較對象是「目前實際生效的那組」，不是「使用者自己的憑證」：用著
+     * 伺服器共用金鑰的家人（user_credential 為 null）改供應商，同樣什麼都
+     * 不會發生，一樣要擋。這正是最常見的情境。
+     *
+     * 兩個刻意不擋的情況（避免過度攔截）：
+     * - AI 欄位跟生效中的那組一致 → 這次儲存與 AI 無關（改語言、改進階記憶
+     *   開關…），照常存。
+     * - 什麼都還沒設定（也沒有伺服器預設）→ 沒有「生效中的設定」可比，改用
+     *   「打開面板時的表單狀態」當基準：沒動過 AI 欄位就放行，否則一個只想
+     *   先把介面改成英文的新使用者，會被擋在一把他還沒填過的金鑰後面。
      */
-    function serverLlmSettingsChangedWithoutKey(provider, model, baseUrl) {
-        const credential = serverLlmStatus && serverLlmStatus.user_credential;
-        if (!credential) return false;
-        return provider !== credential.provider ||
-            model !== (credential.model || '') ||
-            baseUrl !== (credential.base_url || '');
+    function serverLlmSelectionNeedsKey(provider, model, baseUrl) {
+        const provided = { provider: provider, model: model, baseUrl: baseUrl };
+        const baseline = effectiveLlmSelection() || llmSelectionAtOpen;
+        if (!baseline) return false;
+
+        const needsBaseUrl = !!(getProviders()[provider] || {}).NEEDS_BASE_URL;
+        return provided.provider !== baseline.provider ||
+            provided.model !== (baseline.model || '') ||
+            // base_url 只有在該供應商真的需要時才比：其餘供應商的欄位是隱藏的，
+            // 表單根本表達不出伺服器上存的值，拿來比只會誤判成「被改過」
+            (needsBaseUrl && provided.baseUrl !== (baseline.baseUrl || ''));
     }
 
     // 依當前下拉選的供應商刷新表單各欄位
@@ -381,8 +433,11 @@ const SettingsModule = (function() {
         refreshSemanticStatus();
         refreshSessions();
         renderFields();
-        // 瀏覽器模式：金鑰在伺服器上，開啟面板時才去查（會再 renderFields 一次）
+        // 瀏覽器模式：金鑰在伺服器上，開啟面板時才去查（會再 renderFields 一次，
+        // 並把 llmSelectionAtOpen 更新成同步過伺服器狀態後的表單內容）。
+        // 這裡先記一次基準，涵蓋「查詢還沒回來就按下儲存」的空窗。
         if (!usesLocalKeyStore()) {
+            llmSelectionAtOpen = currentLlmSelection();
             refreshServerLlmStatus();
         }
         settingsDialog.style.display = 'block';
@@ -413,9 +468,12 @@ const SettingsModule = (function() {
         }
 
         // 瀏覽器模式：伺服器上存的是一整組設定，而金鑰拿不回來，
-        // 所以改了供應商/模型/端點就必須連金鑰一起重新送一次
+        // 所以改了供應商/模型/端點就必須連金鑰一起重新送一次。
+        // 不論使用者有沒有自己的憑證都一樣要擋——用著伺服器共用金鑰的人
+        // 改供應商同樣不會有任何效果，卻最容易被一句「已切換到 X」騙過去。
         if (!usesLocalKeyStore() && !apiKey &&
-                serverLlmSettingsChangedWithoutKey(provider, model, baseUrl)) {
+                serverLlmSelectionNeedsKey(provider, model,
+                                           def.NEEDS_BASE_URL ? baseUrl : '')) {
             showError(I18N.t('settings.serverKeyReenter'));
             return;
         }
