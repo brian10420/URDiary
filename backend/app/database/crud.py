@@ -116,6 +116,105 @@ def revoke_all_user_auth_sessions(db: Session, user_id: int) -> int:
     return count
 
 
+def delete_user(db: Session, user_id: int) -> bool:
+    """刪除使用者。
+
+    唯一呼叫端是邀請碼消費競態失敗時的補償刪除 (api/routes/user.py)：
+    帳號剛建立、還沒有任何關聯資料 (日記/工作階段等)，直接刪除即可，
+    不需要處理外鍵串連刪除。
+    """
+    user = get_user(db, user_id)
+    if not user:
+        return False
+    db.delete(user)
+    db.commit()
+    return True
+
+
+# InviteCode CRUD operations (v2.3 task 1.4：邀請碼註冊閘門)
+# 明文碼只存在於 CLI mint 當下的終端輸出；資料庫一律只存 sha256 雜湊
+# (utils/invite_codes.hash_invite_code)，這裡的函式全部只吃/回 code_hash。
+
+def create_invite_code(db: Session, code_hash: str, max_uses: int = 1,
+                       note: Optional[str] = None,
+                       expires_at: Optional[datetime] = None):
+    """新增一組邀請碼 (used_count 從 0 起算)"""
+    invite = models.InviteCode(
+        code_hash=code_hash,
+        max_uses=max_uses,
+        note=note,
+        expires_at=expires_at,
+    )
+    db.add(invite)
+    db.commit()
+    db.refresh(invite)
+    return invite
+
+
+def get_invite_code(db: Session, invite_id: int):
+    return db.query(models.InviteCode).filter(models.InviteCode.id == invite_id).first()
+
+
+def get_invite_code_by_hash(db: Session, code_hash: str):
+    return db.query(models.InviteCode).filter(models.InviteCode.code_hash == code_hash).first()
+
+
+def list_invite_codes(db: Session) -> List[models.InviteCode]:
+    """CLI `list-invites` 用：依建立順序列出全部邀請碼 (含已撤銷/已用完的)。"""
+    return db.query(models.InviteCode).order_by(models.InviteCode.id).all()
+
+
+def invite_code_is_usable(invite: models.InviteCode) -> bool:
+    """未撤銷、未過期、還有剩餘名額 —— /users/create 消費前的「驗證但不消費」判斷。
+
+    真正防止超用的是 claim_invite_code_use 的條件式 UPDATE；這裡只是先擋掉
+    明顯無效的碼，避免每個請求都先建立使用者再失敗回滾。
+    """
+    if invite.revoked_at is not None:
+        return False
+    if invite.expires_at is not None and invite.expires_at <= datetime.utcnow():
+        return False
+    return invite.used_count < invite.max_uses
+
+
+def claim_invite_code_use(db: Session, invite_id: int) -> bool:
+    """把「還有剩餘名額」的檢查與 used_count 遞增合成一次條件式 UPDATE (CAS)。
+
+    與 claim_auth_session_rotation 同一種寫法：先讀後寫會有競態 —— 兩個
+    並行的註冊請求都讀到「還有 1 個名額」，就會一起通過驗證、一起把
+    used_count 加到超過 max_uses。這裡靠 WHERE used_count < max_uses 讓
+    資料庫來裁決，只有 rowcount == 1 的那一方算贏；連 revoked_at/expires_at
+    也一併在 WHERE 裡覆核，避免「驗證通過後、認領前」這段極短時間內剛好
+    被 CLI 撤銷或過期的邊界情況。
+    """
+    now = datetime.utcnow()
+    updated = (db.query(models.InviteCode)
+               .filter(models.InviteCode.id == invite_id)
+               .filter(models.InviteCode.revoked_at.is_(None))
+               .filter(models.InviteCode.used_count < models.InviteCode.max_uses)
+               .filter(or_(models.InviteCode.expires_at.is_(None),
+                           models.InviteCode.expires_at > now))
+               .update({"used_count": models.InviteCode.used_count + 1},
+                       synchronize_session=False))
+    db.commit()
+    return updated == 1
+
+
+def revoke_invite_code(db: Session, invite_id: int):
+    """撤銷一組邀請碼 (設定 revoked_at)；已撤銷過的再呼叫一次是 no-op (冪等)。
+
+    回傳該列 (找不到該 id 回 None)，供 CLI 印出目前狀態。
+    """
+    invite = get_invite_code(db, invite_id)
+    if invite is None:
+        return None
+    if invite.revoked_at is None:
+        invite.revoked_at = datetime.utcnow()
+        db.commit()
+        db.refresh(invite)
+    return invite
+
+
 # Diary CRUD operations
 def create_diary(db: Session, user_id: int, content: str,
                 valence: Optional[float] = None, arousal: Optional[float] = None,

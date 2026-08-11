@@ -44,6 +44,29 @@ class AuthSession(Base):
     revoked_at = Column(DateTime, nullable=True)
     replaced_by_jti = Column(String(36), nullable=True)
 
+class InviteCode(Base):
+    """邀請碼 (v2.3 task 1.4：對外開放前的安全閘門)。
+
+    只存 code_hash (明文以 secrets.token_urlsafe(16) 產生、sha256 雜湊後儲存)；
+    明文只在 CLI mint 當下顯示一次，資料庫裡永遠拿不回明文
+    (backend/scripts/urdiary_admin.py、utils/invite_codes.hash_invite_code)。
+
+    used_count 的遞增走條件式 UPDATE (crud.claim_invite_code_use)，與
+    AuthSession 的輪替認領 (crud.claim_auth_session_rotation) 同一種 CAS
+    寫法，確保 max_uses 在併發下不會被超用。
+    """
+    __tablename__ = "invite_codes"
+
+    id = Column(Integer, primary_key=True, index=True)
+    code_hash = Column(String(64), unique=True, nullable=False, index=True)
+    note = Column(String(200), nullable=True)
+    max_uses = Column(Integer, nullable=False, default=1)
+    used_count = Column(Integer, nullable=False, default=0)
+    expires_at = Column(DateTime, nullable=True)   # NULL = 永不過期
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    revoked_at = Column(DateTime, nullable=True)   # NULL = 未撤銷
+
+
 class Diary(Base):
     __tablename__ = "diaries"
 

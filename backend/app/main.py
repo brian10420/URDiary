@@ -98,10 +98,14 @@ def health_check():
 
 @app.get("/system/capabilities", tags=["health"], summary="系統能力查詢")
 def system_capabilities():
-    """回報選配功能的可用狀態 (免認證；設定面板顯示用)。"""
+    """回報選配功能的可用狀態 (免認證；設定面板/註冊表單顯示用)。"""
     from services.memory_retrieval import semantic_available
+    # 模組屬性、請求當下讀取 (與 api/routes/user.py 相同讀法)：讓這個欄位
+    # 即時反映 config.REQUIRE_INVITE 現況，而不是 app 啟動當下的值。
+    import config
     return {
         "semantic_memory_available": semantic_available(),
+        "require_invite": config.REQUIRE_INVITE,
         "app_version": app.version,
     }
 

@@ -32,6 +32,7 @@ from utils.api_exceptions import BadRequestError, NotFoundError, UnauthorizedErr
 from utils.error_codes import ErrorCode
 from utils.messages import msg
 from utils.password_validator import validate_password_and_get_errors
+from utils.invite_codes import hash_invite_code
 from database import crud
 from database.models import User
 from utils.security import (
@@ -43,12 +44,20 @@ from utils.security import (
     get_password_hash,
 )
 from config import ACCESS_TOKEN_MINUTES, REFRESH_TOKEN_DAYS
+# REQUIRE_INVITE 特意不走 `from config import REQUIRE_INVITE`：那樣會在本模組
+# import 當下把值綁死，測試無法用 monkeypatch 逐案切換。改成 `import config`
+# 後在 create_user() 內以 config.REQUIRE_INVITE 讀「請求當下」的模組屬性
+# (global-constraints / task-1.4-brief 明確要求的讀法)。
+import config
 
 router = APIRouter()
 
 class UserCreate(BaseModel):
     username: str
     password: str
+    # 僅在 config.REQUIRE_INVITE 開啟時才會被檢查；旗標關閉時整個欄位被忽略
+    # (v2.3 task 1.4，預設關閉 —— Electron 本機首次啟動流程不受影響)
+    invite_code: Optional[str] = None
 
 class Token(BaseModel):
     access_token: str
@@ -139,7 +148,32 @@ def _session_out(session, current_sid: Optional[str]) -> Dict[str, Any]:
             description="創建新用戶（密碼經強度檢查與 bcrypt 雜湊後儲存）並返回用戶ID和用戶名")
 def create_user(user: UserCreate, db: Session = Depends(get_db),
                 lang: str = Depends(get_language)):
-    """創建新用戶"""
+    """創建新用戶
+
+    邀請碼閘門 (v2.3 task 1.4，僅 config.REQUIRE_INVITE 開啟時生效)：
+    先「驗證但不消費」(找不到/已撤銷/已過期/已用完一律回同一句話，不當
+    oracle 洩漏具體原因) → 建立使用者 → 才真正以條件式 UPDATE 認領一次
+    名額。認領失敗代表輸掉了「最後一個名額」的競態 (驗證當下還有名額，
+    認領當下已被別的請求搶走)：必須刪掉剛剛建立的帳號，不留下「帳號建立
+    了但邀請碼沒被扣」的孤兒帳號。順序反過來 (先建帳號再驗證) 的話，
+    使用者名稱重複／密碼強度不足這類「建立本來就會失敗」的請求會在驗證
+    通過後才發現失敗，等於平白燒掉一次邀請額度。
+    """
+    invite = None
+    if config.REQUIRE_INVITE:
+        code = (user.invite_code or "").strip()
+        if not code:
+            raise BadRequestError(
+                error_code=ErrorCode.INVITE_CODE_REQUIRED,
+                detail=msg("invite_code_required", lang)
+            )
+        invite = crud.get_invite_code_by_hash(db, hash_invite_code(code))
+        if invite is None or not crud.invite_code_is_usable(invite):
+            raise BadRequestError(
+                error_code=ErrorCode.INVITE_CODE_INVALID,
+                detail=msg("invite_code_invalid", lang)
+            )
+
     existing_user = crud.get_user_by_username(db, user.username)
     if existing_user:
         raise BadRequestError(
@@ -156,6 +190,15 @@ def create_user(user: UserCreate, db: Session = Depends(get_db),
         )
 
     new_user = crud.create_user(db, user.username, get_password_hash(user.password))
+
+    if invite is not None and not crud.claim_invite_code_use(db, invite.id):
+        # 輸掉了「最後一個名額」的競態：補償刪除，不能超用、也不能留孤兒帳號
+        crud.delete_user(db, new_user.id)
+        raise BadRequestError(
+            error_code=ErrorCode.INVITE_CODE_INVALID,
+            detail=msg("invite_code_invalid", lang)
+        )
+
     return {"message": "User created", "user_id": new_user.id, "username": new_user.username}
 
 @router.post("/login", response_model=Token,

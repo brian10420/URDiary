@@ -19,6 +19,8 @@ class ErrorCode:
     USER_NOT_FOUND = "E2000"
     USER_ALREADY_EXISTS = "E2001"
     INVALID_USERNAME = "E2002"
+    INVITE_CODE_REQUIRED = "E2003"
+    INVITE_CODE_INVALID = "E2004"
     
     # 聊天相關錯誤 (3000-3999)
     CHAT_HISTORY_NOT_FOUND = "E3000"
@@ -63,6 +65,8 @@ ERROR_DESCRIPTIONS = {
     ErrorCode.USER_NOT_FOUND: "用戶不存在",
     ErrorCode.USER_ALREADY_EXISTS: "用戶已存在",
     ErrorCode.INVALID_USERNAME: "無效的用戶名",
+    ErrorCode.INVITE_CODE_REQUIRED: "需要邀請碼",
+    ErrorCode.INVITE_CODE_INVALID: "邀請碼無效",
     
     # 聊天相關錯誤
     ErrorCode.CHAT_HISTORY_NOT_FOUND: "聊天歷史不存在",

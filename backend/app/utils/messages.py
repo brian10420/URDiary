@@ -119,6 +119,14 @@ MESSAGES = {
         "zh-TW": "此帳號尚未設定密碼，請重新建立帳號",
         "en": "This account has no password set — please create the account again",
     },
+    "invite_code_required": {
+        "zh-TW": "此註冊需要邀請碼",
+        "en": "An invite code is required to register",
+    },
+    "invite_code_invalid": {
+        "zh-TW": "邀請碼無效、已過期或已用完，請確認後重新輸入",
+        "en": "The invite code is invalid, expired, or already used up — please check and try again",
+    },
     "invalid_token": {
         "zh-TW": "無法驗證憑證",
         "en": "Could not validate credentials",

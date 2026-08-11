@@ -114,6 +114,16 @@ def _env_flag(name: str, default: bool) -> bool:
 # 避免啟動時因 StaticFiles 目錄不存在而炸掉 (StaticFiles 建構時的 check_dir)。
 SERVE_FRONTEND = _env_flag("URDIARY_SERVE_FRONTEND", default=FRONTEND_DIR.is_dir())
 
+# -----------------------
+# 邀請碼註冊閘門 (v2.3 task 1.4：對外開放前的安全閘門)
+# -----------------------
+# 預設關閉：Electron 本機首次啟動流程 (免邀請碼) 必須維持現狀不變。
+# 打算把 tunnel 開放給外部存取時，部署設定明確開啟 (URDIARY_REQUIRE_INVITE=1)。
+# api/routes/user.py 讀取這個旗標時必須用 `import config` 取模組屬性、
+# 在請求當下讀 (`config.REQUIRE_INVITE`)，不能 `from config import REQUIRE_INVITE`
+# 把值綁死在 import 當下 —— 否則測試沒辦法用 monkeypatch 逐案切換。
+REQUIRE_INVITE = _env_flag("URDIARY_REQUIRE_INVITE", default=False)
+
 # 必要的配置檢查
 # XAI_API_KEY 不再是必要條件：金鑰主要由前端提供（X-LLM-* 標頭），.env 只是後備
 if ENV == "production" and not XAI_API_KEY:

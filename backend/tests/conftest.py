@@ -17,6 +17,11 @@ from pathlib import Path
 # --- 任何 app 模組 import 之前：先隔離資料目錄、設好匯入路徑 -----------------
 _TMP_DATA = tempfile.mkdtemp(prefix="urdiary-test-data-")
 os.environ["URDIARY_DATA_DIR"] = _TMP_DATA
+# 開放註冊 (conftest._create_and_login 等) 是絕大多數認證測試的前提；明確關閉
+# 而不是依賴 config.py 自己的預設值，這樣未來就算那個預設值改了，測試套件也
+# 不會被意外打斷。要測「旗標開啟」行為的測試自行對 config 模組屬性 monkeypatch
+# (見 tests/test_invite_codes.py)。
+os.environ["URDIARY_REQUIRE_INVITE"] = "0"
 
 APP_DIR = Path(__file__).resolve().parents[1] / "app"
 sys.path.insert(0, str(APP_DIR))
