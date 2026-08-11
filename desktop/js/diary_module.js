@@ -125,7 +125,13 @@ const DiaryModule = (function() {
             console.log('向API請求日記數據');
             diaries = await ApiService.getDiaries();
             console.log(`成功獲取${diaries.length}條日記`);
-            
+
+            // v2.3 task 2.3：這個旗標要在下面的格式檢查（可能把 diaries 重設
+            // 為空陣列）之前先讀出來——ApiService.getDiaries() 把它標記在
+            // 陣列物件本身（見該函式的實作說明），格式檢查若真的把 diaries
+            // 換成新的空陣列，標記就讀不到了。
+            const isFromCache = !!(diaries && diaries._fromCache);
+
             // 檢查數據
             if (!diaries || !Array.isArray(diaries)) {
                 console.error('獲取的日記數據無效:', diaries);
@@ -133,11 +139,15 @@ const DiaryModule = (function() {
                 diaries = [];
                 console.log('使用空數組作為後備');
             }
-            
+
+            // 本機快取標籤：顯示/隱藏「目前顯示的是本機快取資料」提示，
+            // 讓使用者知道畫面可能不是最新內容（見 updateCacheIndicator）
+            updateCacheIndicator(isFromCache);
+
             // 渲染日記列表
             console.log('開始渲染日記列表');
             renderDiaryList();
-            
+
             console.log('日記載入完成');
         } catch (error) {
             console.error('載入日記列表失敗:', error);
@@ -146,8 +156,10 @@ const DiaryModule = (function() {
             } else {
                 alert(I18N.t('diary.loadFailedAlert', { error: error.message }));
             }
-            // 确保至少显示空状态
+            // 确保至少显示空状态（完全失敗、連本機快取都沒有——沒有資料可
+            // 顯示，「顯示快取資料」的標籤自然也該隱藏，不能繼續掛著）
             diaries = [];
+            updateCacheIndicator(false);
             showEmptyState();
         } finally {
             if (typeof UIManager !== 'undefined' && UIManager.hideSpinner) {
@@ -398,7 +410,20 @@ const DiaryModule = (function() {
         
         return formatted;
     }
-    
+
+    // 顯示/隱藏「目前顯示本機快取資料」標籤（v2.3 task 2.3）。
+    // #diary-cache-indicator 是靜態的 data-i18n 節點（見 index.html），
+    // 文字已經翻好，這裡只切換要不要顯示——跟 UIManager 的連線橫幅是同一個
+    // 模式（true/false 直接對應 loadDiaries() 這一次拿到的是快取還是新鮮
+    // 資料，每次呼叫都會覆蓋前一次的顯示狀態，不會「黏著」上一次的結果）。
+    function updateCacheIndicator(isFromCache) {
+        const indicator = document.getElementById('diary-cache-indicator');
+        if (!indicator) {
+            return;
+        }
+        indicator.style.display = isFromCache ? 'block' : 'none';
+    }
+
     // 顯示空狀態
     function showEmptyState() {
         console.log('顯示空狀態');

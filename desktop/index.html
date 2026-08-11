@@ -84,6 +84,17 @@
             </div>
         </header>
 
+        <!-- 連線狀態橫幅（v2.3 task 2.3）：離線或連續偵測到網路失敗時顯示，
+             恢復連線後自動隱藏（js/ui_manager.js 的連線狀態橫幅一節）。
+             刻意放在 .app-header 與 .app-content 之間、走一般文件流（不是
+             position:fixed）：顯示時單純把 .app-content 往下推、不會蓋住
+             聊天訊息／輸入框，也不需要另外處理跟底部分頁列（.tab-bar，
+             position:fixed）疊加或安全區域的問題——.app-container 本身
+             overflow:hidden 且不捲動，這裡不會被捲走，效果等同固定顯示。 -->
+        <div id="connectivity-banner" class="connectivity-banner" role="status" aria-live="polite" aria-hidden="true">
+            <span id="connectivity-banner-text" data-i18n="errors.offlineBanner">目前無法連線到伺服器，部分功能可能無法使用</span>
+        </div>
+
         <!-- 用戶選擇對話框 -->
         <div id="user-select-dialog" class="modal" style="display: none;">
             <div class="modal-content">
@@ -335,6 +346,12 @@
             <!-- 日記視圖 -->
             <div id="diary-view" class="view-container">
                 <h2 class="view-title" data-i18n="diary.viewTitle">日記記錄</h2>
+                <!-- 本機快取標籤（v2.3 task 2.3）：離線/連不上伺服器時，
+                     日記列表回退到本機快取，這裡顯示提示讓使用者知道畫面
+                     可能不是最新內容。預設隱藏，js/diary_module.js 的
+                     updateCacheIndicator() 依 ApiService.getDiaries() 回傳
+                     陣列上的 _fromCache 旗標切換。 -->
+                <div id="diary-cache-indicator" class="cache-indicator" style="display: none;" data-i18n="diary.cachedCopy">目前顯示本機快取資料，可能不是最新內容</div>
                 <div class="diary-container">
                     <div class="diary-list"></div>
                     <div class="diary-detail" style="display: none;">

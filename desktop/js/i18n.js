@@ -127,6 +127,7 @@ const I18N = (function() {
             'diary.emptyTitle': '尚無日記',
             'diary.emptyHint': '開始與AI助手對話，生成您的第一篇日記吧！',
             'diary.startChat': '開始對話',
+            'diary.cachedCopy': '目前顯示本機快取資料，可能不是最新內容',
 
             'calendar.title': '行事曆',
             'calendar.today': '今天',
@@ -194,6 +195,7 @@ const I18N = (function() {
             'errors.timeout': '請求超時，請稍後再試',
             'errors.cantConnect': '無法連線到伺服器，請確認後端服務是否啟動',
             'errors.cachedShown': '無法連線到伺服器，目前顯示本機快取資料',
+            'errors.offlineBanner': '目前無法連線到伺服器，部分功能可能無法使用',
 
             'ui.loading': '加載中...',
             'ui.devtoolsHint': '開發者工具無法通過按鈕打開，請嘗試使用快捷鍵 Ctrl+Shift+I 或 F12',
@@ -212,6 +214,8 @@ const I18N = (function() {
             'chat.errorPrefix': '抱歉，我遇到了一些問題: {error}',
             'chat.tryRefresh': '請嘗試刷新頁面，或者檢查後端服務是否已啟動。如果問題持續，請聯繫技術支持。',
             'chat.busy': '正在處理中，請稍後再試',
+            'chat.sendFailed': '傳送失敗',
+            'chat.retrySend': '重試',
             'chat.diaryDone': '日記已生成，您可以在日記頁面查看。',
             'chat.diaryError': '生成日記時出錯: {error}',
 
@@ -363,6 +367,7 @@ const I18N = (function() {
             'diary.emptyTitle': 'No diary entries yet',
             'diary.emptyHint': 'Start chatting with your companion to create your first diary!',
             'diary.startChat': 'Start chatting',
+            'diary.cachedCopy': 'Showing a locally cached copy — may be out of date',
 
             'calendar.title': 'Calendar',
             'calendar.today': 'Today',
@@ -430,6 +435,7 @@ const I18N = (function() {
             'errors.timeout': 'Request timed out, please try again later',
             'errors.cantConnect': 'Cannot reach the server — is the backend running?',
             'errors.cachedShown': 'Cannot reach the server — showing locally cached data',
+            'errors.offlineBanner': 'Cannot reach the server right now — some features may not work',
 
             'ui.loading': 'Loading...',
             'ui.devtoolsHint': 'Dev tools could not be opened from the button — try Ctrl+Shift+I or F12',
@@ -448,6 +454,8 @@ const I18N = (function() {
             'chat.errorPrefix': 'Sorry, I ran into a problem: {error}',
             'chat.tryRefresh': 'Try reloading the page, or check that the backend service is running. If it keeps happening, please report it.',
             'chat.busy': 'Still processing — please wait a moment',
+            'chat.sendFailed': 'Failed to send',
+            'chat.retrySend': 'Retry',
             'chat.diaryDone': 'Your diary is ready — you can view it in the Diary tab.',
             'chat.diaryError': 'Error creating the diary: {error}',
 

@@ -2,6 +2,18 @@
  * 日記模塊樣式表
  */
 
+/* 本機快取標籤（v2.3 task 2.3）：見 index.html #diary-cache-indicator 的
+   結構註解。js/diary_module.js 的 updateCacheIndicator() 切換顯示/隱藏。 */
+.cache-indicator {
+    margin: 0 16px 8px;
+    padding: 6px 12px;
+    border-radius: var(--border-radius-sm, 4px);
+    background-color: rgba(var(--warning-color-rgb, 255, 183, 77), 0.18);
+    color: var(--text-color, #333);
+    font-size: 0.85rem;
+    text-align: center;
+}
+
 /* 日記容器 */
 .diary-container {
     display: flex;

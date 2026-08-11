@@ -96,6 +96,9 @@ const UIManager = (function() {
         // 鍵盤感知聊天輸入框（v2.3 task 2.1）
         initKeyboardAwareInput();
 
+        // 連線狀態橫幅（v2.3 task 2.3）
+        initConnectivityBanner();
+
         // 應用初始主題
         applyTheme(getCurrentTheme());
         
@@ -377,6 +380,142 @@ const UIManager = (function() {
 
         window.visualViewport.addEventListener('resize', adjustForKeyboard);
         window.visualViewport.addEventListener('scroll', adjustForKeyboard);
+    }
+
+    // ------------------------------------------------------------------
+    // 連線狀態橫幅（v2.3 task 2.3）
+    //
+    // 兩個獨立訊號都可能不準：navigator.onLine 在部分平台/瀏覽器離線時仍
+    // 回報 true；反過來，瀏覽器回報「online」也不保證真的連得上後端（例如
+    // 連上路由器但後端服務掛了）。所以橫幅同時觀察兩個來源：
+    //   1. window 的 online/offline 事件（initConnectivityBanner 綁定）
+    //   2. fetchAPI 每次請求「最終結果」（含內建重試後）觀察到的網路層
+    //      成敗（api_service.js 的 reportConnectivity() 呼叫這裡的
+    //      reportNetworkStatus()）
+    // 「該不該顯示橫幅」這個決策抽成純函式（reduceConnectivityState +
+    // isConnectivityBannerVisible），不碰 DOM/window，可直接單元測試；
+    // 下面的 render/apply/init 系列函式才是真正碰 DOM 的部分，職責分離
+    // 跟 resolvePaneClasses/switchToState 是同一個模式。
+    //
+    // 橫幅本身的文字是靜態的 data-i18n（見 index.html #connectivity-banner-
+    // text），語言切換本來就會觸發整頁重載（見 i18n.js 檔頭說明），這裡
+    // 只需要切換要不要顯示，不必每次都重新翻譯。
+    // ------------------------------------------------------------------
+
+    /**
+     * 純函式：連線狀態的 reducer。輸入現有狀態 + 一個動作，回傳「新的」狀態
+     * 物件，不會修改傳入的 state。
+     *
+     * state 形狀：{ browserOffline: boolean, fetchFailing: boolean }
+     * action.type 四選一：
+     *   - 'browser-offline'：window 'offline' 事件——設定 browserOffline，
+     *     不動 fetchFailing（兩個訊號各自獨立疊加）
+     *   - 'browser-online'： window 'online' 事件——視為強訊號，
+     *     browserOffline 與 fetchFailing 一併清掉（先前觀察到的網路層失敗
+     *     視為過期資訊；之後若又有請求失敗，fetchFailing 會再次被設回 true）
+     *   - 'fetch-network-fail'：fetchAPI 觀察到網路層失敗（離線/逾時/連不上）
+     *   - 'fetch-ok'：fetchAPI 觀察到請求成功——這是最直接的「連得上」證據，
+     *     不管 navigator.onLine 怎麼講，兩個旗標都清掉
+     *
+     * @param {{browserOffline: boolean, fetchFailing: boolean}} [state]
+     * @param {{type: string}} [action]
+     * @returns {{browserOffline: boolean, fetchFailing: boolean}}
+     */
+    function reduceConnectivityState(state, action) {
+        const current = state || { browserOffline: false, fetchFailing: false };
+        if (!action || typeof action.type !== 'string') {
+            return { browserOffline: !!current.browserOffline, fetchFailing: !!current.fetchFailing };
+        }
+        switch (action.type) {
+            case 'browser-offline':
+                return { browserOffline: true, fetchFailing: !!current.fetchFailing };
+            case 'browser-online':
+                return { browserOffline: false, fetchFailing: false };
+            case 'fetch-network-fail':
+                return { browserOffline: !!current.browserOffline, fetchFailing: true };
+            case 'fetch-ok':
+                return { browserOffline: false, fetchFailing: false };
+            default:
+                return { browserOffline: !!current.browserOffline, fetchFailing: !!current.fetchFailing };
+        }
+    }
+
+    /**
+     * 純函式：目前狀態下，離線橫幅該不該顯示。兩個訊號其中之一為 true 就
+     * 顯示，兩個都要是 false 才隱藏——任何一個訊號說「連不上」就先讓使用者
+     * 知道，寧可保守也不要漏報。
+     * @param {{browserOffline: boolean, fetchFailing: boolean}} [state]
+     * @returns {boolean}
+     */
+    function isConnectivityBannerVisible(state) {
+        return !!(state && (state.browserOffline || state.fetchFailing));
+    }
+
+    // 目前的連線狀態（reduceConnectivityState 的累積結果）。初始值直接讀
+    // navigator.onLine——沒有這個 API 的環境預設為「未離線」，跟這個 app
+    // 其他地方對缺失瀏覽器 API 的保守處理一致（見 getLayoutMode）。
+    let connectivityState = {
+        browserOffline: (typeof navigator !== 'undefined' && navigator.onLine === false),
+        fetchFailing: false
+    };
+    let connectivityBannerEl = null;
+
+    // 是否已綁定 window 的 online/offline 監聽器——initConnectivityBanner
+    // 可能被重複呼叫（防禦性重新初始化、測試環境重置 DOM），監聽器只綁一次，
+    // 跟 chat_module.js 的 llmChangeListenerBound 是同一個慣例。
+    let connectivityListenersBound = false;
+
+    // 把 connectivityState 目前的「該不該顯示」套到真正的 DOM 元素上。
+    function renderConnectivityBanner() {
+        if (!connectivityBannerEl) {
+            connectivityBannerEl = document.getElementById('connectivity-banner');
+        }
+        if (!connectivityBannerEl) {
+            return;
+        }
+        if (isConnectivityBannerVisible(connectivityState)) {
+            connectivityBannerEl.classList.add('visible');
+            connectivityBannerEl.setAttribute('aria-hidden', 'false');
+        } else {
+            connectivityBannerEl.classList.remove('visible');
+            connectivityBannerEl.setAttribute('aria-hidden', 'true');
+        }
+    }
+
+    function applyConnectivityAction(action) {
+        connectivityState = reduceConnectivityState(connectivityState, action);
+        renderConnectivityBanner();
+    }
+
+    // fetchAPI 每次請求的最終結果（含內建重試後）呼叫這個方法回報連線狀態
+    // ——公開方法，api_service.js 透過 UIManager.reportNetworkStatus 呼叫
+    // （見該檔案的 reportConnectivity()），用 typeof 檢查呼叫，避免兩份
+    // 檔案的載入順序耦合過緊。
+    function reportNetworkStatus(isOnline) {
+        applyConnectivityAction({ type: isOnline ? 'fetch-ok' : 'fetch-network-fail' });
+    }
+
+    // 綁定 window 的 online/offline 事件、取得橫幅 DOM 元素、套用目前狀態。
+    // 由 init() 呼叫，只在此時查 DOM——跟本檔案其餘 initXxx 函式一致的時機
+    // 慣例（script 在 <head> 執行時 <body> 還沒解析完，太早查 DOM 只會拿到
+    // null，見 refreshDOMElements 的呼叫時機）。
+    function initConnectivityBanner() {
+        connectivityBannerEl = document.getElementById('connectivity-banner');
+        connectivityState = {
+            browserOffline: (typeof navigator !== 'undefined' && navigator.onLine === false),
+            fetchFailing: false
+        };
+        renderConnectivityBanner();
+
+        if (!connectivityListenersBound) {
+            connectivityListenersBound = true;
+            window.addEventListener('online', function() {
+                applyConnectivityAction({ type: 'browser-online' });
+            });
+            window.addEventListener('offline', function() {
+                applyConnectivityAction({ type: 'browser-offline' });
+            });
+        }
     }
 
     // 切換到指定狀態
@@ -1047,7 +1186,16 @@ const UIManager = (function() {
         getLayoutMode,
         // 純函式，主要為 vitest 單元測試曝光；switchToState 內部也是唯一
         // 呼叫端，行為說明見函式本身上方註解
-        resolvePaneClasses
+        resolvePaneClasses,
+        // v2.3 task 2.3：連線狀態橫幅。reduceConnectivityState /
+        // isConnectivityBannerVisible 是純函式，主要為 vitest 曝光；
+        // reportNetworkStatus 是 api_service.js 的正式呼叫端；
+        // initConnectivityBanner 由 init() 呼叫，額外曝光供測試獨立初始化
+        // 這塊 DOM 接線，不必跑一次完整的 init()
+        reduceConnectivityState,
+        isConnectivityBannerVisible,
+        reportNetworkStatus,
+        initConnectivityBanner
     };
 })();
 

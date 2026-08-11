@@ -180,6 +180,42 @@
     text-align: right;
 }
 
+/* 傳送中／傳送失敗（v2.3 task 2.3）：使用者訊息氣泡的離線容忍視覺狀態，
+   見 js/chat_module.js 的 markPending/markSendFailed。 */
+.chat-message.pending .message-bubble {
+    opacity: 0.6;
+}
+
+.chat-message.send-failed .message-bubble {
+    border-color: var(--danger-color);
+}
+
+.send-failure {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: var(--spacing-sm);
+    margin-top: 4px;
+    font-size: var(--font-size-xs);
+    color: var(--danger-color);
+}
+
+.send-retry-btn {
+    background: none;
+    border: 1px solid var(--danger-color);
+    color: var(--danger-color);
+    border-radius: var(--border-radius-sm);
+    padding: 3px 10px;
+    font-size: var(--font-size-xs);
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+.send-retry-btn:hover {
+    background-color: var(--danger-color);
+    color: white;
+}
+
 /* "思考中"動畫 */
 .thinking .message-bubble {
     padding: 12px;

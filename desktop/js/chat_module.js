@@ -371,31 +371,45 @@ const ChatModule = (function() {
     }
     
     // 發送消息
+    //
+    // v2.3 task 2.3：輸入框一送出就清空（跟原本行為一致，訊息立刻以氣泡
+    // 形式出現在對話串裡，符合一般聊天 App 的即時回饋）。「不遺失使用者的
+    // 文字」不是靠留著輸入框裡的草稿，而是靠：(1) 訊息一旦離開輸入框就
+    // 立刻寫進 chatHistory 並存檔（下面的 saveChatHistory()，早於送出結果
+    // 揭曉），(2) 萬一送出失敗，原始文字存在該則氣泡的 dataset 上，附一顆
+    // 「點擊重試」，不必使用者重新輸入（見 attemptSend/markSendFailed）。
     async function sendMessage() {
         // 獲取用戶輸入
         const userInput = userInputElement.value.trim();
-        
+
         // 如果輸入為空或者正在處理中，則返回
         if (!userInput || isProcessing) {
             return;
         }
-        
-        // 設置處理狀態
-        isProcessing = true;
-        userInputElement.disabled = true;
-        
+
         // 清空輸入框
         userInputElement.value = '';
-        
-        // 添加用戶消息到聊天窗口
-        addUserMessage(userInput);
-        
-        // 處理用戶輸入
-        processUserInput(userInput);
+
+        // 添加用戶消息到聊天窗口，拿到氣泡節點供稍後標記傳送中/失敗狀態
+        const bubble = addUserMessage(userInput);
+
+        // 立即持久化：即使接下來的網路請求失敗，這則訊息也已經在
+        // localStorage 裡，不會因為使用者在結果揭曉前就關閉分頁/重整而遺失。
+        saveChatHistory();
+
+        await attemptSend(userInput, bubble);
     }
-    
-    // 處理用戶輸入
-    async function processUserInput(userInput) {
+
+    // 實際嘗試發送一則訊息（新訊息與「點擊重試」共用同一份邏輯）。
+    // userInput 一律是呼叫端明確傳入的原始文字，不是重新讀取輸入框目前的
+    // 內容——重試時使用者可能已經在輸入框打了別的話，不該被這次重試誤送。
+    async function attemptSend(userInput, bubbleElement) {
+        isProcessing = true;
+        userInputElement.disabled = true;
+
+        clearSendFailure(bubbleElement);
+        markPending(bubbleElement);
+
         // 必須宣告在 try 之外：catch 區塊也要用它移除「思考中」動畫。
         // 若宣告在 try 內，const 的區塊作用域會讓 catch 取用時拋出 ReferenceError，
         // 導致錯誤訊息永遠顯示不出來、思考動畫卡住不消失。
@@ -410,25 +424,29 @@ const ChatModule = (function() {
                 console.error('ApiService未定義，無法發送消息');
                 throw new Error('API服務未初始化，請重新加載應用');
             }
-            
+
             // 檢查sendChatMessage方法是否存在
             if (typeof ApiService.sendChatMessage !== 'function') {
                 console.error('ApiService.sendChatMessage方法未定義');
                 throw new Error('API服務不完整，缺少sendChatMessage方法');
             }
-            
-            // 供應商與模型由 fetchAPI 依設定面板統一附上 (X-LLM-* 標頭)
+
+            // 供應商與模型由 fetchAPI 依設定面板統一附上 (X-LLM-* 標頭)。
+            // 注意：sendChatMessage 內部絕不自動重試（POST 是非冪等請求，
+            // 見 api_service.js 的說明）——這裡失敗就是真的失敗一次，重試
+            // 完全交給下面 catch 區塊掛上的「點擊重試」，由使用者主動觸發。
             const response = await ApiService.sendChatMessage(userInput);
-            
+
             // 移除思考中消息
             const thinkingMessage = document.getElementById(thinkingMessageId);
             if (thinkingMessage) {
                 thinkingMessage.remove();
             }
-            
+            thinkingMessageId = null;
+
             // 添加系統回應 - 修復數據結構不匹配問題
             console.log('API響應數據結構:', response);
-            
+
             // 檢查響應格式並提取消息內容
             let messageContent;
             if (typeof response === 'string') {
@@ -444,8 +462,9 @@ const ChatModule = (function() {
                 // 默認錯誤消息
                 messageContent = I18N.t('chat.cantUnderstand');
             }
-            
-            // 添加系統消息
+
+            // 成功了：清掉傳送中標記，添加系統消息
+            clearPending(bubbleElement);
             addSystemMessage(messageContent);
 
             // 保存聊天歷史
@@ -458,12 +477,15 @@ const ChatModule = (function() {
             if (thinkingMessage) {
                 thinkingMessage.remove();
             }
-            
-            // 添加錯誤消息
-            addSystemMessage(I18N.t('chat.errorPrefix', { error: error.message }));
-            
-            // 如果是API服務未定義的錯誤，顯示更詳細的錯誤信息
-            if (error.message.includes('API服務未初始化')) {
+
+            // 在使用者的訊息氣泡上標記「傳送失敗」＋「點擊重試」，不再另外
+            // 添加一則系統錯誤訊息（訊息本身如實留在對話串裡，不會消失，
+            // 也不需要使用者重新輸入——見 markSendFailed）。
+            markSendFailed(bubbleElement, userInput);
+
+            // ApiService 本身未就緒是更嚴重的整合問題，重試也無濟於事——
+            // 額外提示使用者刷新頁面（既有的安全網訊息，行為不變）。
+            if (error.message && error.message.includes('API服務未初始化')) {
                 addSystemMessage(I18N.t('chat.tryRefresh'));
             }
         } finally {
@@ -472,6 +494,101 @@ const ChatModule = (function() {
             userInputElement.disabled = false;
             userInputElement.focus();
         }
+    }
+
+    // 標記一則使用者訊息氣泡「傳送中」（v2.3 task 2.3）：淡化樣式，跟一般
+    // 已送達/尚未有結果的訊息區分開來。沒有節點可標記時安靜跳過。
+    function markPending(bubbleElement) {
+        if (bubbleElement) {
+            bubbleElement.classList.add('pending');
+        }
+    }
+
+    function clearPending(bubbleElement) {
+        if (bubbleElement) {
+            bubbleElement.classList.remove('pending');
+        }
+    }
+
+    // 標記一則使用者訊息氣泡「傳送失敗」，並附上「點擊重試」按鈕。
+    //
+    // 聊天訊息是非冪等的 POST——這裡的重試一定是使用者主動點按鈕觸發，
+    // 絕不自動重試（自動重試可能讓後端真的收到兩次同一句話）。原始文字
+    // 存在 bubbleElement.dataset.pendingText 上，重試時直接重送，不必
+    // 使用者重新輸入，也不會被使用者這段時間在輸入框打的新內容誤蓋過去。
+    function markSendFailed(bubbleElement, originalText) {
+        clearPending(bubbleElement);
+
+        if (!bubbleElement) {
+            // 防禦性後備：理論上不會發生（addUserMessage 一定回傳元素），
+            // 沒有氣泡可以掛失敗狀態時，退回舊版的系統訊息，至少不會讓
+            // 失敗完全無聲無息、使用者以為訊息送出去了
+            addSystemMessage(I18N.t('chat.errorPrefix', { error: originalText || '' }));
+            return;
+        }
+
+        bubbleElement.classList.add('send-failed');
+        bubbleElement.dataset.pendingText = originalText;
+
+        const content = bubbleElement.querySelector('.message-content');
+        if (!content) {
+            return;
+        }
+
+        let failureRow = content.querySelector('.send-failure');
+        if (!failureRow) {
+            failureRow = document.createElement('div');
+            failureRow.className = 'send-failure';
+            content.appendChild(failureRow);
+        }
+        failureRow.innerHTML = '';
+
+        const label = document.createElement('span');
+        label.className = 'send-failure-label';
+        label.textContent = I18N.t('chat.sendFailed');
+        failureRow.appendChild(label);
+
+        const retryBtn = document.createElement('button');
+        retryBtn.type = 'button';
+        retryBtn.className = 'send-retry-btn';
+        retryBtn.textContent = I18N.t('chat.retrySend');
+        retryBtn.addEventListener('click', function() {
+            retrySendFromBubble(bubbleElement);
+        });
+        failureRow.appendChild(retryBtn);
+    }
+
+    // 移除失敗狀態的視覺標記（重試開始時呼叫）。這次重試最後成功與否，
+    // 交由 attemptSend 決定要不要再叫一次 markSendFailed，這裡只負責清掉
+    // 「上一次失敗」留下的痕跡，避免舊的失敗列跟新一輪的傳送中狀態並存。
+    function clearSendFailure(bubbleElement) {
+        if (!bubbleElement) return;
+        bubbleElement.classList.remove('send-failed');
+        const failureRow = bubbleElement.querySelector('.send-failure');
+        if (failureRow) {
+            failureRow.remove();
+        }
+    }
+
+    // 使用者點擊失敗氣泡上的「重試」。isProcessing 為 true（例如同時有
+    // 另一則訊息正在傳送）時比照 endChat 的既有慣例，提示忙碌並直接返回，
+    // 不排隊、不疊加。
+    function retrySendFromBubble(bubbleElement) {
+        if (isProcessing) {
+            if (typeof UIManager !== 'undefined' && UIManager.showToast) {
+                UIManager.showToast(I18N.t('chat.busy'));
+            } else {
+                alert(I18N.t('chat.busy'));
+            }
+            return;
+        }
+
+        const text = bubbleElement && bubbleElement.dataset ? bubbleElement.dataset.pendingText : '';
+        if (!text) {
+            return;
+        }
+
+        attemptSend(text, bubbleElement);
     }
     
     // 組出訊息的頭像 HTML：user 一律有圖，system/thinking 依 botAvatar 是否存在決定
@@ -505,7 +622,10 @@ const ChatModule = (function() {
     }
 
     // user/system 訊息共用邏輯：建立 DOM 節點、寫入歷史、選擇性捲動；
-    // 兩者差異只在頭像種類與 chatHistory 記錄的 type，故合併為同一實作
+    // 兩者差異只在頭像種類與 chatHistory 記錄的 type，故合併為同一實作。
+    // 回傳建立的 DOM 節點（v2.3 task 2.3 新增）：sendMessage 需要拿到剛
+    // 建立的使用者訊息氣泡，之後傳送失敗時才能把「傳送失敗＋重試」的標記
+    // 掛在正確的氣泡上，而不是猜測它在 DOM 裡的位置。
     function appendChatMessage(type, content, scroll) {
         const messageElement = document.createElement('div');
         messageElement.className = type === 'user' ? 'chat-message user-message' : 'chat-message system-message';
@@ -522,16 +642,18 @@ const ChatModule = (function() {
         if (scroll) {
             scrollToBottom();
         }
+
+        return messageElement;
     }
 
     // 添加用戶消息
     function addUserMessage(content, scroll = true) {
-        appendChatMessage('user', content, scroll);
+        return appendChatMessage('user', content, scroll);
     }
 
     // 添加系統消息
     function addSystemMessage(content, scroll = true) {
-        appendChatMessage('system', content, scroll);
+        return appendChatMessage('system', content, scroll);
     }
 
     // 添加"思考中"消息

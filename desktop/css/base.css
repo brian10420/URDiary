@@ -405,6 +405,26 @@ input:focus, textarea:focus, select:focus {
     opacity: 1;
 }
 
+/* 連線狀態橫幅（v2.3 task 2.3）：見 index.html #connectivity-banner 的
+   結構註解——走一般文件流（不是 fixed），放在 .app-header 與 .app-content
+   之間，顯示時把後者往下推，不需要跟 toast/tab-bar 搶 z-index 或處理
+   safe-area-inset，mobile.css 因此不需要為它另外加規則。 */
+.connectivity-banner {
+    display: none;
+    align-items: center;
+    justify-content: center;
+    gap: var(--spacing-sm);
+    padding: var(--spacing-xs) var(--spacing-md);
+    background-color: var(--warning-color);
+    color: var(--neutral-800);
+    font-size: var(--font-size-sm);
+    text-align: center;
+}
+
+.connectivity-banner.visible {
+    display: flex;
+}
+
 /* 載入動畫 */
 .loading-spinner {
     display: none;
