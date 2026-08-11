@@ -82,6 +82,29 @@ CORS_ALLOWED_ORIGINS = [o.strip() for o in os.getenv("CORS_ALLOWED_ORIGINS", "")
 if not CORS_ALLOWED_ORIGINS:
     CORS_ALLOWED_ORIGINS = default_origins
 
+# -----------------------
+# 前端靜態檔案 (v2.3：後端同源提供 desktop/ 的靜態檔，讓手機能透過 HTTPS
+# tunnel 用同一個 origin 存取 App + API；main.py 的 StaticFiles 掛載與
+# 明確檔案路由讀這兩個值)
+# -----------------------
+# 路徑錨定在本檔案位置 (app/config.py -> backend/ -> 專案根 / desktop)，
+# 不能依賴啟動目錄——uvicorn 是以 backend/ 為 CWD 執行的。
+FRONTEND_DIR = Path(os.getenv("URDIARY_FRONTEND_DIR", str(_REPO_ROOT / "desktop"))).expanduser()
+
+
+def _env_flag(name: str, default: bool) -> bool:
+    """解析布林環境變數；未設定時回退到 default。"""
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() not in ("", "0", "false", "no", "off")
+
+
+# 未顯式設定 URDIARY_SERVE_FRONTEND 時：desktop/ 存在就自動開啟，本機開發
+# 不必額外設定；沒有 desktop/ 的部署 (例如只跑 API 的容器) 則預設不掛載，
+# 避免啟動時因 StaticFiles 目錄不存在而炸掉 (StaticFiles 建構時的 check_dir)。
+SERVE_FRONTEND = _env_flag("URDIARY_SERVE_FRONTEND", default=FRONTEND_DIR.is_dir())
+
 # 必要的配置檢查
 # XAI_API_KEY 不再是必要條件：金鑰主要由前端提供（X-LLM-* 標頭），.env 只是後備
 if ENV == "production" and not XAI_API_KEY:

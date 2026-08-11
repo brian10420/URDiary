@@ -1,11 +1,14 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 from database import engine
 from database.models import Base
 from api.routes import api_router
 from middleware.error_handler import error_handler
 from middleware.exception_handlers import register_exception_handlers
-from config import CORS_ALLOWED_ORIGINS, ENV
+from middleware.security_headers import SecurityHeadersMiddleware
+from config import CORS_ALLOWED_ORIGINS, ENV, SERVE_FRONTEND, FRONTEND_DIR
 from utils.logger import cleanup_old_logs, app_logger
 from memory_manager import purge_expired_chat_messages
 import atexit
@@ -73,6 +76,12 @@ app.add_middleware(
                    "X-Memory-Semantic", "X-Language"],
 )
 
+# 添加安全標頭中間件 (v2.3)：刻意註冊在 CORS 之後，使其成為最外層——
+# add_middleware() 是 insert(0, ...)，最後呼叫的排在最外層。CORS 對
+# preflight (OPTIONS) 請求會直接短路回應、不呼叫更內層，只有放在最外層
+# 才能保證「所有」回應都會被加上安全標頭 (見 middleware/security_headers.py)。
+app.add_middleware(SecurityHeadersMiddleware)
+
 # 註冊API路由
 app.include_router(api_router)
 
@@ -95,6 +104,56 @@ def system_capabilities():
         "semantic_memory_available": semantic_available(),
         "app_version": app.version,
     }
+
+
+# -----------------------
+# 前端靜態檔案 (v2.3)
+# -----------------------
+# 刻意不掛 catch-all "/{path:path}"：diary router 沒有 prefix，/generate、
+# /diaries/*、/diary/*、/analytics/*、/interaction-notes/* 都在根路徑，
+# catch-all 會蓋掉這些 API 路由。改成只掛明確的子樹 (js/css/assets) 與
+# 明確的檔案路由，這樣也不會把 desktop/node_modules、package.json、
+# main.js (Electron 主行程)、tests/ 曝露到網路。
+#
+# 這個區塊必須排在 include_router(api_router) 與 /health、
+# /system/capabilities 之後：Starlette 依「註冊順序」first-match-wins，
+# 同名時要讓 API 路由贏。
+if SERVE_FRONTEND:
+    app.mount("/js", StaticFiles(directory=FRONTEND_DIR / "js"), name="fe-js")
+    app.mount("/css", StaticFiles(directory=FRONTEND_DIR / "css"), name="fe-css")
+    app.mount("/assets", StaticFiles(directory=FRONTEND_DIR / "assets"), name="fe-assets")
+
+    def _serve_frontend_file(filename: str, *, no_cache: bool = False) -> FileResponse:
+        """從 FRONTEND_DIR 讀單一檔案；不存在時回乾淨的 404 (不是 500)。
+
+        manifest.webmanifest/sw.js/favicon.ico 目前都還不存在 (由後續任務
+        建立)，行為要跟 StaticFiles 本身缺檔時一致——starlette.staticfiles
+        缺檔同樣是 raise HTTPException(status_code=404)，兩者的 404 JSON
+        回應形狀才會一致。
+        """
+        file_path = FRONTEND_DIR / filename
+        if not file_path.is_file():
+            raise HTTPException(status_code=404)
+        headers = {"Cache-Control": "no-cache"} if no_cache else None
+        return FileResponse(file_path, headers=headers)
+
+    @app.get("/", include_in_schema=False, name="fe-index")
+    def serve_frontend_index():
+        return _serve_frontend_file("index.html", no_cache=True)
+
+    @app.get("/manifest.webmanifest", include_in_schema=False, name="fe-manifest")
+    def serve_frontend_manifest():
+        return _serve_frontend_file("manifest.webmanifest")
+
+    @app.get("/sw.js", include_in_schema=False, name="fe-sw")
+    def serve_frontend_service_worker():
+        # 必須從網站根目錄提供，Service Worker 的 scope 才能涵蓋整個 app；
+        # no-cache 讓瀏覽器每次都重新驗證，PWA 更新才不會卡在舊版 SW。
+        return _serve_frontend_file("sw.js", no_cache=True)
+
+    @app.get("/favicon.ico", include_in_schema=False, name="fe-favicon")
+    def serve_frontend_favicon():
+        return _serve_frontend_file("favicon.ico")
 
 
 @app.on_event("startup")
