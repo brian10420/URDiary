@@ -11,7 +11,10 @@ conftest.py 的 env 區塊)，其餘既有測試因此完全不受影響，不�
 `client` fixture是 session 共用；conftest.py 的 autouse `_reset_rate_limits`
 fixture 會在每個測試前後清空 `rate_limit._counters`，這裡不用自己處理。
 """
+import threading
+import time
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 
 import config
 from conftest import TEST_PASSWORD
@@ -437,3 +440,116 @@ def test_expired_entries_are_pruned_opportunistically(monkeypatch):
 
     assert len(rate_limit._counters) == 1
     assert ("global", "ip-new") in rate_limit._counters
+
+
+# --- 併發安全：`_check_and_increment` 的 peek+increment 必須是不可分割的
+# 單步 (code review 發現的問題)。IP 鍵桶走 async middleware，peek 到
+# increment 之間沒有 `await`，asyncio 的合作式排程本來就安全；但
+# `enforce_llm_rate_limit` 是普通 `def`，FastAPI 用 `run_in_threadpool`
+# 給它真正的 OS 執行緒平行執行，同一個使用者的並發請求可能真的同時跑在
+# 不同執行緒上。下面兩個測試直接測 `_check_and_increment` 這個原語本身
+# (不透過 HTTP)：一個是無執行緒的既有行為回歸測試，另一個是真正拿
+# `ThreadPoolExecutor` 製造競態的重現測試。
+
+def test_check_and_increment_sequential_calls_respect_limit_of_one(monkeypatch):
+    """最小可行的「回合制」驗證：同一把鑰匙、上限 1，依序呼叫兩次，
+    第一次放行、第二次拒絕且附帶正的 retry_after。這是 `_check_and_increment`
+    的核心契約，鎖必須不改變這個單執行緒下的行為。"""
+    rate_limit.reset()
+    monkeypatch.setattr(rate_limit, "LLM_LIMIT", 1)
+
+    allowed_1, retry_after_1 = rate_limit._check_and_increment("llm", "race-test-user")
+    allowed_2, retry_after_2 = rate_limit._check_and_increment("llm", "race-test-user")
+
+    assert allowed_1 is True
+    assert retry_after_1 == 0.0
+    assert allowed_2 is False
+    assert retry_after_2 > 0.0
+
+
+def test_lock_provides_deterministic_mutual_exclusion(monkeypatch):
+    """`ThreadPoolExecutor` 統計性地丟一堆呼叫進去 (下面那個測試) 有個
+    盲點：`_check_and_increment` 的臨界區極短 (幾個 dict 操作)，在沒鎖的
+    (錯誤) 版本上實測過，用 `ThreadPoolExecutor.map` 平常速度去打，CPython
+    GIL 的切換間隔 (預設約 5ms) 常常大到不會真的切到另一條執行緒插進那個
+    縫裡——也就是說單靠統計性地丟一堆呼叫，光憑運氣就有機會連續好幾次
+    「剛好」測不出沒鎖的 bug (只有刻意在 peek 與 increment 之間插一段
+    sleep 加大縫隙，才每次都能穩定重現超發)。
+
+    這裡改成不吃運氣、直接證明鎖本身的互斥保證：一條背景執行緒握住
+    `rate_limit._lock`，用 `threading.Event` 確認「holder 現在真的握著鎖」
+    後，主執行緒才帶 timeout 嘗試拿同一把鎖——必須明確拿不到；holder
+    放開後，同一個嘗試立刻就拿得到。這個結果只取決於鎖的語意本身，不受
+    GIL 排程時機影響，每次執行都是同一個結果。
+    """
+    holder_has_lock = threading.Event()
+    holder_should_release = threading.Event()
+
+    def holder():
+        with rate_limit._lock:
+            holder_has_lock.set()  # 從鎖「裡面」設，主執行緒看到時鎖必定還握著
+            holder_should_release.wait(timeout=1.0)
+
+    holder_thread = threading.Thread(target=holder)
+    holder_thread.start()
+    try:
+        assert holder_has_lock.wait(timeout=1.0), "holder 執行緒沒能在時限內拿到鎖"
+
+        # holder 現在確定握著鎖：這裡帶 timeout 嘗試拿，必須明確拿不到
+        # (RLock 只對「同一條執行緒」重入；主執行緒是不同的執行緒)
+        acquired_while_held = rate_limit._lock.acquire(timeout=0.05)
+        if acquired_while_held:
+            rate_limit._lock.release()
+        assert acquired_while_held is False
+    finally:
+        holder_should_release.set()
+        holder_thread.join(timeout=2.0)
+
+    # holder 執行緒已經結束、鎖已釋放：現在應該能立刻拿到
+    acquired_after_release = rate_limit._lock.acquire(timeout=0.5)
+    assert acquired_after_release is True
+    rate_limit._lock.release()
+
+
+def test_check_and_increment_is_thread_safe_under_concurrent_calls(monkeypatch):
+    """用真正的 OS 執行緒 (ThreadPoolExecutor，不是 asyncio 協程) 重現 code
+    review 指出的競態：修好之前，多條執行緒可能都在彼此 increment 之前
+    完成 peek，一起看到「還有名額」而一起放行，超額量最多到執行緒池大小。
+    修好之後，不管用幾條執行緒同時打同一把鑰匙，被放行的次數必須「精確
+    等於」上限。
+
+    `_increment` 內部真的執行寫入之前，刻意 monkeypatch 一段極短延遲——
+    純粹丟一堆呼叫進執行緒池 (不加這段延遲) 實測過，`_check_and_increment`
+    的臨界區太短，光靠 CPython GIL 平常的切換時機，沒鎖的版本也常常
+    連續好幾次「剛好」沒有交錯到、測不出超發 (見
+    `test_lock_provides_deterministic_mutual_exclusion` 的說明)。加這段
+    延遲讓 peek 到真正寫入之間的縫隙被拉寬，沒鎖時足以讓其他執行緒的 peek
+    穩定地插進來、一起判定放行；有鎖時因為整段 peek+increment 都在同一次
+    鎖持有期間內，這段延遲只會讓单次呼叫變慢，其他執行緒的 peek 根本進不
+    來，結果仍然精確等於上限——這才是測試要鎖定的行為。
+    """
+    rate_limit.reset()
+    monkeypatch.setattr(rate_limit, "LLM_LIMIT", 5)
+    monkeypatch.setattr(rate_limit, "LLM_WINDOW_SECONDS", 60)
+
+    real_increment = rate_limit._increment
+
+    def widened_increment(bucket, key):
+        time.sleep(0.002)
+        real_increment(bucket, key)
+
+    monkeypatch.setattr(rate_limit, "_increment", widened_increment)
+
+    key = "concurrent-test-user"
+    attempts = 50
+
+    with ThreadPoolExecutor(max_workers=20) as pool:
+        results = list(pool.map(lambda _: rate_limit._check_and_increment("llm", key)[0], range(attempts)))
+
+    allowed_count = sum(1 for allowed in results if allowed)
+    assert allowed_count == 5
+
+    # 內部計數本身也不該超發：允許次數之外的呼叫全部要被拒絕，不能悄悄
+    # 把 count 衝過 limit 卻仍回傳 True
+    entry = rate_limit._counters[("llm", key)]
+    assert entry["count"] == 5

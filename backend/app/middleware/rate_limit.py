@@ -40,6 +40,7 @@
 monkeypatch 不會被看到。
 """
 import math
+import threading
 import time
 from typing import Dict, Tuple
 
@@ -114,6 +115,25 @@ def _now() -> float:
 # (bucket, key) -> {"window_start": float, "count": int}
 _counters: Dict[Tuple[str, str], Dict[str, float]] = {}
 
+# 保護 `_counters` 的唯一一把鎖。所有會讀寫它的函式都要先拿到這把鎖才動手
+# ——包括看起來「只讀」的 `_peek` (它會透過 `_prune_expired` 砍掉過期項目，
+# 一樣是變動)。用 RLock (可重入) 而不是普通 Lock：`_check_and_increment`
+# 需要把「peek 一次＋允許的話就 increment」包成單一原子操作 (見下方
+# 該函式的說明)，作法是自己先拿鎖，再呼叫一樣會拿鎖的 `_peek`/`_increment`
+# ——同一條執行緒重入不會卡死，但其他執行緒在整段期間完全進不來，
+# 這才是真正需要的原子性。
+#
+# 為什麼需要鎖：IP 鍵桶走 `RateLimitMiddleware.dispatch`，是 async 函式，
+# peek 到 increment 之間沒有任何 `await`，asyncio 的合作式排程保證這段
+# 期間不會被切到其他 coroutine，天生安全。但 `enforce_llm_rate_limit`
+# 是普通 `def`（FastAPI 對同步依賴項會丟進 `run_in_threadpool`，用真正的
+# OS 執行緒平行執行），同一個使用者兩個並發請求可能各自跑在不同執行緒上、
+# 一個 increment 之前另一個就先 peek 完了——兩邊都覺得「還有名額」，
+# 超額量不再是「至多 1」，而是最多到 threadpool 的並發度。這把鎖把
+# peek+increment 這個「先看再做」的複合操作變成不可分割的單步，兩個
+# buckets (IP 鍵、使用者鍵) 共用同一份 `_counters`，用同一把鎖統一防護。
+_lock = threading.RLock()
+
 
 def _prune_expired(now: float) -> None:
     """機會性清理：掃一輪 `_counters`，砍掉視窗已經過期的項目。
@@ -121,14 +141,20 @@ def _prune_expired(now: float) -> None:
     沒有背景執行緒——靠「每次真的有請求進來查詢/計數時」順便清理，符合
     task brief 的「no background thread」。家庭規模下 dict 條目數很小，
     全表掃描成本可忽略。
+
+    這裡雖然「只是清理」，一樣要拿鎖：對 dict 的刪除與別的執行緒同時進行
+    的讀取/寫入交錯，輕則資料不一致 (漏刪、錯刪)，重則在別的執行緒正在
+    `for ... in _counters.items()` 迭代時被這裡改動大小，直接炸出
+    `RuntimeError: dictionary changed size during iteration`。
     """
-    stale = [
-        dict_key
-        for dict_key, entry in _counters.items()
-        if now - entry["window_start"] >= _limit_and_window(dict_key[0])[1]
-    ]
-    for dict_key in stale:
-        del _counters[dict_key]
+    with _lock:
+        stale = [
+            dict_key
+            for dict_key, entry in _counters.items()
+            if now - entry["window_start"] >= _limit_and_window(dict_key[0])[1]
+        ]
+        for dict_key in stale:
+            del _counters[dict_key]
 
 
 def _peek(bucket: str, key: str) -> Tuple[bool, float]:
@@ -140,12 +166,13 @@ def _peek(bucket: str, key: str) -> Tuple[bool, float]:
     now = _now()
     _prune_expired(now)
 
-    entry = _counters.get((bucket, key))
-    if entry is None or now - entry["window_start"] >= window:
+    with _lock:
+        entry = _counters.get((bucket, key))
+        if entry is None or now - entry["window_start"] >= window:
+            return True, 0.0
+        if entry["count"] >= limit:
+            return False, max(window - (now - entry["window_start"]), 0.0)
         return True, 0.0
-    if entry["count"] >= limit:
-        return False, max(window - (now - entry["window_start"]), 0.0)
-    return True, 0.0
 
 
 def _increment(bucket: str, key: str) -> None:
@@ -157,21 +184,33 @@ def _increment(bucket: str, key: str) -> None:
     """
     limit, window = _limit_and_window(bucket)
     now = _now()
-    entry = _counters.get((bucket, key))
-    if entry is None or now - entry["window_start"] >= window:
-        entry = {"window_start": now, "count": 0}
-        _counters[(bucket, key)] = entry
-    entry["count"] += 1
+    with _lock:
+        entry = _counters.get((bucket, key))
+        if entry is None or now - entry["window_start"] >= window:
+            entry = {"window_start": now, "count": 0}
+            _counters[(bucket, key)] = entry
+        entry["count"] += 1
 
 
 def _check_and_increment(bucket: str, key: str) -> Tuple[bool, float]:
     """peek 過關的話順便計入本次請求。IP 桶與 LLM 桶都用這個——
     「用量」直接等於「請求量」，不像登入鎖定只有失敗才算數。
+
+    **必須把 peek 與 increment 包在同一次鎖持有期間**，否則兩條執行緒各自
+    呼叫 `_peek()`（此時都還沒 increment、都看到「還有名額」）就會一起放行
+    ——這正是 code review 抓到的競態：`enforce_llm_rate_limit` 是同步函式，
+    FastAPI 用 `run_in_threadpool` 給它真正的 OS 執行緒並發，光是分開呼叫
+    `_peek()` 再呼叫 `_increment()` (即使兩者各自內部都有鎖) 沒辦法防止
+    這兩步「之間」被別的執行緒插進來。`_lock` 是可重入的 RLock，這裡外層
+    拿一次鎖、底下呼叫的 `_peek`/`_increment` 各自再拿一次不會卡死
+    (同一條執行緒重入)，但別的執行緒在整段 with 區塊執行完之前完全進不來，
+    peek 到 increment 之間不會再被插隊。
     """
-    allowed, retry_after = _peek(bucket, key)
-    if allowed:
-        _increment(bucket, key)
-    return allowed, retry_after
+    with _lock:
+        allowed, retry_after = _peek(bucket, key)
+        if allowed:
+            _increment(bucket, key)
+        return allowed, retry_after
 
 
 def _ceil_seconds(seconds: float) -> int:
@@ -182,8 +221,10 @@ def _ceil_seconds(seconds: float) -> int:
 
 def reset() -> None:
     """清空所有計數器。給測試在案例之間重置用，也留給未來的管理介面用
-    (例如手動解除某個被鎖定的帳號)。"""
-    _counters.clear()
+    (例如手動解除某個被鎖定的帳號)。跟其他所有動到 `_counters` 的函式
+    一樣要拿鎖，理由同 `_prune_expired`。"""
+    with _lock:
+        _counters.clear()
 
 
 # -----------------------
@@ -346,7 +387,9 @@ def record_login_failure(username: str) -> None:
 def record_login_success(username: str) -> None:
     """登入成功要清掉這個使用者名稱之前累積的失敗次數——鎖定只針對
     「持續失敗」，不是「這個使用者名稱曾經失敗過」，成功一次就該重新
-    給滿額度。"""
+    給滿額度。直接操作 `_counters`（沒有經過 `_increment`/`_peek`），
+    所以要自己拿鎖，理由同 `_prune_expired`。"""
     if not config.RATE_LIMIT_ENABLED:
         return
-    _counters.pop(("login_lockout", username), None)
+    with _lock:
+        _counters.pop(("login_lockout", username), None)
