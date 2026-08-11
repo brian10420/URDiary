@@ -15,7 +15,8 @@ const SettingsModule = (function() {
     let settingsBtn, settingsDialog, closeSettingsBtn, providerSelect,
         modelInput, apiKeyInput, keyStatus, clearKeyBtn,
         baseUrlRow, baseUrlInput, saveBtn, settingsError,
-        semanticCheckbox, semanticStatus, languageSelect;
+        semanticCheckbox, semanticStatus, languageSelect,
+        sessionsList, logoutBtn;
 
     function getProviders() {
         return (typeof CONFIG !== 'undefined' && CONFIG.PROVIDERS) ? CONFIG.PROVIDERS : {};
@@ -171,6 +172,96 @@ const SettingsModule = (function() {
         showError('');
     }
 
+    // ---- 已登入的裝置（工作階段撤銷）----
+
+    function formatSessionDate(iso) {
+        if (!iso) return '';
+        // 後端存的是 UTC naive 時間，序列化時不帶時區標記；補上 Z 才不會
+        // 被瀏覽器當成本地時間而顯示成未來/過去好幾小時
+        const normalized = /[Z+]|-\d{2}:\d{2}$/.test(iso) ? iso : `${iso}Z`;
+        const date = new Date(normalized);
+        if (isNaN(date.getTime())) return '';
+        return date.toLocaleString(I18N.dateLocale(), {
+            year: 'numeric', month: 'numeric', day: 'numeric',
+            hour: '2-digit', minute: '2-digit'
+        });
+    }
+
+    function renderSessions(sessions) {
+        if (!sessionsList) return;
+        if (!sessions.length) {
+            sessionsList.innerHTML = `<small style="color: #888;">${escapeHtml(I18N.t('auth.devicesEmpty'))}</small>`;
+            return;
+        }
+
+        // 所有欄位都來自伺服器（user_agent 是使用者可控的字串），一律轉義
+        sessionsList.innerHTML = sessions.map(session => {
+            const name = session.device_label || session.user_agent || I18N.t('auth.deviceUnknown');
+            const marker = session.is_current ?
+                ` <span style="color: green;">(${escapeHtml(I18N.t('auth.deviceCurrent'))})</span>` : '';
+            const since = I18N.t('auth.deviceSince', { date: formatSessionDate(session.created_at) });
+            const lastUsed = I18N.t('auth.deviceLastUsed', { date: formatSessionDate(session.last_used_at) });
+            const revokeBtn = session.is_current ? '' :
+                `<button class="btn settings-revoke-session" data-session-id="${escapeHtml(session.id)}"
+                         data-device-name="${escapeHtml(name)}"
+                         style="padding: 2px 8px; font-size: 12px;">${escapeHtml(I18N.t('auth.revokeDevice'))}</button>`;
+
+            return `<div style="display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 6px 0; border-bottom: 1px solid #eee;">
+                <div style="min-width: 0;">
+                    <div style="overflow-wrap: anywhere;">${escapeHtml(name)}${marker}</div>
+                    <small style="color: #888;">${escapeHtml(since)} · ${escapeHtml(lastUsed)}</small>
+                </div>
+                ${revokeBtn}
+            </div>`;
+        }).join('');
+
+        sessionsList.querySelectorAll('.settings-revoke-session').forEach(button => {
+            button.addEventListener('click', () =>
+                revokeSession(button.dataset.sessionId, button.dataset.deviceName, button));
+        });
+    }
+
+    async function refreshSessions() {
+        if (!sessionsList) return;
+        sessionsList.innerHTML = `<small style="color: #888;">${escapeHtml(I18N.t('auth.devicesLoading'))}</small>`;
+        try {
+            const sessions = await ApiService.getSessions();
+            renderSessions(Array.isArray(sessions) ? sessions : []);
+        } catch (error) {
+            console.warn('載入裝置清單失敗:', error);
+            sessionsList.innerHTML = `<small style="color: #888;">${escapeHtml(I18N.t('auth.devicesFailed'))}</small>`;
+        }
+    }
+
+    async function revokeSession(sessionId, deviceName, button) {
+        if (!window.confirm(I18N.t('auth.revokeConfirm', { device: deviceName || '' }))) return;
+
+        try {
+            if (button) button.disabled = true;
+            await ApiService.revokeSession(sessionId);
+            toast(I18N.t('auth.revoked'));
+            await refreshSessions();
+        } catch (error) {
+            console.error('撤銷裝置失敗:', error);
+            toast(I18N.t('auth.revokeFailed', { error: error.message }));
+            if (button) button.disabled = false;
+        }
+    }
+
+    async function logout() {
+        if (!window.confirm(I18N.t('auth.logoutConfirm'))) return;
+        try {
+            if (logoutBtn) logoutBtn.disabled = true;
+            await ApiService.logout();
+            toast(I18N.t('auth.loggedOut'));
+            closeDialog();
+            // 交回登入流程（與 fetchAPI 401 時同一條路徑，會重置各模塊狀態）
+            window.dispatchEvent(new CustomEvent('urdiary:auth-expired', { detail: { endpoint: '/users/logout' } }));
+        } finally {
+            if (logoutBtn) logoutBtn.disabled = false;
+        }
+    }
+
     function openDialog() {
         if (!settingsDialog) return;
 
@@ -185,6 +276,7 @@ const SettingsModule = (function() {
             languageSelect.value = I18N.getLang();
         }
         refreshSemanticStatus();
+        refreshSessions();
         renderFields();
         settingsDialog.style.display = 'block';
         settingsDialog.style.zIndex = '1000';
@@ -287,6 +379,8 @@ const SettingsModule = (function() {
         semanticCheckbox = document.getElementById('settings-semantic-memory');
         semanticStatus = document.getElementById('settings-semantic-status');
         languageSelect = document.getElementById('settings-language');
+        sessionsList = document.getElementById('settings-sessions-list');
+        logoutBtn = document.getElementById('settings-logout');
 
         // 供應商下拉選單由 CONFIG.PROVIDERS 生成
         if (providerSelect) {
@@ -301,6 +395,7 @@ const SettingsModule = (function() {
         if (closeSettingsBtn) closeSettingsBtn.addEventListener('click', closeDialog);
         if (saveBtn) saveBtn.addEventListener('click', save);
         if (clearKeyBtn) clearKeyBtn.addEventListener('click', clearKey);
+        if (logoutBtn) logoutBtn.addEventListener('click', logout);
 
         // 金鑰載入完成後刷新狀態顯示（面板若已開啟）
         if (typeof SecureStore !== 'undefined' && SecureStore.ready) {

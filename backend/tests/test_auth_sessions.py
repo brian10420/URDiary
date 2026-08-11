@@ -174,6 +174,28 @@ def test_reusing_an_old_refresh_token_revokes_the_whole_family(client):
     assert client.post("/users/token/refresh", json={"refresh_token": other_device_refresh}).status_code == 401
 
 
+def test_rotation_can_only_be_claimed_once(client):
+    """輪替的認領是條件式 UPDATE (CAS)：同一列只有第一個請求搶得到。
+
+    這是併發刷新的防線 —— 先讀後寫的話，兩個同時到達的請求會讀到同一個
+    「未輪替」狀態，從一張刷新令牌長出兩條有效的鏈。
+    """
+    from database import SessionLocal
+    from database import crud
+
+    sess = _register_and_login(client)
+    jti = _claims(sess["refresh"])["jti"]
+
+    db = SessionLocal()
+    try:
+        row = crud.get_auth_session_by_jti(db, jti)
+        assert crud.claim_auth_session_rotation(db, row.id, "winner-jti") is True
+        assert crud.claim_auth_session_rotation(db, row.id, "loser-jti") is False
+        assert crud.get_auth_session_by_jti(db, jti).replaced_by_jti == "winner-jti"
+    finally:
+        db.close()
+
+
 def test_refresh_token_unknown_to_the_server_is_rejected(client):
     """簽章有效但伺服器沒有對應工作階段列 (例如已被清掉) 也要拒絕。"""
     from utils.security import create_refresh_token

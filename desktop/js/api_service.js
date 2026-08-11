@@ -72,16 +72,45 @@ const ApiService = (function() {
     }
     
     /**
+     * 取得目前保存的刷新令牌（Electron 走 safeStorage，瀏覽器退回 localStorage）
+     */
+    function getRefreshToken() {
+        if (typeof SecureStore === 'undefined') return '';
+        return SecureStore.getAuthRefreshToken();
+    }
+
+    /**
+     * 保存登入／刷新回應中的一對令牌
+     */
+    async function setTokens(data) {
+        if (data.access_token) {
+            setAuthToken(data.access_token, data.expires_in);
+        }
+        if (data.refresh_token && typeof SecureStore !== 'undefined') {
+            await SecureStore.setAuthRefreshToken(data.refresh_token);
+        }
+    }
+
+    /**
      * 清除認證令牌
+     *
+     * 刷新令牌一定要一起清掉：後端把「已撤銷的刷新令牌又被送上來」視為
+     * 令牌外洩，會連帶登出這個帳號的所有裝置。留著死掉的令牌等於埋一顆
+     * 會炸到其他裝置的地雷。
      */
     function clearAuthToken() {
         accessToken = null;
         tokenExpiry = null;
         localStorage.removeItem('auth_token');
         localStorage.removeItem('token_expiry');
+        if (typeof SecureStore !== 'undefined') {
+            SecureStore.clearAuthRefreshToken().catch(error => {
+                console.warn('清除刷新令牌失敗:', error);
+            });
+        }
         console.log('認證令牌已清除');
     }
-    
+
     /**
      * 檢查令牌是否即將過期（默認閾值為5分鐘）
      * @returns {boolean} 是否即將過期
@@ -97,14 +126,22 @@ const ApiService = (function() {
     
     /**
      * 嘗試刷新令牌
+     *
+     * 送的是「刷新令牌」，不是過期的訪問令牌 —— 後端 v2.3 起只收
+     * type=refresh 且未過期的令牌，且每次使用都會輪替（回應帶新的一對）。
      * @returns {Promise<boolean>} 是否成功刷新
      */
     async function refreshToken() {
-        if (!accessToken) {
-            console.warn('沒有訪問令牌，無法刷新');
+        if (typeof SecureStore !== 'undefined' && SecureStore.ready) {
+            await SecureStore.ready; // 首次載入後為已解決的 promise
+        }
+
+        const storedRefreshToken = getRefreshToken();
+        if (!storedRefreshToken) {
+            console.warn('沒有刷新令牌，無法刷新');
             return false;
         }
-        
+
         try {
             console.log('嘗試刷新令牌...');
 
@@ -113,38 +150,38 @@ const ApiService = (function() {
             const response = await fetch(`${baseUrl}/users/token/refresh`, {
                 method: 'POST',
                 headers: {
-                    'Authorization': `Bearer ${accessToken}`,
                     'Content-Type': 'application/json'
                 },
+                body: JSON.stringify({ refresh_token: storedRefreshToken }),
                 // 增加超時處理
                 signal: AbortSignal.timeout(10000) // 10秒超時
             });
-            
+
             if (!response.ok) {
-                const errorText = await response.text().catch(() => '無法獲取錯誤詳情');
-                console.warn(`刷新令牌失敗: ${response.status} - ${errorText}`);
-                
-                // 如果是401錯誤，令牌可能已經過期太久
+                console.warn(`刷新令牌失敗: ${response.status}`);
+
+                // 401 = 令牌已失效／已被撤銷。務必連刷新令牌一起清掉，
+                // 再送一次會被後端判定為重用而撤光所有裝置。
                 if (response.status === 401) {
-                    console.warn('令牌已過期且無法刷新，需要重新登入');
+                    console.warn('刷新令牌已失效，需要重新登入');
                     clearAuthToken();
                 }
-                
+
                 return false;
             }
-            
+
             const data = await response.json();
-            
+
             if (!data.access_token) {
                 console.error('刷新令牌響應中缺少訪問令牌');
                 return false;
             }
-            
-            // 保存新令牌
-            setAuthToken(data.access_token, data.expires_in);
+
+            // 保存輪替後的新令牌對
+            await setTokens(data);
             console.log('令牌刷新成功');
             return true;
-            
+
         } catch (error) {
             if (error.name === 'TimeoutError') {
                 console.error('刷新令牌請求超時');
@@ -180,10 +217,11 @@ const ApiService = (function() {
             // 相反，我們將依賴後續的真實請求來確定API是否可用
                 
             // 檢查令牌，如果即將過期則嘗試刷新
-            if (accessToken && isTokenExpiringSoon()) {
+            // （訪問令牌只有 30 分鐘，靠刷新令牌續命是常態而非例外）
+            if ((accessToken || getRefreshToken()) && isTokenExpiringSoon()) {
                 console.log('令牌即將過期，嘗試刷新...');
                 const refreshed = await refreshToken();
-                
+
                 // 如果令牌刷新失敗，記錄錯誤但繼續嘗試使用當前令牌
                 if (!refreshed) {
                     console.warn('令牌刷新失敗，將使用當前令牌繼續嘗試');
@@ -925,10 +963,13 @@ const ApiService = (function() {
                     throw new Error(I18N.t('errors.badToken'));
                 }
                 
-                // 保存令牌 - 如果服務器未提供過期時間，使用默認值(24小時)
-                const expiresIn = authData.expires_in || 86400;
-                setAuthToken(authData.access_token, expiresIn);
-                
+                // 保存令牌對（access + refresh）；伺服器未給有效期時抓 30 分鐘
+                await setTokens({
+                    access_token: authData.access_token,
+                    expires_in: authData.expires_in || 1800,
+                    refresh_token: authData.refresh_token
+                });
+
                 // 保存用戶信息
                 if (authData.user_id && authData.username) {
                     setUserId(authData.username, authData.user_id);
@@ -972,48 +1013,73 @@ const ApiService = (function() {
     // 自動登入流程
     async function autoLogin() {
         console.log('開始自動登入流程...');
-        
-        try {
-            // 如果已有令牌，嘗試使用它
-            if (accessToken) {
-                console.log('檢查現有令牌狀態...');
-                
-                // 檢查令牌是否還有較長時間有效（超過60分鐘）
-                if (!isTokenExpiringSoon(60)) {
-                    console.log('使用現有有效令牌');
-                    return { success: true };
-                }
-                
-                // 檢查令牌是否還沒完全過期（在5分鐘內）
-                if (!isTokenExpiringSoon(5)) {
-                    console.log('令牌即將過期但仍可使用');
-                    return { success: true };
-                }
-                
-                console.log('令牌即將過期，嘗試刷新...');
 
-                // 嘗試刷新令牌
+        try {
+            if (typeof SecureStore !== 'undefined' && SecureStore.ready) {
+                await SecureStore.ready;
+            }
+
+            // 訪問令牌還夠用（留 5 分鐘餘裕）就直接用
+            if (accessToken && !isTokenExpiringSoon(5)) {
+                console.log('使用現有有效令牌');
+                return { success: true };
+            }
+
+            // 否則只要還有刷新令牌就換一張新的（訪問令牌 30 分鐘，這是常態路徑）
+            if (getRefreshToken()) {
+                console.log('訪問令牌即將／已經過期，嘗試以刷新令牌換新...');
                 const refreshed = await refreshToken();
                 if (refreshed) {
                     console.log('令牌刷新成功');
                     return { success: true };
-                } else {
-                    console.warn('令牌刷新失敗，需要重新登入');
-                    // 清除已過期的令牌
-                    clearAuthToken();
                 }
+                console.warn('令牌刷新失敗，需要重新登入');
             }
 
             // 密碼不會存在本機，無法代替使用者登入 —— 交回登入介面
+            clearAuthToken();
             console.log('沒有可用的令牌，需要使用者輸入密碼登入');
-            return { success: false, needLogin: true, error: '請輸入密碼登入' };
+            return { success: false, needLogin: true, error: I18N.t('auth.needLogin') };
 
         } catch (error) {
             console.error('自動登入過程發生錯誤:', error);
-            return { success: false, needLogin: true, error: `自動登入失敗: ${error.message}` };
+            return { success: false, needLogin: true, error: I18N.t('auth.autoLoginFailed', { error: error.message }) };
         }
     }
-    
+
+    /**
+     * 登出：先請後端撤銷這台裝置的工作階段，再清本機令牌。
+     *
+     * 後端撤銷失敗（離線等）也一定要清本機 —— 使用者按了登出就該登出，
+     * 剩下的訪問令牌最多 30 分鐘後自然失效。
+     */
+    async function logout() {
+        try {
+            if (accessToken) {
+                await fetchAPI('/users/logout', { method: 'POST' });
+            }
+        } catch (error) {
+            console.warn('通知後端登出失敗（仍會清除本機令牌）:', error.message);
+        } finally {
+            clearAuthToken();
+        }
+        return { success: true };
+    }
+
+    /**
+     * 已登入的裝置清單（設定面板顯示用）
+     */
+    async function getSessions() {
+        return await fetchAPI('/users/sessions');
+    }
+
+    /**
+     * 撤銷指定裝置的登入狀態
+     */
+    async function revokeSession(sessionId) {
+        return await fetchAPI(`/users/sessions/${encodeURIComponent(sessionId)}`, { method: 'DELETE' });
+    }
+
     // 導出API
     return {
         init,
@@ -1032,8 +1098,12 @@ const ApiService = (function() {
         setUserId: setUserId,
         login: login,
         autoLogin: autoLogin,
-        logout: clearAuthToken,
-        isAuthenticated: () => !!accessToken && !isTokenExpiringSoon(60),
+        logout: logout,
+        getSessions: getSessions,
+        revokeSession: revokeSession,
+        // 「還握有可用的憑證」：訪問令牌未過期，或還有刷新令牌可以換一張。
+        // 不能再用 60 分鐘當門檻 —— 訪問令牌只有 30 分鐘，那樣永遠是 false。
+        isAuthenticated: () => (!!accessToken && !isTokenExpiringSoon(0)) || !!getRefreshToken(),
         // 以下兩個是純函式，僅為 vitest 單元測試曝光，行為不變
         deriveDiaryTitle: deriveDiaryTitle,
         getMoodFromValence: getMoodFromValence

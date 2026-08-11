@@ -194,6 +194,18 @@
                     <div class="form-actions">
                         <button id="settings-save" class="btn" data-i18n="settings.save">儲存並使用</button>
                     </div>
+
+                    <!-- 已登入的裝置（工作階段撤銷；後端 /users/sessions） -->
+                    <div class="form-group" style="margin-top: 18px; border-top: 1px solid #ddd; padding-top: 14px;">
+                        <label data-i18n="auth.devices">已登入的裝置</label>
+                        <div id="settings-sessions-list"></div>
+                        <small style="display: block; margin-top: 6px; color: #888;" data-i18n="auth.devicesNote">
+                            每台裝置登入後可維持 30 天；撤銷後該裝置最多 30 分鐘內完全失效。
+                        </small>
+                        <div class="form-actions" style="margin-top: 10px;">
+                            <button id="settings-logout" class="btn" data-i18n="auth.logout">登出這台裝置</button>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
