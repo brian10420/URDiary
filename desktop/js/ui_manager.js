@@ -17,7 +17,22 @@ const UIManager = (function() {
         DIARY: 'diary',
         CALENDAR: 'calendar'
     };
-    
+
+    // 版面模式（v2.3 task 2.1）：寬螢幕（桌面/平板橫向）vs 窄螢幕（手機）。
+    // 斷點跟 css/mobile.css 的 @media (max-width: 768px) 必須保持一致——
+    // 兩邊沒有共用來源（本專案無建置流程），修改其中一處務必同步修改另一處。
+    const LAYOUT_MODE = {
+        WIDE: 'wide',
+        MOBILE: 'mobile'
+    };
+    const MOBILE_BREAKPOINT_QUERY = '(max-width: 768px)';
+
+    // matchMedia 回傳的 MediaQueryList，惰性建立於 initLayoutModeWatcher()。
+    // 環境沒有 window.matchMedia（jsdom 預設環境、極舊瀏覽器）時維持 null，
+    // getLayoutMode() 會因此固定回傳 WIDE —— 也就是今天的桌面版面，不會
+    // 拋錯，也不會誤判成手機版面。
+    let mobileMediaQuery = null;
+
     // DOM元素引用
     const elements = {
         navItems: document.querySelectorAll('.nav-item'),
@@ -40,7 +55,11 @@ const UIManager = (function() {
         
         // 重新獲取DOM元素，避免初始化過早
         refreshDOMElements();
-        
+
+        // 監看寬/窄螢幕斷點（v2.3 task 2.1）——必須在第一次 switchToState
+        // 之前就緒，第一次套版面才會用對 layoutMode
+        initLayoutModeWatcher();
+
         // 設置默認視圖
         switchToState(VIEW_STATE.CHAT_FULL);
         
@@ -73,7 +92,10 @@ const UIManager = (function() {
 
         // 初始化Debug按鈕
         initializeDebugButton();
-        
+
+        // 鍵盤感知聊天輸入框（v2.3 task 2.1）
+        initKeyboardAwareInput();
+
         // 應用初始主題
         applyTheme(getCurrentTheme());
         
@@ -144,7 +166,219 @@ const UIManager = (function() {
             console.error('導航處理錯誤:', error);
         }
     }
-    
+
+    // ------------------------------------------------------------------
+    // resolvePaneClasses（v2.3 task 2.1）
+    //
+    // 狀態機的「決定要套哪些 class」與「真的去操作 DOM」拆成兩層：這個函式
+    // 只負責前者，是純函式——只吃 (state, layoutMode) 兩個字串參數、只回傳
+    // 一個 plain object，完全不碰 document/window/matchMedia，因此可以在
+    // vitest 裡直接呼叫、不需要 DOM 環境也不需要 mock 任何瀏覽器 API。
+    // switchToState()（下面）是唯一的呼叫端，負責把回傳值套到真正的 DOM
+    // 元素上、處理轉場時序（display:none 的延遲等）。
+    //
+    // 回傳形狀：{ chat, diary, calendar, detail }，四個 key 分別對應
+    // #chat-view / #diary-view / #calendar-view 三個頂層 .view-container，
+    // 與 .diary-detail 面板。每個值都是「要 add 上去的 class 名稱字串」：
+    //   - ''            不需要任何額外 class（維持 view-container 的預設
+    //                    隱藏樣式，或 detail 維持未展開）
+    //   - 'active'      該面板全螢幕顯示
+    //   - 'half left' / 'half right'
+    //                    （只有寬螢幕會出現）該面板佔 50% 寬、並列在左/右
+    // switchToState 呼叫端用 String.split(' ') 拆開後逐一 classList.add，
+    // 所以這裡回傳的字串必須是合法的、以單一空白分隔的 class 名稱列表。
+    //
+    // 寬螢幕（layoutMode === LAYOUT_MODE.WIDE）分支逐一複製 v2.3 之前
+    // switchToState 各個 case 裡原本寫死的 classList.add 組合，行為不變
+    // （regression 測試見 tests/ui_manager_helpers.test.js）。
+    //
+    // 窄螢幕（layoutMode === LAYOUT_MODE.MOBILE）分支把五個狀態收斂成
+    // 「同一時間只顯示一個面板、只用 .active、絕不用 .half」：
+    //   - CHAT_FULL / CHAT_DIARY_SPLIT      → 顯示這個狀態原本要高亮的那個
+    //                                          面板（聊天或日記列表）單獨全螢幕
+    //   - DIARY_DETAIL_SPLIT / CHAT_DETAIL_SPLIT
+    //                                        → 兩者都收斂成「日記詳情全螢幕」
+    //                                          （diary 面板 active 且 detail
+    //                                          active），退出靠既有的
+    //                                          #back-to-list-btn（觸發
+    //                                          hideDiaryDetail，與桌面版
+    //                                          共用同一套退出邏輯，不必為
+    //                                          手機另外做一顆返回鈕）
+    //   - CALENDAR_FULL                      → 不變（本來就已經是單一全螢幕
+    //                                          面板，寬窄螢幕沒有差異）
+    function resolvePaneClasses(state, layoutMode) {
+        const S = VIEW_STATE;
+
+        if (layoutMode === LAYOUT_MODE.MOBILE) {
+            switch (state) {
+                case S.CHAT_FULL:
+                    return { chat: 'active', diary: '', calendar: '', detail: '' };
+                case S.CHAT_DIARY_SPLIT:
+                    return { chat: '', diary: 'active', calendar: '', detail: '' };
+                case S.DIARY_DETAIL_SPLIT:
+                case S.CHAT_DETAIL_SPLIT:
+                    return { chat: '', diary: 'active', calendar: '', detail: 'active' };
+                case S.CALENDAR_FULL:
+                    return { chat: '', diary: '', calendar: 'active', detail: '' };
+                default:
+                    return { chat: 'active', diary: '', calendar: '', detail: '' };
+            }
+        }
+
+        // layoutMode === LAYOUT_MODE.WIDE（或任何非 'mobile' 的值，含未知/
+        // 缺省輸入——安全預設是今天的桌面行為，而不是靜默切到手機版面）
+        switch (state) {
+            case S.CHAT_FULL:
+                return { chat: 'active', diary: '', calendar: '', detail: '' };
+            case S.CHAT_DIARY_SPLIT:
+                return { chat: 'half left', diary: 'half right', calendar: '', detail: '' };
+            case S.DIARY_DETAIL_SPLIT:
+                return { chat: '', diary: 'active', calendar: '', detail: 'active' };
+            case S.CHAT_DETAIL_SPLIT:
+                return { chat: 'half left', diary: 'half right', calendar: '', detail: 'active' };
+            case S.CALENDAR_FULL:
+                return { chat: '', diary: '', calendar: 'active', detail: '' };
+            default:
+                return { chat: 'active', diary: '', calendar: '', detail: '' };
+        }
+    }
+
+    // 這個狀態在導覽列/分頁列該高亮哪個 data-view——純粹是「語意上屬於哪個
+    // 分類」，跟 layoutMode 無關（DIARY_DETAIL_SPLIT 在手機上雖然畫面收斂成
+    // 「日記詳情全螢幕」，高亮的仍是「日記」分頁，跟桌面一致）。
+    function navHighlightForState(state) {
+        switch (state) {
+            case VIEW_STATE.CHAT_DIARY_SPLIT:
+            case VIEW_STATE.DIARY_DETAIL_SPLIT:
+                return VIEW_TYPE.DIARY;
+            case VIEW_STATE.CALENDAR_FULL:
+                return VIEW_TYPE.CALENDAR;
+            case VIEW_STATE.CHAT_FULL:
+            case VIEW_STATE.CHAT_DETAIL_SPLIT:
+            default:
+                return VIEW_TYPE.CHAT;
+        }
+    }
+
+    // 把 resolvePaneClasses 回傳的 class 字串套到單一元素上（空字串代表
+    // 不需要加任何 class，元素維持 switchToState 開頭已清空的預設狀態）。
+    function applyPaneClass(element, classString) {
+        if (!element || !classString) {
+            return;
+        }
+        classString.split(' ').forEach(function(cls) {
+            if (cls) {
+                element.classList.add(cls);
+            }
+        });
+    }
+
+    // 套用 detail 面板狀態（.diary-detail 的 active/display，以及連動
+    // .diary-list 的 with-detail）。兩個方向的時序刻意跟 v2.3 之前完全一樣：
+    //   展開：先 display:flex，下一輪事件迴圈才加 active class（讓
+    //         transition 從「剛變成 flex 但還沒 active」的起始狀態動畫過去，
+    //         而不是瞬間跳到最終狀態）。
+    //   收合：先移除 active class 觸發 CSS transition，等 300ms（配合
+    //         diary.css 的 `transition: all 0.3s ease`）淡出動畫播完才真的
+    //         display:none，避免動畫播到一半就被切斷。
+    function applyDetailPane(detailClass, diaryDetail, diaryList) {
+        const shouldBeActive = detailClass === 'active';
+
+        if (shouldBeActive) {
+            if (diaryDetail && diaryList) {
+                diaryDetail.style.display = 'flex';
+                setTimeout(() => {
+                    diaryDetail.classList.add('active');
+                    diaryList.classList.add('with-detail');
+                }, 10);
+            }
+            return;
+        }
+
+        if (diaryDetail) {
+            diaryDetail.classList.remove('active');
+            setTimeout(() => {
+                diaryDetail.style.display = 'none';
+            }, 300);
+        }
+        if (diaryList) {
+            diaryList.classList.remove('with-detail');
+        }
+    }
+
+    // 目前的版面模式：只讀 matchMedia 快取的結果，本身不呼叫 matchMedia
+    // （那是 initLayoutModeWatcher 的事）。沒有 mobileMediaQuery（環境不支援
+    // 或尚未初始化）一律當作寬螢幕——與現有桌面行為一致的安全預設值。
+    function getLayoutMode() {
+        if (!mobileMediaQuery) {
+            return LAYOUT_MODE.WIDE;
+        }
+        return mobileMediaQuery.matches ? LAYOUT_MODE.MOBILE : LAYOUT_MODE.WIDE;
+    }
+
+    // 監看寬/窄螢幕斷點變化，跨越時重新套用目前狀態的版面（單一面板 ⇄
+    // 分割面板）。window.matchMedia 不存在時整段跳過、不拋錯——這是
+    // jsdom 預設環境與部分舊瀏覽器的真實狀況（見檔頭 mobileMediaQuery 宣告
+    // 處的說明），不存在就等同「這個環境永遠是寬螢幕」，維持今天的行為。
+    function initLayoutModeWatcher() {
+        if (typeof window.matchMedia !== 'function') {
+            return;
+        }
+
+        mobileMediaQuery = window.matchMedia(MOBILE_BREAKPOINT_QUERY);
+        if (!mobileMediaQuery) {
+            return;
+        }
+
+        function handleBreakpointChange() {
+            switchToState(currentViewState);
+        }
+
+        // addEventListener 是現行標準；addListener 是舊版相容 API
+        // （Safari < 14），兩者擇一即可，用 typeof 檢查避免呼叫不存在的方法。
+        if (typeof mobileMediaQuery.addEventListener === 'function') {
+            mobileMediaQuery.addEventListener('change', handleBreakpointChange);
+        } else if (typeof mobileMediaQuery.addListener === 'function') {
+            mobileMediaQuery.addListener(handleBreakpointChange);
+        }
+    }
+
+    // 鍵盤感知輸入框（v2.3 task 2.1）：手機瀏覽器彈出虛擬鍵盤時，
+    // window.innerHeight／CSS vh 不會變，但 visualViewport 會縮小（鍵盤蓋住
+    // 的區域不算在 visualViewport 內）。監聽它的 resize/scroll，把「目前被
+    // 鍵盤佔用的高度」轉成 .chat-input-area 的 padding-bottom，確保輸入框
+    // 與送出鈕永遠留在鍵盤上方、看得到也點得到。
+    //
+    // window.visualViewport 不存在時整段跳過、不拋錯——這是 jsdom 預設
+    // 環境、部分舊瀏覽器、以及本專案目前 Electron 版本的真實狀況。
+    //
+    // 這段邏輯無法在模擬的螢幕尺寸下驗證（emulator 不會真的彈出鍵盤、
+    // visualViewport 也不會跟著縮小），只能靠實機測試——細節見
+    // task-2.1-report.md。
+    function initKeyboardAwareInput() {
+        if (!window.visualViewport) {
+            return;
+        }
+
+        const inputArea = document.querySelector('.chat-input-area');
+        if (!inputArea) {
+            return;
+        }
+
+        function adjustForKeyboard() {
+            const vv = window.visualViewport;
+            // layoutViewport 高度（window.innerHeight）減去 visualViewport
+            // 的高度與其 offsetTop，約等於鍵盤（或其他底部系統 UI）目前
+            // 佔用的像素高度；沒有鍵盤時這個差值趨近 0。Math.max 避免極少數
+            // 瀏覽器捨入誤差算出負值，變成負的 padding。
+            const overlap = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
+            inputArea.style.paddingBottom = overlap > 0 ? `${overlap}px` : '';
+        }
+
+        window.visualViewport.addEventListener('resize', adjustForKeyboard);
+        window.visualViewport.addEventListener('scroll', adjustForKeyboard);
+    }
+
     // 切換到指定狀態
     function switchToState(newState) {
         console.log(`切換視圖狀態: ${currentViewState} -> ${newState}`);
@@ -166,110 +400,21 @@ const UIManager = (function() {
         const diaryDetail = document.querySelector('.diary-detail');
         const diaryList = document.querySelector('.diary-list');
         
-        // 根據狀態設置視圖容器類別
-        switch (newState) {
-            case VIEW_STATE.CHAT_FULL:
-                // 狀態1: 全螢幕聊天
-                chatView.classList.add('active');
-                
-                // 隱藏日記詳情（如果有）
-                if (diaryDetail) {
-                    diaryDetail.classList.remove('active');
-                    setTimeout(() => {
-                        diaryDetail.style.display = 'none';
-                    }, 300);
-                }
-                
-                // 高亮聊天導航項
-                updateNavHighlight(VIEW_TYPE.CHAT);
-                break;
-                
-            case VIEW_STATE.CHAT_DIARY_SPLIT:
-                // 狀態2: 聊天+日記列表分割
-                chatView.classList.add('half', 'left');
-                diaryView.classList.add('half', 'right');
-                
-                // 隱藏日記詳情（如果有）
-                if (diaryDetail) {
-                    diaryDetail.classList.remove('active');
-                    setTimeout(() => {
-                        diaryDetail.style.display = 'none';
-                    }, 300);
-                }
-                
-                // 重置日記列表類別
-                if (diaryList) {
-                    diaryList.classList.remove('with-detail');
-                }
-                
-                // 高亮日記導航項
-                updateNavHighlight(VIEW_TYPE.DIARY);
-                break;
-                
-            case VIEW_STATE.DIARY_DETAIL_SPLIT:
-                // 狀態3: 日記列表+日記詳情分割
-                diaryView.classList.add('active');
-                
-                // 顯示日記詳情
-                if (diaryDetail && diaryList) {
-                    diaryDetail.style.display = 'flex';
-                    setTimeout(() => {
-                        diaryDetail.classList.add('active');
-                        diaryList.classList.add('with-detail');
-                    }, 10);
-                }
-                
-                // 高亮日記導航項
-                updateNavHighlight(VIEW_TYPE.DIARY);
-                break;
-                
-            case VIEW_STATE.CHAT_DETAIL_SPLIT:
-                // 狀態4: 聊天+日記詳情分割
-                chatView.classList.add('half', 'left');
-                diaryView.classList.add('half', 'right');
-                
-                // 顯示日記詳情
-                if (diaryDetail && diaryList) {
-                    diaryDetail.style.display = 'flex';
-                    setTimeout(() => {
-                        diaryDetail.classList.add('active');
-                        diaryList.classList.add('with-detail');
-                    }, 10);
-                }
-                
-                // 高亮聊天導航項
-                updateNavHighlight(VIEW_TYPE.CHAT);
-                break;
+        // 決定這個狀態在目前版面模式（寬/窄螢幕）下，各面板該套哪些
+        // class —— 純函式決策（resolvePaneClasses，完整規則說明見該函式
+        // 上方註解）+ 這裡負責真的套到 DOM 上，兩者職責分離。
+        const layoutMode = getLayoutMode();
+        const paneClasses = resolvePaneClasses(newState, layoutMode);
 
-            case VIEW_STATE.CALENDAR_FULL:
-                // 狀態5: 全螢幕行事曆（不與聊天/日記分割）
-                if (calendarView) {
-                    calendarView.classList.add('active');
-                }
+        applyPaneClass(chatView, paneClasses.chat);
+        applyPaneClass(diaryView, paneClasses.diary);
+        applyPaneClass(calendarView, paneClasses.calendar);
+        applyDetailPane(paneClasses.detail, diaryDetail, diaryList);
 
-                // 隱藏日記詳情（如果有）—— 從日記詳情切到行事曆時詳情面板必須
-                // 跟著收起，否則之後回到日記會殘留半開的版面
-                if (diaryDetail) {
-                    diaryDetail.classList.remove('active');
-                    setTimeout(() => {
-                        diaryDetail.style.display = 'none';
-                    }, 300);
-                }
-                if (diaryList) {
-                    diaryList.classList.remove('with-detail');
-                }
+        // 高亮對應的導覽項目（頭部導覽與底部分頁列共用同一套 .nav-item，
+        // 詳見 updateNavHighlight）
+        updateNavHighlight(navHighlightForState(newState));
 
-                // 高亮行事曆導航項
-                updateNavHighlight(VIEW_TYPE.CALENDAR);
-                break;
-
-            default:
-                // 默認回到全螢幕聊天
-                chatView.classList.add('active');
-                updateNavHighlight(VIEW_TYPE.CHAT);
-                break;
-        }
-        
         // 觸發視圖狀態變更事件
         document.dispatchEvent(new CustomEvent('viewStateChanged', { 
             detail: { newState: newState } 
@@ -277,14 +422,20 @@ const UIManager = (function() {
     }
     
     // 更新導航項目高亮
+    // 同時套用到頭部導覽與底部分頁列（v2.3 task 2.1）——兩者都用
+    // .nav-item + data-view，對 elements.navItems 的單一迴圈天然涵蓋兩邊，
+    // 不必寫兩份。aria-current 是新增的（cheap ARIA）：只在真正的 active
+    // 項目上出現，供螢幕閱讀器/瀏覽器辨識目前所在分頁。
     function updateNavHighlight(activeView) {
         if (elements.navItems) {
             elements.navItems.forEach(item => {
                 const itemView = item.getAttribute('data-view');
                 if (itemView === activeView) {
                     item.classList.add('active');
+                    item.setAttribute('aria-current', 'page');
                 } else {
                     item.classList.remove('active');
+                    item.removeAttribute('aria-current');
                 }
             });
         }
@@ -890,6 +1041,25 @@ const UIManager = (function() {
         showToast,
         showActionToast,
         showError,
-        hideError
+        hideError,
+        // v2.3 task 2.1：響應式版面
+        LAYOUT_MODE,
+        getLayoutMode,
+        // 純函式，主要為 vitest 單元測試曝光；switchToState 內部也是唯一
+        // 呼叫端，行為說明見函式本身上方註解
+        resolvePaneClasses
     };
 })();
+
+// 明確掛上 window（v2.3 task 2.1 修復）：此檔案先前完全沒有這一行——
+// <script> 標籤共享同一份全域作用域，本檔案自己與其他後載入的 <script>
+// （main.js 等）都能繼續用裸露的 UIManager 識別字直接呼叫，這行不加也不影響
+// 那條路徑。但本檔案 handleThemeToggle 的 catch 區塊明確檢查
+// `window.UIManager && UIManager.showToast`（而不是裸露識別字，用
+// grep -n "window.UIManager && UIManager.showToast" 這支檔案本身可以找到，
+// 行號會隨這次改動而變、故意不寫死）——沒有這行賦值，window.UIManager
+// 永遠是 undefined，那個分支永遠不會成立，主題切換失敗時原本設計要跳出的
+// 提示 toast 形同死碼。同時本專案其餘核心/服務型
+// 模塊（config.js/i18n.js/api_service.js/secure_store.js/settings_module.js）
+// 全部都有這一行——補上後 UIManager 與這些模塊的慣例一致。
+window.UIManager = UIManager;
