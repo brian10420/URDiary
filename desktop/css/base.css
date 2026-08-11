@@ -305,6 +305,52 @@ input:focus, textarea:focus, select:focus {
     opacity: 1;
 }
 
+/* 帶動作按鈕的 toast 變體（PWA「有新版本」提示用，見 ui_manager.js
+   showActionToast）——同一份 .toast-message 視覺基底，加一排 flex 佈局
+   放文字 + 動作鈕 + 關閉鈕。max-width 避免長文字在窄螢幕把提示撐出畫面。 */
+.toast-message.toast-message--action {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-md);
+    max-width: min(90vw, 420px);
+}
+
+.toast-message-text {
+    flex: 1;
+}
+
+.toast-action-btn {
+    flex-shrink: 0;
+    background-color: var(--accent-color);
+    color: white;
+    border: none;
+    border-radius: var(--border-radius-sm);
+    padding: var(--spacing-xs) var(--spacing-md);
+    font-size: var(--font-size-sm);
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+.toast-action-btn:hover {
+    background-color: var(--accent-light);
+}
+
+.toast-dismiss-btn {
+    flex-shrink: 0;
+    background: none;
+    border: none;
+    color: inherit;
+    opacity: 0.75;
+    font-size: 1.25rem;
+    line-height: 1;
+    cursor: pointer;
+    padding: 0 var(--spacing-xs);
+}
+
+.toast-dismiss-btn:hover {
+    opacity: 1;
+}
+
 /* 載入動畫 */
 .loading-spinner {
     display: none;

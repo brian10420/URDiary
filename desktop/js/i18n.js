@@ -20,6 +20,10 @@ const I18N = (function() {
             'app.tagline': '您的情緒陪伴與日記助手',
             'app.footer': 'URDiary © 2025 - 您的日記助手',
 
+            'pwa.updateAvailable': '有新版本可用',
+            'pwa.updateReload': '重新載入',
+            'pwa.dismiss': '關閉',
+
             'nav.chat': '對話',
             'nav.diary': '日記',
             'nav.calendar': '行事曆',
@@ -250,6 +254,10 @@ const I18N = (function() {
             'app.title': 'URDiary — Your Emotional Diary Companion',
             'app.tagline': 'Your emotional companion & diary assistant',
             'app.footer': 'URDiary © 2025 — your diary companion',
+
+            'pwa.updateAvailable': 'A new version is available',
+            'pwa.updateReload': 'Reload',
+            'pwa.dismiss': 'Dismiss',
 
             'nav.chat': 'Chat',
             'nav.diary': 'Diary',

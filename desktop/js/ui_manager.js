@@ -768,7 +768,7 @@ const UIManager = (function() {
         // 設置自動隱藏
         setTimeout(() => {
             toast.classList.remove('show');
-            
+
             // 動畫結束後移除元素
             toast.addEventListener('transitionend', function() {
                 if (toast.parentNode) {
@@ -777,7 +777,67 @@ const UIManager = (function() {
             });
         }, duration);
     }
-    
+
+    // 淡出並移除一個 toast 元素（showToast 的自動隱藏、showActionToast 的
+    // 兩個按鈕共用同一段收尾邏輯，避免各自重複實作 transitionend 清理）
+    function dismissToastElement(toast) {
+        toast.classList.remove('show');
+        toast.addEventListener('transitionend', function() {
+            if (toast.parentNode) {
+                toast.parentNode.removeChild(toast);
+            }
+        });
+    }
+
+    // 顯示一則「非阻斷、但需要使用者主動選擇」的提示（PWA 有新版本可用時
+    // 使用）。跟 showToast 共用 .toast-message 視覺樣式與淡入/淡出機制，
+    // 差別是：不會自動消失、多一個動作按鈕，使用者不點按鈕它就一直留著
+    // （不阻斷操作，使用者仍可正常使用其餘畫面，符合「non-blocking」的
+    // 要求），直到點動作按鈕或關閉按鈕其中之一。
+    function showActionToast(message, actionLabel, onAction) {
+        const existingToast = document.querySelector('.toast-message');
+        if (existingToast) {
+            existingToast.remove();
+        }
+
+        const toast = document.createElement('div');
+        toast.className = 'toast-message toast-message--action';
+
+        const text = document.createElement('span');
+        text.className = 'toast-message-text';
+        text.textContent = message;
+        toast.appendChild(text);
+
+        const actionBtn = document.createElement('button');
+        actionBtn.type = 'button';
+        actionBtn.className = 'toast-action-btn';
+        actionBtn.textContent = actionLabel;
+        actionBtn.addEventListener('click', function() {
+            dismissToastElement(toast);
+            if (typeof onAction === 'function') {
+                onAction();
+            }
+        });
+        toast.appendChild(actionBtn);
+
+        const dismissBtn = document.createElement('button');
+        dismissBtn.type = 'button';
+        dismissBtn.className = 'toast-dismiss-btn';
+        dismissBtn.setAttribute('aria-label', I18N.t('pwa.dismiss'));
+        dismissBtn.textContent = '×';
+        dismissBtn.addEventListener('click', function() {
+            dismissToastElement(toast);
+        });
+        toast.appendChild(dismissBtn);
+
+        document.body.appendChild(toast);
+
+        setTimeout(() => {
+            toast.classList.add('show');
+        }, 10);
+        // 刻意沒有自動隱藏的 setTimeout——留到使用者按下其中一個按鈕。
+    }
+
     // 顯示錯誤訊息
     function showError(title, message, detail = null) {
         if (elements.errorContainer) {
@@ -828,6 +888,7 @@ const UIManager = (function() {
         showLoadingSpinner,
         hideLoadingSpinner,
         showToast,
+        showActionToast,
         showError,
         hideError
     };

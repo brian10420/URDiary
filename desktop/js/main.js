@@ -3,10 +3,19 @@
  */
 document.addEventListener('DOMContentLoaded', function() {
     console.log('初始化應用...');
-    
+
     // 顯示啟動屏幕
     showSplashScreen();
-    
+
+    // 品牌 logo 圖片載入失敗時換成備用圖（v2.3 task 2.2：原本是 index.html
+    // 行內 onerror= 屬性，嚴格 CSP (default-src 'self'，沒有 script-src
+    // 'unsafe-inline') 下行內事件處理屬性會被瀏覽器擋下，改成這裡用
+    // addEventListener 掛）
+    initLogoImageFallback();
+
+    // 註冊 service worker（PWA，v2.3 task 2.2）。
+    initServiceWorker();
+
     // js/main.js 是各模塊初始化的唯一 owner：以下順序為固定順序，
     // 各模塊檔尾原本的自啟動區塊（DOMContentLoaded 自行呼叫 init）已移除，
     // 避免雙重初始化（事件監聽器綁兩次、autoLogin 跑兩次等）。
@@ -127,6 +136,81 @@ function showSplashScreen() {
         // 添加標記類，用於CSS樣式識別登錄流程中
         document.body.classList.add('splash-active');
     }
+}
+
+// 品牌 logo（啟動畫面 + 頁首）載入失敗時換成備用圖。兩個 <img> 共用
+// .app-logo-img class（見 index.html），失敗一次就換源並解除監聽，避免
+// 備用圖本身若也載入失敗時無限重試。
+function initLogoImageFallback() {
+    document.querySelectorAll('.app-logo-img').forEach(function(img) {
+        function onLogoError() {
+            img.removeEventListener('error', onLogoError);
+            img.src = 'assets/default-avatar.jpg';
+        }
+        img.addEventListener('error', onLogoError);
+    });
+}
+
+// 註冊 service worker、並串起「有新版本可用」的更新流程。
+//
+// 雙重 guard 才能真正讓 Electron 不受影響：
+//   1. 'serviceWorker' in navigator——多數瀏覽器環境下，file:// 就是靠這個
+//      判斷不存在來擋掉。
+//   2. location.protocol !== 'file:'——實測發現 Electron 這組
+//      webPreferences（nodeIntegration:true、contextIsolation:false）下，
+//      navigator.serviceWorker 這個屬性其實「存在」，只是 register() 對
+//      file:// scope 一定會 reject（"Failed to register a ServiceWorker
+//      for scope ('file:///')"）。光靠第 1 個 guard 並不會擋下這次嘗試，
+//      只是嘗試會失敗、被下面的 .catch() 接住印一條 console.warn，不會
+//      造成任何功能性影響或未捕捉例外——但既然已經知道第 1 個 guard 不夠
+//      精準，就不必每次啟動都浪費這一次註定失敗的呼叫，直接多判斷協定。
+//
+// install 事件本身不會 skipWaiting（見 sw.js 檔頭說明）：新 worker 裝好後
+// 停在 waiting，直到使用者在下面的提示按下「重新載入」才會發訊息叫它
+// skipWaiting——這是唯一能讓更新生效的路徑，確保更新不會在使用者操作到
+// 一半時把整個 App 悄悄換掉。
+function initServiceWorker() {
+    if (!('serviceWorker' in navigator) || window.location.protocol === 'file:') {
+        return;
+    }
+
+    navigator.serviceWorker.register('/sw.js', { scope: '/' }).then(function(registration) {
+        registration.addEventListener('updatefound', function() {
+            const newWorker = registration.installing;
+            if (!newWorker) {
+                return;
+            }
+            newWorker.addEventListener('statechange', function() {
+                const hasController = Boolean(navigator.serviceWorker.controller);
+                if (typeof SWLogic === 'undefined' || !SWLogic.shouldPromptUpdate(newWorker.state, hasController)) {
+                    return;
+                }
+                UIManager.showActionToast(
+                    I18N.t('pwa.updateAvailable'),
+                    I18N.t('pwa.updateReload'),
+                    function() {
+                        newWorker.postMessage({ type: 'SKIP_WAITING' });
+                    }
+                );
+            });
+        });
+    }).catch(function(error) {
+        console.warn('Service worker 註冊失敗:', error);
+    });
+
+    // skipWaiting() 讓新 worker 取得控制權時會觸發 controllerchange；
+    // 這個事件只會在使用者按下上面的「重新載入」之後才會發生（見
+    // sw.js 的 message handler），所以這裡重新整理頁面是使用者主動同意
+    // 之後的結果，不是背景偷偷換版本。reloading 旗標防止極端情況下
+    // controllerchange 觸發多次而重複整理。
+    let reloading = false;
+    navigator.serviceWorker.addEventListener('controllerchange', function() {
+        if (reloading) {
+            return;
+        }
+        reloading = true;
+        window.location.reload();
+    });
 }
 
 // 隱藏啟動屏幕

@@ -94,12 +94,19 @@ function createWindow() {
   remoteMain.enable(mainWindow.webContents);
 
   // 設置內容安全策略
+  //
+  // style-src/font-src 曾經對 Google Fonts / cdnjs 開放，是因為 index.html
+  // 當時直接外連這兩個 CDN 載入 Noto Sans TC 與 Font Awesome。v2.3 task 2.2
+  // 已把兩者都改成自架 (desktop/assets/vendor/)，index.html 不再有任何外部
+  // 主機的 <link>，這裡的外部主機例外因此一併移除——跟後端
+  // middleware/security_headers.py 的嚴格 CSP 打齊，兩邊都不再容忍任何外部
+  // 主機（'self' 已經涵蓋 file:// 底下同目錄的自架字型/圖示）。
   mainWindow.webContents.session.webRequest.onHeadersReceived((details, callback) => {
     callback({
       responseHeaders: {
         ...details.responseHeaders,
         'Content-Security-Policy': [
-          "default-src 'self'; script-src 'self' 'unsafe-inline'; connect-src 'self' http://localhost:*; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdnjs.cloudflare.com; font-src 'self' https://fonts.gstatic.com https://cdnjs.cloudflare.com;"
+          "default-src 'self'; script-src 'self' 'unsafe-inline'; connect-src 'self' http://localhost:*; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; font-src 'self';"
         ]
       }
     });

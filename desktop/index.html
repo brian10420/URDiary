@@ -4,12 +4,26 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>URDiary - 您的情緒日記助手</title>
-    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <meta name="description" content="您的情緒陪伴與日記助手">
+
+    <!-- PWA (v2.3 task 2.2) -->
+    <link rel="manifest" href="manifest.webmanifest">
+    <meta name="theme-color" content="#6d5046">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black">
+    <link rel="apple-touch-icon" href="assets/icons/apple-touch-icon-180.png">
+    <link rel="icon" href="favicon.ico">
+
+    <!-- 自架字型/圖示 (v2.3 task 2.2)：取代原本的 Google Fonts + cdnjs Font
+         Awesome CDN 連結——外部主機在嚴格 CSP (default-src 'self') 下會被擋，
+         離線時也整個載不到，見 backend/app/middleware/security_headers.py -->
+    <link rel="stylesheet" href="assets/vendor/fonts/fonts.css">
+    <link rel="stylesheet" href="assets/vendor/fontawesome/fontawesome-subset.css">
     <link rel="stylesheet" href="css/styles.css">
 
     <!-- 1. 配置和核心服務 - 優先加載 (i18n 需在其他模塊之前) -->
     <script src="js/security_utils.js"></script>
+    <script src="js/sw_logic.js"></script>
     <script src="js/i18n.js"></script>
     <script src="js/config.js"></script>
     <script src="js/error_logger.js"></script>
@@ -34,7 +48,7 @@
         <div id="splash-screen" class="splash-screen">
             <div class="splash-content">
                 <div class="splash-logo">
-                    <img src="assets/icon.jpg" alt="URDiary Logo" onerror="this.src='assets/default-avatar.png'">
+                    <img src="assets/icon.jpg" alt="URDiary Logo" class="app-logo-img">
                 </div>
                 <h1>URDiary</h1>
                 <p data-i18n="app.tagline">您的情緒陪伴與日記助手</p>
@@ -44,7 +58,7 @@
         <!-- 頁面頂部 -->
         <header class="app-header">
             <div class="app-logo">
-                <img src="assets/icon.jpg" alt="URDiary Logo" onerror="this.src='assets/default-avatar.png'">
+                <img src="assets/icon.jpg" alt="URDiary Logo" class="app-logo-img">
                 <span>URDiary</span>
             </div>
 

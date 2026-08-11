@@ -6,10 +6,11 @@ TLS 場景下的 HSTS。
 
 CSP 只允許同源 ('self') 來源；style-src 額外開放 'unsafe-inline'——
 index.html 目前還有約 20 個行內 style= 屬性，拔掉不在本次任務範圍內，
-列為延後的強化項目。目前 index.html 也還外連 Google Fonts / Font Awesome
-CDN，會被這個 CSP 擋下；等 Phase 2.2 把字型/圖示改成自架後，CSP 才不需要
-任何外部來源，屆時這裡也要一併移除對外部主機的容忍 (目前本來就沒開放，
-這裡先預告 Phase 2.2 應該做的事，避免有人誤以為要放寬 CSP 來「修好」字型)。
+列為延後的強化項目。Phase 2.2 之前 index.html 曾外連 Google Fonts /
+Font Awesome CDN，會被這個 CSP 擋下；Phase 2.2 已把字型/圖示改成自架
+(desktop/assets/vendor/)，所以這條 CSP 從頭到尾沒放寬過、也不需要放寬——
+下面這個常數本來就沒有任何外部主機的例外，未來若又要外接 CDN 字型/圖示，
+正確做法是比照 Phase 2.2 再次自架，而不是在這裡幫外部主機開白名單。
 
 註冊順序見 main.py：刻意排在 CORSMiddleware 之後 (= 比 CORS 更外層)。
 CORS 對 preflight (OPTIONS) 請求會直接短路回應、不往內呼叫下一層，只有
