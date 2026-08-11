@@ -73,6 +73,30 @@ MESSAGES = {
         "zh-TW": "缺少 {provider} 的 API Key，請在「設定」面板填入後再試",
         "en": "Missing API key for {provider} — add it in the Settings panel and try again",
     },
+    "event_not_found": {
+        "zh-TW": "行事曆事件不存在",
+        "en": "Calendar event not found",
+    },
+    "invalid_date_range": {
+        "zh-TW": "查詢區間無效：結束日期不可早於起始日期，且跨度不可超過 63 天",
+        "en": "Invalid date range: the end date must not be before the start date, and the span cannot exceed 63 days",
+    },
+    "event_created": {
+        "zh-TW": "行事曆事件已新增",
+        "en": "Calendar event created",
+    },
+    "event_updated": {
+        "zh-TW": "行事曆事件已更新",
+        "en": "Calendar event updated",
+    },
+    "event_deleted": {
+        "zh-TW": "行事曆事件已刪除",
+        "en": "Calendar event deleted",
+    },
+    "field_not_clearable": {
+        "zh-TW": "欄位 {fields} 不可清空為 null，若要維持原值請不要提供該欄位",
+        "en": "Field(s) {fields} cannot be cleared to null — omit them to keep the existing value",
+    },
 }
 
 

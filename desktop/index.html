@@ -19,11 +19,11 @@
 
     <!-- 2. UI和錯誤處理 -->
     <script src="js/ui_manager.js"></script>
-    <script src="js/error_handler.js"></script>
 
     <!-- 3. 功能模塊 - 最後加載 -->
     <script src="js/chat_module.js"></script>
     <script src="js/diary_module.js"></script>
+    <script src="js/calendar_module.js"></script>
 
     <!-- 主程序入口 - 最後加載 -->
     <script src="js/main.js"></script>
@@ -51,6 +51,7 @@
             <nav class="app-nav">
                 <div class="nav-item active" data-view="chat" data-i18n="nav.chat">對話</div>
                 <div class="nav-item" data-view="diary" data-i18n="nav.diary">日記</div>
+                <div class="nav-item" data-view="calendar" data-i18n="nav.calendar">行事曆</div>
             </nav>
 
             <div class="app-tools">
@@ -197,6 +198,77 @@
             </div>
         </div>
 
+        <!-- 行事曆事件對話框 -->
+        <div id="event-dialog" class="modal" style="display: none;">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3 id="event-dialog-title" data-i18n="calendar.addEvent">新增事件</h3>
+                    <button id="close-event-dialog-btn" class="btn-close">×</button>
+                </div>
+                <div class="modal-body">
+                    <div class="form-group">
+                        <label for="event-title" data-i18n="calendar.eventTitle">標題:</label>
+                        <input type="text" id="event-title" class="form-control" maxlength="120"
+                               placeholder="例如：看牙醫" data-i18n-placeholder="calendar.eventTitlePlaceholder">
+                    </div>
+                    <div class="form-group">
+                        <label for="event-date" data-i18n="calendar.date">日期:</label>
+                        <input type="date" id="event-date" class="form-control">
+                        <p id="event-series-hint" class="form-hint" style="display: none;" data-i18n="calendar.editSeriesHint">重複事件的編輯會套用到整個系列</p>
+                    </div>
+                    <div class="form-group">
+                        <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                            <input type="checkbox" id="event-all-day" style="width: auto;" checked>
+                            <span data-i18n="calendar.allDay">整天</span>
+                        </label>
+                    </div>
+                    <div class="form-group">
+                        <label for="event-time" data-i18n="calendar.time">時間:</label>
+                        <input type="time" id="event-time" class="form-control" value="09:00">
+                    </div>
+                    <div class="form-group">
+                        <label for="event-category" data-i18n="calendar.category">分類:</label>
+                        <select id="event-category" class="form-control">
+                            <option value="work" data-i18n="category.work">工作</option>
+                            <option value="study" data-i18n="category.study">學業</option>
+                            <option value="health" data-i18n="category.health">健康</option>
+                            <option value="family" data-i18n="category.family">家人</option>
+                            <option value="anniversary" data-i18n="category.anniversary">紀念日</option>
+                            <option value="other" data-i18n="category.other" selected>其他</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="event-recurrence" data-i18n="calendar.recurrence">重複:</label>
+                        <select id="event-recurrence" class="form-control">
+                            <option value="none" data-i18n="recurrence.none" selected>不重複</option>
+                            <option value="daily" data-i18n="recurrence.daily">每天</option>
+                            <option value="weekly" data-i18n="recurrence.weekly">每週</option>
+                            <option value="monthly" data-i18n="recurrence.monthly">每月</option>
+                            <option value="yearly" data-i18n="recurrence.yearly">每年</option>
+                        </select>
+                    </div>
+                    <div class="form-group" id="event-until-row" style="display: none;">
+                        <label for="event-until" data-i18n="calendar.until">重複到:</label>
+                        <input type="date" id="event-until" class="form-control">
+                    </div>
+                    <div class="form-group">
+                        <label for="event-reminder" data-i18n="calendar.reminder">提醒:</label>
+                        <select id="event-reminder" class="form-control"></select>
+                    </div>
+                    <div class="form-group">
+                        <label for="event-note" data-i18n="calendar.note">備註:</label>
+                        <textarea id="event-note" class="form-control" rows="3" maxlength="2000"></textarea>
+                    </div>
+                    <div id="event-error" class="error-message" style="display: none;"></div>
+                    <div class="form-actions calendar-form-actions">
+                        <button id="event-delete" class="btn btn-danger" style="display: none;" data-i18n="calendar.deleteEvent">刪除</button>
+                        <button id="event-cancel" class="btn btn-outline" data-i18n="calendar.cancel">取消</button>
+                        <button id="event-save" class="btn" data-i18n="calendar.save">儲存</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <!-- 主內容區域 -->
         <main class="app-content">
             <!-- 對話視圖 -->
@@ -248,6 +320,27 @@
                             </div>
                         </div>
                     </div>
+                </div>
+            </div>
+
+            <!-- 行事曆視圖 -->
+            <div id="calendar-view" class="view-container">
+                <h2 class="view-title" data-i18n="calendar.title">行事曆</h2>
+                <div class="calendar-toolbar">
+                    <button id="calendar-prev-btn" class="btn btn-sm" title="上個月" data-i18n-title="calendar.prevMonth">
+                        <i class="fa fa-chevron-left"></i>
+                    </button>
+                    <span class="calendar-month-label"></span>
+                    <button id="calendar-next-btn" class="btn btn-sm" title="下個月" data-i18n-title="calendar.nextMonth">
+                        <i class="fa fa-chevron-right"></i>
+                    </button>
+                    <button id="calendar-today-btn" class="btn btn-sm" data-i18n="calendar.today">今天</button>
+                    <button id="calendar-add-btn" class="btn btn-sm btn-accent" data-i18n="calendar.addEvent">新增事件</button>
+                </div>
+                <div class="calendar-body">
+                    <div class="calendar-weekdays"></div>
+                    <div class="calendar-grid"></div>
+                    <div class="calendar-day-panel"></div>
                 </div>
             </div>
         </main>

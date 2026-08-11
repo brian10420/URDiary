@@ -7,7 +7,6 @@
  */
 const SettingsModule = (function() {
     const ACTIVE_PROVIDER_KEY = 'urDiary_active_provider';
-    const ACTIVE_MODEL_KEY = 'urDiary_active_model';
     const MODEL_OVERRIDES_KEY = 'urDiary_provider_models';
     const LOCAL_BASE_URL_KEY = 'urDiary_local_base_url';
     const SEMANTIC_MEMORY_KEY = 'urDiary_semantic_memory';
@@ -77,8 +76,7 @@ const SettingsModule = (function() {
     async function refreshSemanticStatus() {
         if (!semanticStatus) return;
         try {
-            const base = (typeof CONFIG !== 'undefined' && CONFIG.API && CONFIG.API.BASE_URL)
-                ? CONFIG.API.BASE_URL : 'http://localhost:8001';
+            const base = CONFIG.getApiBaseUrl();
             const res = await fetch(`${base}/system/capabilities`);
             const caps = await res.json();
             if (caps.semantic_memory_available) {
@@ -102,7 +100,6 @@ const SettingsModule = (function() {
             return;
         }
         localStorage.setItem(ACTIVE_PROVIDER_KEY, provider);
-        localStorage.setItem(ACTIVE_MODEL_KEY, getActiveLLM().model);
         notifyChanged();
     }
 
@@ -234,7 +231,6 @@ const SettingsModule = (function() {
             }
 
             localStorage.setItem(ACTIVE_PROVIDER_KEY, provider);
-            localStorage.setItem(ACTIVE_MODEL_KEY, model || def.DEFAULT_MODEL || '');
             notifyChanged();
 
             // 語言變更：整頁重載以套用所有靜態與動態字串
@@ -328,7 +324,3 @@ const SettingsModule = (function() {
 })();
 
 window.SettingsModule = SettingsModule;
-
-document.addEventListener('DOMContentLoaded', function() {
-    SettingsModule.init();
-});

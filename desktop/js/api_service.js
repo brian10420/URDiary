@@ -2,9 +2,6 @@
  * API服務模塊 - 處理與後端的所有通信
  */
 const ApiService = (function() {
-    // API基礎URL
-    let API_BASE_URL = 'http://localhost:8001';
-    
     // 用戶ID（暫時靜態設置，後續可從登錄過程獲取）
     let currentUserId = localStorage.getItem('currentUserId') || 'desktop_user';
     let numericUserId = parseInt(localStorage.getItem('numericUserId') || '1');
@@ -34,20 +31,16 @@ const ApiService = (function() {
         }
         
         console.log('初始化 API 服務');
-        // 從配置中獲取 API URL
-        if (typeof CONFIG !== 'undefined' && CONFIG.API && CONFIG.API.BASE_URL) {
-            API_BASE_URL = CONFIG.API.BASE_URL;
-            console.log('使用配置的 API URL:', API_BASE_URL);
-        }
-        
+        console.log('使用配置的 API URL:', CONFIG.getApiBaseUrl());
+
         // 設置初始化標誌
         isInitialized = true;
-        
+
         // 顯示初始化信息
-        console.log('API 服務初始化完成，基礎 URL:', API_BASE_URL);
+        console.log('API 服務初始化完成，基礎 URL:', CONFIG.getApiBaseUrl());
         return true;
     }
-    
+
     // 確保服務已初始化
     function ensureInitialized() {
         if (!isInitialized) {
@@ -55,19 +48,7 @@ const ApiService = (function() {
         }
         return isInitialized;
     }
-    
-    // 日誌
-    function logAPI(type, endpoint, data, response) {
-        if (window.Logger) {
-            Logger.info(`API ${type}: ${endpoint}`, {
-                request: data,
-                response: response
-            });
-        } else {
-            console.log(`API ${type}: ${endpoint}`, data, response);
-        }
-    }
-    
+
     /**
      * 設置認證令牌
      * @param {string} token - JWT令牌
@@ -126,11 +107,9 @@ const ApiService = (function() {
         
         try {
             console.log('嘗試刷新令牌...');
-            
-            // 優先從配置中取得 API URL
-            const baseUrl = CONFIG && CONFIG.API && CONFIG.API.BASE_URL ? 
-                CONFIG.API.BASE_URL : 'http://localhost:8001';
-            
+
+            const baseUrl = CONFIG.getApiBaseUrl();
+
             const response = await fetch(`${baseUrl}/users/token/refresh`, {
                 method: 'POST',
                 headers: {
@@ -195,10 +174,8 @@ const ApiService = (function() {
                 throw new Error('OFFLINE_MODE');
             }
             
-            // 優先從配置中取得 API URL
-            const baseUrl = CONFIG && CONFIG.API && CONFIG.API.BASE_URL ? 
-                CONFIG.API.BASE_URL : 'http://localhost:8001';
-            
+            const baseUrl = CONFIG.getApiBaseUrl();
+
             // 完全移除API可用性檢測（避免因405錯誤導致不必要的問題）
             // 相反，我們將依賴後續的真實請求來確定API是否可用
                 
@@ -553,12 +530,6 @@ const ApiService = (function() {
                 }
             }
 
-            // 唯一的開發者旗標（預設關閉）才允許以模擬數據除錯
-            if (CONFIG && CONFIG.DEBUG && CONFIG.DEBUG.MOCK_API) {
-                console.warn('DEBUG.MOCK_API 已開啟，回傳模擬數據（僅供除錯）');
-                return getMockDataForEndpoint(endpoint, { ...options, errorType: errorCode || 'debug' });
-            }
-
             // 如實拋出錯誤，由呼叫端呈現給使用者
             const apiFailure = new Error(friendlyMessage);
             apiFailure.code = errorCode || (error && error.name) || 'UNKNOWN';
@@ -598,159 +569,6 @@ const ApiService = (function() {
         } catch (error) {
             console.error('保存本地數據出錯:', error);
         }
-    }
-    
-    // 根據端點獲取模擬數據（僅供 DEBUG.MOCK_API 開發者旗標使用）
-    function getMockDataForEndpoint(endpoint, options = {}) {
-        console.log(`獲取模擬數據: ${endpoint}`, options);
-        
-        // 提取錯誤類型（如果有）
-        const { errorType, status } = options;
-        
-        // 檢查是否處於離線模式
-        const isOffline = errorType === 'offline';
-        
-        // 檢查是否為認證錯誤
-        const isAuthError = errorType === 'auth';
-        
-        // 檢查是否為權限錯誤
-        const isPermissionError = errorType === 'permission';
-        
-        // 用於響應的通用信息
-        let message = '使用模擬數據響應';
-        if (isOffline) {
-            message = '設備處於離線模式，使用模擬數據';
-        } else if (isAuthError) {
-            message = '認證失敗，請重新登入以訪問此功能';
-        } else if (isPermissionError) {
-            message = '您沒有權限訪問此功能';
-        }
-        
-        // 添加通用錯誤信息到所有模擬響應
-        const commonErrorInfo = {
-            _mock: true,
-            _error: errorType || null,
-            _status: status || null,
-            _message: message
-        };
-
-        // 在登錄端點中添加模擬 JWT token
-        if (endpoint === '/auth/login' || endpoint.includes('/login')) {
-            // 檢查登入類型的不同情況
-            if (isAuthError) {
-                return {
-                    ...commonErrorInfo,
-                    success: false,
-                    error: 'AUTH_FAILED',
-                    message: '用戶名或密碼錯誤'
-                };
-            }
-            
-            // 如果是離線模式，生成本地的 token
-            const mockToken = 'MOCK_JWT_' + Date.now();
-                return {
-                ...commonErrorInfo,
-                success: true,
-                token: mockToken,
-                user: {
-                    id: 'local_user',
-                    username: options.data?.username || 'local_user',
-                    name: '離線用戶',
-                    role: 'local'
-                },
-                message: '使用本地模擬登入'
-            };
-        }
-
-        // 聊天相關端點的模擬數據
-        if (endpoint.includes('/chat/')) {
-            if (endpoint.includes('/chat/start')) {
-                return {
-                    ...commonErrorInfo,
-                    success: true,
-                    chatId: 'mock_chat_' + Date.now(),
-                    message: isAuthError ? '聊天記錄無法同步到服務器' : '開始新的聊天'
-                };
-            }
-            
-            if (endpoint.includes('/chat/message')) {
-                return {
-                    ...commonErrorInfo,
-                    success: true,
-                    messageId: 'mock_msg_' + Date.now(),
-                    response: options.data?.message 
-                        ? `這是對"${options.data.message}"的模擬回應。${message}` 
-                        : `模擬回應。${message}`,
-                    save_locally: true
-                };
-            }
-            
-            if (endpoint.includes('/chat/end')) {
-                const summary = isAuthError
-                    ? "聊天已結束，但由於認證問題無法保存到服務器。內容已本地保存。"
-                    : "聊天已結束。由於使用模擬數據，內容僅保存在本地。";
-                    
-                const generatedContent = {
-                    title: "模擬日記標題",
-                    content: options.data?.messages 
-                        ? "基於您的聊天記錄生成的模擬內容。" 
-                        : "模擬日記內容。",
-                    summary: summary
-                };
-                
-                return {
-                    ...commonErrorInfo,
-                    success: true,
-                    diary: generatedContent,
-                    message: summary
-                };
-            }
-        }
-
-        // 日記相關端點的模擬數據
-        if (endpoint.includes('/diary/')) {
-            if (endpoint.includes('/list')) {
-                return {
-                    ...commonErrorInfo,
-                    success: true,
-                    diaries: [],
-                    message: `模擬日記列表 ${message}`
-                };
-            }
-            
-            if (endpoint.includes('/save') || endpoint.includes('/create')) {
-                const saveMessage = isAuthError
-                    ? "日記已本地保存，但無法同步到服務器。請登入後再次嘗試同步。"
-                    : "日記已使用模擬數據保存在本地。";
-                    
-                return {
-                    ...commonErrorInfo,
-                    success: true,
-                    diaryId: 'mock_diary_' + Date.now(),
-                    local_only: true,
-                    message: saveMessage
-                };
-            }
-            
-            if (endpoint.includes('/enhanced-generate')) {
-                return {
-                    ...commonErrorInfo,
-                    success: true,
-                    content: "這是根據您的輸入生成的模擬日記內容。",
-                    title: "模擬生成的日記標題",
-                    message: isAuthError 
-                        ? "日記已生成，但無法使用所有增強功能。請登入以獲取完整體驗。" 
-                        : "使用模擬數據生成的日記內容"
-                };
-            }
-        }
-
-        // 默認模擬數據
-        return {
-            ...commonErrorInfo,
-            success: true,
-            message: `${endpoint} 的默認模擬響應`
-        };
     }
     
     // 發送聊天消息
@@ -950,181 +768,33 @@ const ApiService = (function() {
         return diaries;
     }
     
-    // 根據ID獲取日記詳情
-    async function getDiaryById(id) {
-        try {
-            // 先從本地獲取
-            const localDiaries = getLocalData(`/diaries/${numericUserId}`);
-            if (localDiaries && localDiaries.diaries) {
-                const diary = localDiaries.diaries.find(d => d.diary_id === id || d.id === id);
-                if (diary) {
-                    return {
-                        id: diary.diary_id || diary.id,
-                        title: diary.title,
-                        summary: diary.summary || '',
-                        content: diary.content,
-                        date: diary.diary_date || diary.date,
-                        mood: getMoodFromValence(diary.valence),
-                        valence: diary.valence,
-                        arousal: diary.arousal
-                    };
-                }
-            }
-            
-            // 從API獲取
-            const response = await fetchAPI(`/diary/${id}`, { method: 'GET' });
-            
-            return {
-                id: response.diary_id,
-                title: response.title,
-                summary: response.summary || '',
-                content: response.content,
-                date: response.diary_date,
-                mood: getMoodFromValence(response.valence),
-                valence: response.valence,
-                arousal: response.arousal
-            };
-        } catch (error) {
-            console.error(`獲取日記詳情失敗 (ID: ${id}):`, error);
-            throw error;
-        }
-    }
-    
-    // 獲取互動筆記列表
-    async function getNotes() {
-        console.log('開始獲取互動筆記列表，用戶ID:', numericUserId);
-        try {
-            // 檢查CONFIG是否定義
-            if (typeof CONFIG === 'undefined') {
-                console.warn('CONFIG未定義，無法獲取筆記');
-                throw new Error('配置未初始化');
-            }
-            
-            // 檢查用戶ID
-            if (!numericUserId) {
-                console.warn('用戶ID不存在，使用默認ID');
-                numericUserId = 1;
-            }
-            
-            // 構建API端點
-            const notesEndpoint = CONFIG.API.ENDPOINTS.NOTES || '/api/notes';
-            const endpoint = `${notesEndpoint}/${numericUserId}`;
-            console.log('筆記API端點:', endpoint);
-            
-            // 發送請求
-            const data = await fetchAPI(endpoint, { method: 'GET' });
-            console.log('成功獲取筆記數據', data);
-            
-            // 驗證並處理響應數據
-            let notes = [];
-            if (data && Array.isArray(data)) {
-                // 轉換為客戶端格式
-                notes = data.map(note => ({
-                    id: note.note_id?.toString() || note.id?.toString() || generateId(),
-                    title: note.title || '未命名筆記',
-                    content: note.content || '',
-                    created: note.created_at || note.created || new Date().toISOString(),
-                    updated: note.updated_at || note.updated || new Date().toISOString(),
-                    tags: note.tags || []
-                }));
-                
-                console.log(`處理後的筆記數據: ${notes.length}條記錄`);
-            } else if (data && typeof data === 'object') {
-                // 嘗試處理非數組對象
-                console.warn('API返回的筆記數據不是數組，嘗試轉換');
-                
-                if (Array.isArray(data.notes)) {
-                    notes = data.notes.map(note => ({
-                        id: note.note_id?.toString() || note.id?.toString() || generateId(),
-                        title: note.title || '未命名筆記',
-                        content: note.content || '',
-                        created: note.created_at || note.created || new Date().toISOString(),
-                        updated: note.updated_at || note.updated || new Date().toISOString(),
-                        tags: note.tags || []
-                    }));
-                } else {
-                    // 將對象轉換為數組
-                    const noteItems = Object.values(data).filter(item => item && typeof item === 'object');
-                    notes = noteItems.map(note => ({
-                        id: note.note_id?.toString() || note.id?.toString() || generateId(),
-                        title: note.title || '未命名筆記',
-                        content: note.content || '',
-                        created: note.created_at || note.created || new Date().toISOString(),
-                        updated: note.updated_at || note.updated || new Date().toISOString(),
-                        tags: note.tags || []
-                    }));
-                }
-                
-                console.log(`從對象轉換的筆記數據: ${notes.length}條記錄`);
-            } else {
-                console.error('API返回的筆記數據格式不正確:', typeof data);
-                throw new Error('API返回的筆記數據格式不正確');
-            }
-            
-            // 存儲到本地
-            try {
-                const storageKey = CONFIG.STORAGE.NOTES || 'urd_notes';
-                localStorage.setItem(storageKey, JSON.stringify(notes));
-                console.log('筆記數據已保存到本地存儲');
-            } catch (storageError) {
-                console.warn('無法將筆記保存到本地存儲:', storageError);
-                ErrorLogger.captureError(storageError, { type: 'storage', context: 'save-notes' });
-            }
-            
-            return notes;
-        } catch (error) {
-            console.error('獲取筆記列表失敗:', error);
-            if (window.Logger) {
-                Logger.error('獲取筆記列表失敗', { error: error.message });
-            }
-            ErrorLogger.captureError(error, { type: 'api', context: 'get-notes' });
-            
-            // 嘗試從本地存儲獲取（唯讀快取，僅在連不上伺服器時墊底）
-            console.log('嘗試從本地存儲獲取筆記數據');
-            try {
-                const storageKey = CONFIG.STORAGE.NOTES || 'urd_notes';
-                const stored = localStorage.getItem(storageKey);
-                if (stored) {
-                    const localNotes = JSON.parse(stored);
-                    console.warn('顯示本機快取的筆記資料:', localNotes.length);
-                    if (typeof UIManager !== 'undefined' && UIManager.showToast) {
-                        UIManager.showToast(I18N.t('errors.cachedShown'));
-                    }
-                    return localNotes;
-                }
-            } catch (localError) {
-                console.error('讀取本地筆記失敗:', localError);
-                ErrorLogger.captureError(localError, { type: 'storage', context: 'read-local-notes' });
-            }
+    // --- 行事曆 -------------------------------------------------------------
+    // 全部走 fetchAPI（自動帶 Authorization / X-Language）。行事曆端點不需要
+    // LLM，所以刻意不加進 fetchAPI 的 LLM_ENDPOINT_PATTERNS —— 不必為了看月曆
+    // 就把 API 金鑰塞進請求標頭。事件的擁有者由後端從 token 導出，前端不送 user_id。
 
-            // 無本機快取可用 —— 如實拋出錯誤，由呼叫端顯示（不再捏造示例筆記）
-            throw error;
-        }
+    // 查詢區間內的 occurrences (start/end 為 "YYYY-MM-DD"，後端跨度上限 62 天)
+    async function getCalendarEvents(start, end) {
+        const path = `/calendar/events?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}`;
+        return await fetchAPI(path, { method: 'GET' });
     }
-    
-    // 保存筆記 (用於手動編輯筆記，互動筆記通常由系統更新)
-    async function saveNote(note) {
-        // 目前互動筆記不支持手動編輯，將來可以實現
-        console.warn('保存筆記:', note);
-        UIManager.showToast(I18N.t('notes.autoGenerated'));
-        
-        return {
-            success: false,
-            message: '互動筆記不支持手動編輯'
-        };
+
+    // 新增事件 → { message, event }
+    async function createCalendarEvent(data) {
+        return await fetchAPI('/calendar/events', { method: 'POST', body: data });
     }
-    
-    // 刪除筆記 (互動筆記通常不應刪除)
-    async function deleteNote(noteId) {
-        console.warn('嘗試刪除筆記:', noteId);
-        UIManager.showToast(I18N.t('notes.cantDelete'));
-        
-        return {
-            success: false,
-            message: '互動筆記不可刪除'
-        };
+
+    // 更新事件 → { message, event }；欄位缺席代表「維持原值」，明確傳 null
+    // 則清空該欄位（僅 event_time/recurrence_until/reminder_minutes/note 可清空）
+    async function updateCalendarEvent(eventId, data) {
+        return await fetchAPI(`/calendar/events/${encodeURIComponent(eventId)}`, { method: 'PUT', body: data });
     }
-    
+
+    // 刪除事件 → { message }
+    async function deleteCalendarEvent(eventId) {
+        return await fetchAPI(`/calendar/events/${encodeURIComponent(eventId)}`, { method: 'DELETE' });
+    }
+
     /**
      * 推導日記標題
      * 後端 diaries 表沒有 title 欄位，若不推導，每篇日記都會顯示「無標題日記」。
@@ -1179,159 +849,6 @@ const ApiService = (function() {
         console.log(`已設置用戶ID: ${userId}, 數字ID: ${numeric_id}`);
     }
     
-    // 顯示應用錯誤
-    function showAppError(message) {
-        console.error('應用錯誤:', message);
-        if (window.UIManager && typeof UIManager.showToast === 'function') {
-            UIManager.showToast(message);
-        } else {
-            alert(message);
-        }
-    }
-    
-    /**
-     * 驗證API返回的數據格式
-     * @param {Object} data - API返回的數據
-     * @param {string} type - 數據類型 (diaries, notes, etc.)
-     * @returns {boolean} - 是否通過驗證
-     */
-    function validateApiData(data, type) {
-        if (!data) {
-            console.error(`API數據為空: ${type}`);
-            return false;
-        }
-        
-        // 檢查數據類型
-        if (typeof data !== 'object') {
-            console.error(`API返回的數據不是對象: ${typeof data}`);
-            return false;
-        }
-        
-        // 根據不同類型驗證數據結構
-        switch (type) {
-            case 'diaries':
-                // 驗證日記列表
-                if (!Array.isArray(data)) {
-                    console.error('API返回的日記數據不是數組');
-                    return false;
-                }
-                
-                // 檢查每個日記項目
-                for (const diary of data) {
-                    if (!diary.id) {
-                        console.error('日記缺少ID字段');
-                        return false;
-                    }
-                    
-                    if (!diary.title) {
-                        console.warn('日記缺少標題字段');
-                    }
-                    
-                    if (!diary.date) {
-                        console.warn('日記缺少日期字段');
-                    }
-                }
-                return true;
-                
-            case 'notes':
-                // 驗證筆記列表
-                if (!Array.isArray(data)) {
-                    console.error('API返回的筆記數據不是數組');
-                    return false;
-                }
-                
-                // 檢查每個筆記項目
-                for (const note of data) {
-                    if (!note.id) {
-                        console.error('筆記缺少ID字段');
-                        return false;
-                    }
-                    
-                    if (!note.content) {
-                        console.warn('筆記缺少內容字段');
-                    }
-                }
-                return true;
-                
-            case 'user':
-                // 驗證用戶數據
-                if (!data.id) {
-                    console.error('用戶數據缺少ID字段');
-                    return false;
-                }
-                
-                if (!data.username) {
-                    console.warn('用戶數據缺少用戶名字段');
-                }
-                return true;
-                
-            default:
-                // 默認只檢查數據是否為空
-                return true;
-        }
-    }
-
-    /**
-     * 修復數據格式問題
-     * @param {Object} data - 原始數據
-     * @param {string} type - 數據類型
-     * @returns {Object} - 修復後的數據
-     */
-    function fixDataFormat(data, type) {
-        if (!data) return null;
-        
-        // 根據類型修復數據
-        switch (type) {
-            case 'diaries':
-                // 確保數據是數組
-                if (!Array.isArray(data)) {
-                    console.log('將日記數據轉換為數組');
-                    // 如果是對象，將其屬性轉為數組
-                    if (typeof data === 'object') {
-                        return Object.values(data);
-                    }
-                    // 如果不是對象，返回空數組
-                    return [];
-                }
-                
-                // 修復每個日記項目
-                return data.map(diary => {
-                    return {
-                        id: diary.id || generateId(),
-                        title: diary.title || '無標題',
-                        content: diary.content || '',
-                        date: diary.date || new Date().toISOString(),
-                        mood: diary.mood || 'neutral',
-                        valence: parseFloat(diary.valence || 0.5),
-                        arousal: parseFloat(diary.arousal || 0.5)
-                    };
-                });
-                
-            case 'notes':
-                // 確保數據是數組
-                if (!Array.isArray(data)) {
-                    console.log('將筆記數據轉換為數組');
-                    if (typeof data === 'object') {
-                        return Object.values(data);
-                    }
-                    return [];
-                }
-                
-                // 修復每個筆記項目
-                return data.map(note => {
-                    return {
-                        id: note.id || generateId(),
-                        content: note.content || '',
-                        createdAt: note.createdAt || new Date().toISOString(),
-                        updatedAt: note.updatedAt || new Date().toISOString()
-                    };
-                });
-                
-            default:
-                return data;
-        }
-    }
-    
     // 登入並獲取JWT令牌（真實密碼由後端 bcrypt 驗證）
     async function login(username, password) {
         try {
@@ -1350,11 +867,9 @@ const ApiService = (function() {
             const formData = new URLSearchParams();
             formData.append('username', username);
             formData.append('password', password);
-            
-            // 優先從配置獲取API URL
-            const baseUrl = CONFIG && CONFIG.API && CONFIG.API.BASE_URL ? 
-                CONFIG.API.BASE_URL : 'http://localhost:8001';
-            
+
+            const baseUrl = CONFIG.getApiBaseUrl();
+
             // 檢查網絡連接（絕不偽造令牌 —— 登入必須由後端驗證）
             if (!navigator.onLine) {
                 console.warn('設備處於離線狀態，無法進行登入');
@@ -1499,37 +1014,6 @@ const ApiService = (function() {
         }
     }
     
-    /**
-     * 獲取指定ID的筆記
-     * @param {string} noteId - 筆記ID
-     * @returns {Promise<Object>} - 筆記數據
-     */
-    async function getNote(noteId) {
-        try {
-            // 檢查參數
-            if (!noteId) {
-                console.error('獲取筆記失敗: 未提供筆記ID');
-                throw new Error('筆記ID不能為空');
-            }
-            
-            // 構建API端點
-            const endpoint = `/notes/${noteId}`;
-            
-            // 發送請求
-            const response = await fetchAPI(endpoint);
-            
-            // 檢查數據
-            if (validateApiData(response, 'note')) {
-                return response;
-            } else {
-                return fixDataFormat(response, 'note');
-            }
-        } catch (error) {
-            console.error(`獲取筆記失敗 (ID: ${noteId}):`, error);
-            throw new Error(`無法獲取筆記: ${error.message}`);
-        }
-    }
-    
     // 導出API
     return {
         init,
@@ -1539,11 +1023,10 @@ const ApiService = (function() {
         checkIn: checkIn,
         endChat: endChat,
         getDiaries: getDiaries,
-        getDiaryById: getDiaryById,
-        getNotes: getNotes,
-        getNote: getNote,
-        saveNote: saveNote,
-        deleteNote: deleteNote,
+        getCalendarEvents: getCalendarEvents,
+        createCalendarEvent: createCalendarEvent,
+        updateCalendarEvent: updateCalendarEvent,
+        deleteCalendarEvent: deleteCalendarEvent,
         getLocalData: getLocalData,
         saveLocalData: saveLocalData,
         setUserId: setUserId,
@@ -1551,27 +1034,11 @@ const ApiService = (function() {
         autoLogin: autoLogin,
         logout: clearAuthToken,
         isAuthenticated: () => !!accessToken && !isTokenExpiringSoon(60),
-        generateMockData: getMockDataForEndpoint,
-        validateApiData: validateApiData,
-        fixDataFormat: fixDataFormat
+        // 以下兩個是純函式，僅為 vitest 單元測試曝光，行為不變
+        deriveDiaryTitle: deriveDiaryTitle,
+        getMoodFromValence: getMoodFromValence
     };
 })();
-
-// 初始化API服務
-document.addEventListener('DOMContentLoaded', function() {
-    ApiService.init();
-    
-    // 自動登入
-    ApiService.autoLogin().then(result => {
-        if (result.success) {
-            console.log('自動登入成功');
-        } else {
-            console.warn('自動登入失敗:', result.error);
-        }
-    }).catch(error => {
-        console.error('自動登入過程出錯:', error);
-    });
-});
 
 // 將 ApiService 暴露為全局變量
 window.ApiService = ApiService;

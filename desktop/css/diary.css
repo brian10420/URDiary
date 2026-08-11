@@ -2,44 +2,11 @@
  * 日記模塊樣式表
  */
 
-/* 應用主內容區域左右分割佈局 */
-.app-content {
-    display: flex;
-    flex-direction: row;
-    height: 100%;
-    overflow: hidden;
-}
-
-/* 視圖容器佈局調整 */
-.view-container {
-    flex: 0;
-    width: 0;
-    opacity: 0;
-    overflow: hidden;
-    transition: all 0.3s ease;
-}
-
-/* 活動視圖 */
-.view-container.active {
-    flex: 1;
-    width: auto;
-    opacity: 1;
-    overflow: auto;
-}
-
-/* 分割視圖模式 - 聊天和日記同時顯示 */
-.view-container.half {
-    flex: 1;
-    width: 50%;
-    opacity: 1;
-    overflow: auto;
-    max-width: 50%;
-}
-
 /* 日記容器 */
 .diary-container {
     display: flex;
-    height: 100%;
+    flex: 1;
+    min-height: 0;
     overflow: hidden;
     transition: all 0.3s ease;
     width: 100%;
@@ -53,6 +20,9 @@
     padding: 16px;
     overflow-y: auto;
     flex: 1;
+    min-height: 0;
+    align-content: start;
+    grid-auto-rows: max-content;
     transition: all 0.3s ease;
     width: 100%;
 }
@@ -230,22 +200,6 @@
 
 .empty-state p {
     margin-bottom: 20px;
-}
-
-/* 響應式設計 */
-@media (max-width: 768px) {
-    .diary-container {
-        flex-direction: column;
-    }
-    
-    .diary-detail {
-        flex: 1;
-        max-height: calc(100vh - 250px);
-    }
-    
-    .diary-list {
-        max-height: initial;
-    }
 }
 
 /* 當日記詳情顯示時，調整列表和詳情區域的比例 */

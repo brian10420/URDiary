@@ -419,7 +419,8 @@ input:focus, textarea:focus, select:focus {
 
 .app-content {
     display: flex;
-    height: calc(100vh - 120px); /* 調整高度，減去頭部和底部 */
+    flex: 1;
+    min-height: 0;
     overflow: hidden;
 }
 
@@ -438,9 +439,11 @@ input:focus, textarea:focus, select:focus {
     flex: 1;
     width: auto;
     opacity: 1;
-    overflow: auto;
+    overflow: hidden;
     visibility: visible;
     padding: var(--spacing-md);
+    display: flex;
+    flex-direction: column;
 }
 
 /* 半屏視圖 - 左右分割 */
@@ -449,9 +452,17 @@ input:focus, textarea:focus, select:focus {
     width: 50%;
     max-width: 50%;
     opacity: 1;
-    overflow: auto;
+    overflow: hidden;
     visibility: visible;
     padding: var(--spacing-md);
+    display: flex;
+    flex-direction: column;
+}
+
+/* 視圖標題 - 面板本身不滾動，標題固定高度不參與伸縮 */
+.view-title {
+    flex: none;
+    margin: 0 0 var(--spacing-md) 0;
 }
 
 /* 設置左右位置 */
@@ -461,11 +472,6 @@ input:focus, textarea:focus, select:focus {
 
 .view-container.right {
     order: 2;
-}
-
-#chat-view {
-    display: flex;
-    flex-direction: column;
 }
 
 .app-footer {

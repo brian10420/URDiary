@@ -1,5 +1,5 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Header
-from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
+from fastapi import APIRouter, Depends, Header
+from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 from typing import List, Dict, Any, Optional
 from pydantic import BaseModel
@@ -12,20 +12,16 @@ from utils.password_validator import validate_password_and_get_errors
 from database import crud
 from database.models import User
 from utils.security import (
-    create_access_token, 
+    create_access_token,
     create_refresh_token,
-    decode_token, 
     verify_password,
     get_password_hash,
-    ACCESS_TOKEN_EXPIRE_MINUTES,
-    create_long_lived_token,
     ALGORITHM
 )
 from jose import JWTError, jwt
 from config import SECRET_KEY
 
 router = APIRouter()
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 
 class UserCreate(BaseModel):
     username: str

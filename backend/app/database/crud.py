@@ -1,6 +1,6 @@
-from sqlalchemy import or_
+from sqlalchemy import or_, and_
 from sqlalchemy.orm import Session
-from datetime import datetime, timedelta
+from datetime import timedelta
 from typing import List, Optional
 from database import models
 from utils.time_utils import get_diary_datetime  # 修正导入路径
@@ -21,10 +21,6 @@ def get_user(db: Session, user_id: int):
 def get_user_by_username(db: Session, username: str):
     """Get a user by username"""
     return db.query(models.User).filter(models.User.username == username).first()
-
-def get_users(db: Session, skip: int = 0, limit: int = 100):
-    """Get a list of users"""
-    return db.query(models.User).offset(skip).limit(limit).all()
 
 # Diary CRUD operations
 def create_diary(db: Session, user_id: int, content: str,
@@ -154,9 +150,72 @@ def get_user_embeddings(db: Session, user_id: int, model: str):
                     models.DiaryEmbedding.model == model)
             .all())
 
-# InteractionNote CRUD operations
-def get_latest_interaction_note(db: Session, user_id: int):
-    """Get the latest interaction note for a user (highest version)"""
-    return db.query(models.InteractionNote).filter(
-        models.InteractionNote.user_id == user_id
-    ).order_by(models.InteractionNote.version.desc()).first()
+# CalendarEvent CRUD operations
+def create_calendar_event(db: Session, user_id: int, title: str, event_date, *,
+                          note: Optional[str] = None, category: str = "other",
+                          event_time: Optional[str] = None, recurrence: str = "none",
+                          recurrence_until=None, reminder_minutes: Optional[int] = None):
+    """新增一筆行事曆事件 (event_date/recurrence_until 一律傳 datetime.date 物件)"""
+    event = models.CalendarEvent(
+        user_id=user_id,
+        title=title,
+        note=note,
+        category=category,
+        event_date=event_date,
+        event_time=event_time,
+        recurrence=recurrence,
+        recurrence_until=recurrence_until,
+        reminder_minutes=reminder_minutes,
+    )
+    db.add(event)
+    db.commit()
+    db.refresh(event)
+    return event
+
+def get_calendar_event(db: Session, event_id: int):
+    """依 ID 取得單筆行事曆事件"""
+    return db.query(models.CalendarEvent).filter(models.CalendarEvent.id == event_id).first()
+
+def get_calendar_events(db: Session, user_id: int, start, end) -> List[models.CalendarEvent]:
+    """取得使用者在 [start, end] 視窗內「可能落有 occurrence」的原始事件列。
+
+    只做粗篩：非重複事件要求 event_date 落在視窗內；重複事件只要求
+    「還沒結束」(recurrence_until 為 NULL 或未早於 start)。實際 occurrence
+    展開 (含跳過短月/取閏年等細節) 交由 services.calendar_service.expand_occurrences
+    在 session 外進行。
+    """
+    return (db.query(models.CalendarEvent)
+            .filter(models.CalendarEvent.user_id == user_id)
+            .filter(models.CalendarEvent.event_date <= end)
+            .filter(or_(
+                and_(models.CalendarEvent.recurrence == "none",
+                     models.CalendarEvent.event_date >= start),
+                and_(models.CalendarEvent.recurrence != "none",
+                     or_(models.CalendarEvent.recurrence_until.is_(None),
+                         models.CalendarEvent.recurrence_until >= start)),
+            ))
+            .all())
+
+def update_calendar_event(db: Session, event_id: int, **kwargs):
+    """更新行事曆事件欄位"""
+    event = get_calendar_event(db, event_id)
+    if not event:
+        return None
+
+    for key, value in kwargs.items():
+        if hasattr(event, key):
+            setattr(event, key, value)
+
+    db.commit()
+    db.refresh(event)
+    return event
+
+def delete_calendar_event(db: Session, event_id: int) -> bool:
+    """刪除行事曆事件"""
+    event = get_calendar_event(db, event_id)
+    if not event:
+        return False
+
+    db.delete(event)
+    db.commit()
+    return True

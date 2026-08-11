@@ -2,19 +2,13 @@
 
 import llm
 from providers.base import LLMConfig
-from database import SessionLocal, crud
+from database import db_session, crud
 from services.prompt_loader import load_prompt, get_role
 from utils.time_utils import get_local_now
-from typing import Dict, List, Any, Optional
+from typing import Dict, Any, Optional
 import pandas as pd
-from datetime import datetime, timedelta
-import io
-import base64
+from datetime import timedelta
 import re
-
-# matplotlib 只在真正產圖時才需要 (generate_emotion_chart)。
-# 在模組層 import pyplot 會在每次啟動時建立字型快取並佔用記憶體，
-# 而目前的 analyze_emotion_trends 根本不畫圖 —— 改為延遲載入。
 
 def analyze_emotion_trends(user_id: int, time_range: str = "month", cfg: Optional[LLMConfig] = None, lang: str = "zh-TW") -> Dict[str, Any]:
     """
@@ -29,8 +23,7 @@ def analyze_emotion_trends(user_id: int, time_range: str = "month", cfg: Optiona
         Dict 包含分析結果和圖表
     """
     # 讀取階段 —— 取完資料立刻關閉連線，不可在持有連線時呼叫 LLM
-    db = SessionLocal()
-    try:
+    with db_session() as db:
         diaries = crud.get_user_diaries(db, user_id, limit=100)
 
         if not diaries:
@@ -46,8 +39,6 @@ def analyze_emotion_trends(user_id: int, time_range: str = "month", cfg: Optiona
             }
             for diary in diaries
         ]
-    finally:
-        db.close()
 
     df = pd.DataFrame(data)
     df = df.sort_values("date")
@@ -125,59 +116,3 @@ def analyze_emotion_trends(user_id: int, time_range: str = "month", cfg: Optiona
         "most_positive_day": most_positive_day,
         "most_negative_day": most_negative_day,
     }
-
-
-
-def generate_emotion_chart(df, filename="emotion_chart.png"):
-    """生成情緒圖表並返回Base64編碼"""
-    import matplotlib
-    matplotlib.use("Agg")  # 無 GUI 後端，適用於伺服器
-    import matplotlib.pyplot as plt
-
-    plt.figure(figsize=(10, 6))
-    plt.plot(df['date'], df['valence'], 'b-', label='愉悅度')
-    plt.plot(df['date'], df['arousal'], 'r-', label='激動度')
-    plt.xlabel('日期')
-    plt.ylabel('情緒指數')
-    plt.title('情緒變化趨勢')
-    plt.legend()
-    plt.grid(True)
-    
-    # 保存到內存而不是文件
-    buf = io.BytesIO()
-    plt.savefig(buf, format='png')
-    buf.seek(0)
-    
-    # 轉為base64以便前端顯示
-    chart_base64 = base64.b64encode(buf.read()).decode('utf-8')
-    plt.close()
-    
-    return chart_base64
-
-def extract_key_themes(user_id: int, cfg: Optional[LLMConfig] = None, lang: str = "zh-TW") -> List[str]:
-    """
-    從用戶的互動筆記中提取關鍵主題
-    """
-    db = SessionLocal()
-    try:
-        # 獲取最新的互動筆記
-        latest_note = crud.get_latest_interaction_note(db, user_id)
-        if not latest_note:
-            return []
-
-        # 讀取主題提取提示詞
-        prompt_template = load_prompt("theme_extraction_prompt.txt", lang)
-        prompt = prompt_template.format(interaction_note_content=latest_note.content)
-    finally:
-        db.close()
-
-    # LLM 階段 —— 不持有 DB 連線
-    themes_text = llm.chat(
-        [
-            {"role": "system", "content": get_role("theme_analyst", lang)},
-            {"role": "user", "content": prompt}
-        ],
-        cfg
-    )
-
-    return [t.strip() for t in themes_text.split("\n") if t.strip()]

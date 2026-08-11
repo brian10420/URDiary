@@ -8,22 +8,16 @@
 /* 2. 動畫 (animations.css) - 動畫關鍵幀等 */
 @import url('animations.css');
 
-/* 3. 佈局 (layout.css) - 大框架佈局 */
-@import url('layout.css');
-
-/* 4. 側邊欄 (sidebar.css) */
-@import url('sidebar.css');
-
-/* 5. 聊天 (chat.css) */
+/* 3. 聊天 (chat.css) */
 @import url('chat.css');
 
-/* 6. 日記 (diary.css) */
+/* 4. 日記 (diary.css) */
 @import url('diary.css');
 
-/* 7. 筆記 (notes.css) */
-@import url('notes.css');
+/* 5. 行事曆 (calendar.css) */
+@import url('calendar.css');
 
-/* 8. 組件 (components.css) - 常用UI、按鈕、Spinner等 */
+/* 6. 組件 (components.css) - 常用UI、按鈕、Spinner等 */
 @import url('components.css');
 
 /* 這裡若有需要額外的覆蓋樣式 (Override)，可在 import 之後進行 */

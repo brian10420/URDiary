@@ -7,23 +7,33 @@ document.addEventListener('DOMContentLoaded', function() {
     // 顯示啟動屏幕
     showSplashScreen();
     
+    // js/main.js 是各模塊初始化的唯一 owner：以下順序為固定順序，
+    // 各模塊檔尾原本的自啟動區塊（DOMContentLoaded 自行呼叫 init）已移除，
+    // 避免雙重初始化（事件監聽器綁兩次、autoLogin 跑兩次等）。
+
+    // 初始化錯誤日誌系統（唯一的未捕捉錯誤捕捉路徑，須盡早就緒）
+    if (typeof ErrorLogger !== 'undefined' && typeof ErrorLogger.init === 'function') {
+        ErrorLogger.init();
+    } else {
+        console.warn('ErrorLogger未定義');
+    }
+
     // 确保先初始化ApiService
     if (typeof ApiService !== 'undefined' && typeof ApiService.init === 'function') {
         ApiService.init();
     } else {
         console.error('ApiService未定義或init方法不可用');
     }
-    
+
+    // 初始化 LLM 設定模塊（供應商/模型/金鑰管理面板）
+    if (typeof SettingsModule !== 'undefined' && typeof SettingsModule.init === 'function') {
+        SettingsModule.init();
+    } else {
+        console.warn('SettingsModule未定義');
+    }
+
     // 初始化API認證
     initializeAuth();
-
-    // 初始化錯誤處理 - 檢查ErrorHandler是否存在且有init方法
-    if (typeof ErrorLogger !== 'undefined') {
-        // ErrorLogger已在外部初始化，不需要再次調用init
-        console.log('ErrorLogger已初始化');
-    } else {
-        console.warn('ErrorLogger未定義');
-    }
     
     // 初始化UI管理器
     UIManager.init();
@@ -33,7 +43,10 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // 初始化日記模塊
     DiaryModule.init();
-    
+
+    // 初始化行事曆模塊（資料在首次切到行事曆視圖時才載入）
+    CalendarModule.init();
+
     // 初始化用戶選擇功能
     initUserSelection();
 
@@ -41,6 +54,13 @@ document.addEventListener('DOMContentLoaded', function() {
     // 不再以模擬數據掩蓋認證錯誤
     window.addEventListener('urdiary:auth-expired', function() {
         console.warn('認證已失效，開啟登入對話框');
+
+        // 重置行事曆模塊，避免下一位登入者仍沿用前一個帳號的月曆索引與
+        // 提醒快照（提醒快照含使用者資料，換帳號流程沒有回到前一步驟時
+        // 必須清掉，比照 initUserSelection 切換帳號時的既有作法）
+        if (typeof CalendarModule !== 'undefined') {
+            CalendarModule.reset();
+        }
 
         const splashScreen = document.getElementById('splash-screen');
         if (splashScreen) {
@@ -96,34 +116,6 @@ document.addEventListener('DOMContentLoaded', function() {
     // 例如在日記詳情頁點「對話」時 switchView 會強制切回全螢幕聊天，
     // 蓋掉狀態機原本要顯示的「聊天+詳情」分割畫面。
 
-    // 為主題切換按鈕添加事件監聽器
-    const themeToggle = document.getElementById('theme-toggle');
-    if (themeToggle) {
-        themeToggle.addEventListener('click', function() {
-            UIManager.toggleTheme();
-        });
-    }
-    
-    // 為調試按鈕添加事件監聽器
-    const debugBtn = document.getElementById('debug-btn');
-    if (debugBtn) {
-        debugBtn.addEventListener('click', function() {
-            // 使用Electron API打開開發者工具
-            try {
-                if (window.require) {
-                    const electron = window.require('electron');
-                    if (electron.ipcRenderer) {
-                        electron.ipcRenderer.send('open-dev-tools');
-                    } else if (electron.remote) {
-                        electron.remote.getCurrentWindow().webContents.openDevTools();
-                    }
-                }
-            } catch (error) {
-                console.error('打開開發者工具時出錯:', error);
-            }
-        });
-    }
-    
     console.log('應用初始化完成');
 });
 
@@ -563,14 +555,20 @@ function initUserSelection() {
             if (DiaryModule.reset) DiaryModule.reset();
             if (DiaryModule.init) DiaryModule.init();
         }
+
+        // 重置和重新初始化行事曆模塊 —— 不重置的話，切換帳號後仍會顯示
+        // 前一個帳號已載入的月曆事件（惰性首載旗標不會自己歸零）
+        if (typeof CalendarModule !== 'undefined') {
+            if (CalendarModule.reset) CalendarModule.reset();
+            if (CalendarModule.init) CalendarModule.init();
+        }
     }
 
     // 創建新用戶：密碼隨請求送後端做強度檢查與 bcrypt 雜湊，本機不留任何密碼
     function createNewUser(username, password) {
         console.log(`創建新用戶: ${username}`);
 
-        const baseUrl = (typeof CONFIG !== 'undefined' && CONFIG.API && CONFIG.API.BASE_URL) ?
-            CONFIG.API.BASE_URL : 'http://localhost:8001';
+        const baseUrl = CONFIG.getApiBaseUrl();
 
         fetch(`${baseUrl}/users/create`, {
             method: 'POST',
@@ -610,18 +608,3 @@ function initUserSelection() {
         });
     }
 }
-
-// 全局錯誤處理
-window.onerror = function(message, source, lineno, colno, error) {
-    console.error('全局錯誤:', message, error);
-    
-    if (typeof ErrorLogger !== 'undefined') {
-        ErrorLogger.captureError(error || new Error(message), {
-            source: source,
-            lineno: lineno,
-            colno: colno
-        });
-    }
-    
-    return false; // 允許默認處理
-}; 

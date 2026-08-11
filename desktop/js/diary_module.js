@@ -459,11 +459,8 @@ const DiaryModule = (function() {
         init: init,
         reset: reset,
         loadDiaries: loadDiaries,
-        showDiaryDetails: showDiaryDetails
+        showDiaryDetails: showDiaryDetails,
+        // 純函式，僅為 vitest 單元測試曝光，行為不變
+        getExcerpt: getExcerpt
     };
 })();
-
-// 初始化模塊
-document.addEventListener('DOMContentLoaded', function() {
-    DiaryModule.init();
-});

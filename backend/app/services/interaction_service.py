@@ -1,8 +1,9 @@
 import llm
 from providers.base import LLMConfig
-from memory_manager import get_chat_history, append_chat_messages
-from database import crud, SessionLocal
+from memory_manager import get_chat_history, append_chat_messages, format_chat_content
+from database import crud, db_session
 from database.models import InteractionNote
+from services.calendar_service import build_calendar_context
 from services.diary_draft import DiaryDraft, parse_diary_output
 from services.prompt_loader import load_prompt, get_role
 from services.prompt_builder import build_conversation_system, build_checkin_prompt
@@ -57,15 +58,10 @@ def update_interaction_note(
     """
     # 讀取互動筆記提示詞
     prompt_template = load_prompt("interaction_note_prompt.txt", lang)
-    
+
     # 格式化對話歷史
-    formatted_history = []
-    for msg in chat_history:
-        if msg["role"] in ["user", "assistant"]:
-            formatted_history.append(f"{msg['role'].upper()}: {msg['content']}")
-    
-    chat_content = "\n".join(formatted_history)
-    
+    chat_content = format_chat_content(chat_history)
+
     # 獲取今日日期，格式為YYYY-MM-DD
     # 必須用日記的本地日期基準：容器內 datetime.now() 是 UTC，
     # 台北早上 7 點 = UTC 前一天 23 點，會讓提示詞把今天的事標成昨天。
@@ -127,13 +123,10 @@ def process_interaction_note_update(chat_id: str, numeric_user_id: int, today_di
     # 讀取階段 —— 取完資料立刻關閉連線。
     # 絕不可在持有 DB 連線 (開著的交易) 的狀態下呼叫 LLM：一次 /chat/end/ 會做
     # 2~3 次 Grok 往返，每次數十秒，連線會被釘住直到連線池 (20+30) 耗盡。
-    db = SessionLocal()
-    try:
+    with db_session() as db:
         chat_history = get_chat_history(chat_id)
         latest_note = get_latest_interaction_note(db, numeric_user_id)
         previous_content = latest_note.content if latest_note else None
-    finally:
-        db.close()
 
     # LLM 階段 —— 此時不持有任何 DB 連線
     new_content = update_interaction_note(
@@ -141,9 +134,9 @@ def process_interaction_note_update(chat_id: str, numeric_user_id: int, today_di
         user_id=numeric_user_id, lang=lang
     )
 
-    # 寫入階段
-    db = SessionLocal()
-    try:
+    # 寫入階段 (獨立的第二個 session；絕不可與上面的讀取階段合併，
+    # 否則 session 會跨越中間的 LLM 呼叫)
+    with db_session() as db:
         new_note = create_interaction_note(db, numeric_user_id, new_content)
 
         return {
@@ -152,23 +145,18 @@ def process_interaction_note_update(chat_id: str, numeric_user_id: int, today_di
             "content": new_note.content,
             "created_at": new_note.created_at.isoformat()
         }
-    finally:
-        db.close()
 
 def get_conversation_context(numeric_user_id: int) -> str:
     """
     獲取對話開始時的互動筆記上下文
     """
-    db = SessionLocal()
-    try:
+    with db_session() as db:
         latest_note = get_latest_interaction_note(db, numeric_user_id)
-        
+
         if not latest_note:
             return "尚無互動筆記記錄。"
-        
+
         return latest_note.content
-    finally:
-        db.close()
 
 def enhanced_chat_with_context(chat_id: str, numeric_user_id: int, message: str, cfg: Optional[LLMConfig] = None, semantic: bool = False, crisis: bool = False, lang: str = "zh-TW") -> str:
     """
@@ -194,12 +182,19 @@ def enhanced_chat_with_context(chat_id: str, numeric_user_id: int, message: str,
     relevant_memories = get_relevant_memories(
         numeric_user_id, message, chat_history, semantic=semantic)
 
+    # 行事曆脈絡 (昨天 ~ +7 天)。自管 session 且在 LLM 呼叫之前就取完；
+    # 用真實本地日期，不是日記的 5am 換日日 (見 calendar_service 模組註解)。
+    # 失敗時內部降級為置底句，不擋聊天。
+    calendar_context = build_calendar_context(
+        numeric_user_id, get_local_now().date(), lang)
+
     # 分層組裝系統提示詞 (人格核心 → 對話框架與記憶 → 危機模式附錄)
     system_prompt = build_conversation_system(
         lang=lang,
         interaction_note=interaction_context,
         relevant_memories=relevant_memories,
         today_date=get_diary_date().strftime("%Y-%m-%d"),
+        calendar_context=calendar_context,
         crisis=crisis,
     )
 
@@ -257,20 +252,12 @@ def generate_enhanced_diary(chat_id: str, numeric_user_id: int, exclude_interact
     # 獲取互動筆記上下文 (短交易；LLM 呼叫前關閉連線)
     interaction_context = "尚無互動筆記記錄。"
     if not exclude_interaction_notes:
-        db = SessionLocal()
-        try:
+        with db_session() as db:
             latest_note = get_latest_interaction_note(db, numeric_user_id)
             interaction_context = latest_note.content if latest_note else "尚無互動筆記記錄。"
-        finally:
-            db.close()
 
     # 格式化對話歷史
-    formatted_history = [
-        f"{msg['role'].upper()}: {msg['content']}"
-        for msg in chat_history
-        if msg["role"] in ["user", "assistant"]
-    ]
-    chat_content = "\n".join(formatted_history)
+    chat_content = format_chat_content(chat_history)
 
     # 讀取日記提示詞。輸出格式要求 (含 title/summary/valence/arousal 的
     # JSON tail) 已寫在模板的【輸出格式】段，不再動態附加格式指示。
@@ -332,8 +319,7 @@ def daily_checkin(chat_id: str, numeric_user_id: int, cfg: Optional[LLMConfig] =
     today = get_diary_date()
 
     # 讀階段
-    db = SessionLocal()
-    try:
+    with db_session() as db:
         user = crud.get_user(db, numeric_user_id)
         if user is None:
             return None
@@ -362,8 +348,12 @@ def daily_checkin(chat_id: str, numeric_user_id: int, cfg: Optional[LLMConfig] =
         else:
             user_profile = ("（你們還不熟，這可能是最初幾次見面）" if lang != "en"
                             else "(you barely know each other yet — this may be one of your first meetings)")
-    finally:
-        db.close()
+
+    # 行事曆脈絡：讀階段的 session 已關閉，build_calendar_context 自管自己的
+    # 短交易並在回傳前關掉，接下來的 llm.chat 仍不持有任何 DB 連線。
+    # 日期用真實本地日 (get_local_now)，不是上面那個 5am 換日的日記日 today。
+    calendar_block = build_calendar_context(
+        numeric_user_id, get_local_now().date(), lang)
 
     # LLM 階段 (不持有 DB 連線)。LLMError 往上拋，由路由層轉為 checkin:false。
     prompt = build_checkin_prompt(
@@ -372,6 +362,7 @@ def daily_checkin(chat_id: str, numeric_user_id: int, cfg: Optional[LLMConfig] =
         today_date=today.strftime("%Y-%m-%d"),
         last_diary_block=last_diary_block,
         user_profile=user_profile,
+        calendar_block=calendar_block,
     )
     messages = [
         {"role": "system", "content": get_role("companion", lang)},
@@ -383,8 +374,9 @@ def daily_checkin(chat_id: str, numeric_user_id: int, cfg: Optional[LLMConfig] =
     # LLM 呼叫期間可能有並發的 checkin 請求同時通過了開頭的判定
     # (前端已有 single-flight 防護，這裡是後端保底)：寫入前重新檢查，
     # 若別的請求已搶先標記今日，丟棄本次問候避免連發兩句開場。
-    db = SessionLocal()
-    try:
+    # 獨立的第二個 session (與上面的讀階段分開)——不得合併，session 範圍
+    # 不可跨越中間那次 llm.chat() 呼叫。
+    with db_session() as db:
         user = crud.get_user(db, numeric_user_id)
         if user is None:
             return None
@@ -392,8 +384,6 @@ def daily_checkin(chat_id: str, numeric_user_id: int, cfg: Optional[LLMConfig] =
             return None  # 已被並發請求標記，本次問候不送出
         user.last_checkin_date = get_diary_datetime()
         db.commit()
-    finally:
-        db.close()
 
     append_chat_messages(chat_id, [{"role": "assistant", "content": greeting}])
     return greeting

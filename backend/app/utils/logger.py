@@ -6,8 +6,8 @@ from datetime import datetime
 from pathlib import Path
 from logging.handlers import RotatingFileHandler, TimedRotatingFileHandler
 
-# 設置日誌目錄
-LOG_DIR = Path("logs")
+# 設置日誌目錄 (錨定在 backend/app/logs，與啟動時的工作目錄無關)
+LOG_DIR = Path(__file__).resolve().parents[1] / "logs"
 LOG_DIR.mkdir(exist_ok=True)
 
 # 日誌級別
@@ -88,30 +88,6 @@ api_logger = create_logger("app.api", "api.log")
 
 # 錯誤日誌記錄器
 error_logger = create_logger("app.error", "error.log")
-
-# 數據庫日誌記錄器
-db_logger = create_logger("app.db", "db.log")
-
-# JSON格式日誌記錄
-def log_event(event_type, data, logger=app_logger, level=logging.INFO):
-    """記錄JSON格式的事件日誌
-    
-    Args:
-        event_type: 事件類型
-        data: 事件數據
-        logger: 使用的日誌記錄器
-        level: 日誌級別
-    """
-    try:
-        log_entry = {
-            "timestamp": datetime.now().isoformat(),
-            "event_type": event_type,
-            "data": data
-        }
-        
-        logger.log(level, json.dumps(log_entry))
-    except Exception as e:
-        error_logger.error(f"日誌記錄失敗: {str(e)}")
 
 # 記錄錯誤
 def log_error(error, context=None, logger=error_logger):
