@@ -134,6 +134,10 @@ describe('ChatModule：送出失敗保留草稿 + 氣泡重試', () => {
         expect(bubble.classList.contains('send-failed')).toBe(false);
         expect(bubble.classList.contains('pending')).toBe(false);
         expect(bubble.querySelector('.send-retry-btn')).toBeNull();
+        // code review 修復：成功後不該留著失敗時備份的重試文字（雖然沒有
+        // 任何地方會再讀到它，但終究是用不到的殘留資料，見 attemptSend
+        // 成功分支的清理）
+        expect(bubble.dataset.pendingText).toBeUndefined();
 
         const systemBubbles = document.querySelectorAll('.chat-message.system-message:not(.thinking)');
         const lastSystem = systemBubbles[systemBubbles.length - 1];

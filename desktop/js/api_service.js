@@ -341,10 +341,57 @@ const ApiService = (function() {
     // timeoutDuration + 退避總和）。
     const RETRY_BASE_DELAY_MS = 300;
 
+    // 429 帶 Retry-After 時，實際會尊重的等待時間上限（毫秒）——code review
+    // 修復（見 resolveRetryDelayMs）：本專案後端全域限流窗口是 60 秒
+    // （backend/app/middleware/rate_limit.py GLOBAL_LIMIT=300/60s），真實的
+    // 429 理論上可以帶到 ~60 秒的 Retry-After。但 fetchAPI 是使用者正在等待
+    // 的前景操作（日記列表、行事曆讀取…），照單全收等一整分鐘不像「有耐心
+    // 重試」，比較像「當機」。夾在跟 computeBackoffDelay 預設 capMs 同一個
+    // 量級（4 秒）：遠小於整個限流窗口，但足以正確尊重「窗口快關閉」時
+    // 伺服器給的較短等待（例如 1~2 秒）——這是最常見的 429 情境。窗口剛被
+    // 打滿的極端情況會在這個上限重試、大機率再拿一次 429，最終由既有的
+    // 「重試次數用盡就如實拋錯」機制收尾（呼叫端看到錯誤或本機快取），
+    // 而不是讓這一次 fetchAPI 呼叫本身卡住到接近一分鐘。
+    const RETRY_AFTER_CAP_MS = 4000;
+
     // 純粹把 setTimeout 包成 Promise，讓重試迴圈可以 await。vitest 用
     // vi.useFakeTimers() + advanceTimersByTimeAsync() 控制它，不必真的等待。
     function sleep(ms) {
         return new Promise(resolve => setTimeout(resolve, ms));
+    }
+
+    /**
+     * 算出「這次重試」實際要等待的毫秒數。純函式，不碰 DOM/window。
+     *
+     * 一般情況（非 429，或 429 但沒有可用的 Retry-After）就是呼叫端已經算好
+     * 的 backoffDelayMs（來自 computeBackoffDelay）原樣送回。
+     *
+     * 429 且帶了有效 Retry-After 時，改用 `Math.max(夾住上限的 retryAfterMs,
+     * backoffDelayMs)`——尊重伺服器明確要求的等待時間（不會比它講的還快
+     * 重試，白白再撞進同一個還沒解除的限流窗口），同時：
+     *   1. 用 RETRY_AFTER_CAP_MS 夾住上限，避免誇張/惡意的標頭把單次
+     *      fetchAPI 呼叫卡住太久（理由見該常數上方註解）。
+     *   2. 仍取 Math.max 而不是直接採用，確保絕不會比一般退避還快——
+     *      即使伺服器送出 "Retry-After: 0"，也不會因此變成無延遲的
+     *      立即重試。
+     *
+     * @param {Object} [params]
+     * @param {number} [params.status] - HTTP 狀態碼
+     * @param {number|null} [params.retryAfterMs] - parseRetryAfterMs() 的結果
+     * @param {number} [params.backoffDelayMs] - computeBackoffDelay() 算出的
+     *   一般退避值（呼叫端負責算好再傳進來，這裡不重複計算）
+     * @returns {number} 毫秒數，恆為 >= 0 的有限數字
+     */
+    function resolveRetryDelayMs(params) {
+        const { status = null, retryAfterMs = null, backoffDelayMs = 0 } = params || {};
+        const safeBackoff = Number.isFinite(backoffDelayMs) && backoffDelayMs >= 0 ? backoffDelayMs : 0;
+
+        if (status === 429 && Number.isFinite(retryAfterMs)) {
+            const cappedRetryAfterMs = Math.min(Math.max(retryAfterMs, 0), RETRY_AFTER_CAP_MS);
+            return Math.max(cappedRetryAfterMs, safeBackoff);
+        }
+
+        return safeBackoff;
     }
 
     /**
@@ -561,8 +608,19 @@ const ApiService = (function() {
                     const canRetry = attempt < maxAttempts && navigator.onLine &&
                         isRetryableFailure({ method: fetchOptions.method, status: response.status, retryAfterMs });
                     if (canRetry) {
-                        console.warn(`HTTP ${response.status}，等待後進行第 ${attempt + 1}/${maxAttempts} 次嘗試: ${endpoint}`);
-                        await sleep(computeBackoffDelay(attempt - 1, RETRY_BASE_DELAY_MS));
+                        // code review 修復：429 帶 Retry-After 時，過去這裡
+                        // 算出 retryAfterMs 只拿去當「該不該重試」的門檻
+                        // （isRetryableFailure），實際 sleep() 卻永遠套用固定
+                        // 的指數退避，等於算完就丟掉伺服器明確講的等待秒數
+                        // ——resolveRetryDelayMs 把它接進來（並夾住上限，
+                        // 理由見 RETRY_AFTER_CAP_MS 上方註解）。
+                        const delayMs = resolveRetryDelayMs({
+                            status: response.status,
+                            retryAfterMs,
+                            backoffDelayMs: computeBackoffDelay(attempt - 1, RETRY_BASE_DELAY_MS)
+                        });
+                        console.warn(`HTTP ${response.status}，等待 ${delayMs}ms 後進行第 ${attempt + 1}/${maxAttempts} 次嘗試: ${endpoint}`);
+                        await sleep(delayMs);
                         continue;
                     }
                 }
@@ -1363,7 +1421,9 @@ const ApiService = (function() {
         computeBackoffDelay: computeBackoffDelay,
         isRetryableFailure: isRetryableFailure,
         parseRetryAfterMs: parseRetryAfterMs,
-        getConfiguredMaxRetries: getConfiguredMaxRetries
+        getConfiguredMaxRetries: getConfiguredMaxRetries,
+        resolveRetryDelayMs: resolveRetryDelayMs,
+        RETRY_AFTER_CAP_MS: RETRY_AFTER_CAP_MS
     };
 })();
 

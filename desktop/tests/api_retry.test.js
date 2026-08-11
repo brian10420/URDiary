@@ -98,6 +98,52 @@ describe('ApiService.parseRetryAfterMs（純函式：解析 Retry-After 標頭�
     });
 });
 
+describe('ApiService.resolveRetryDelayMs（純函式：這次重試實際要等待多久）', () => {
+    // code review fix：先前 retryAfterMs 只當「該不該重試」的門檻，算出來
+    // 之後被丟掉，實際 sleep() 永遠是固定的指數退避——等於完全沒尊重伺服器
+    // 明確講的 Retry-After。這裡驗證 resolveRetryDelayMs 真的把它接進計算，
+    // 同時驗證有上限（不會讓一個誇張的標頭卡住整個流程）。
+    it('非 429：一律回傳 backoffDelayMs，不管 retryAfterMs 是什麼（就算是有效數字）', () => {
+        expect(ApiService.resolveRetryDelayMs({ status: 500, retryAfterMs: 5000, backoffDelayMs: 300 })).toBe(300);
+        expect(ApiService.resolveRetryDelayMs({ status: 503, retryAfterMs: null, backoffDelayMs: 600 })).toBe(600);
+        expect(ApiService.resolveRetryDelayMs({ status: null, retryAfterMs: 5000, backoffDelayMs: 300 })).toBe(300);
+    });
+
+    it('429 但沒有 retryAfterMs（null，例如標頭缺席）：回傳 backoffDelayMs', () => {
+        expect(ApiService.resolveRetryDelayMs({ status: 429, retryAfterMs: null, backoffDelayMs: 300 })).toBe(300);
+    });
+
+    it('429 且 retryAfterMs 大於 backoffDelayMs、在上限內：尊重 retryAfterMs（這是本次修復的核心行為）', () => {
+        expect(ApiService.resolveRetryDelayMs({ status: 429, retryAfterMs: 1000, backoffDelayMs: 300 })).toBe(1000);
+        expect(ApiService.resolveRetryDelayMs({ status: 429, retryAfterMs: 2000, backoffDelayMs: 600 })).toBe(2000);
+    });
+
+    it('429 且 retryAfterMs 小於 backoffDelayMs：取兩者較大值，不會比一般退避還快重試', () => {
+        expect(ApiService.resolveRetryDelayMs({ status: 429, retryAfterMs: 100, backoffDelayMs: 600 })).toBe(600);
+    });
+
+    it('429 且 retryAfterMs 為 0（伺服器說可以立刻重試）：回傳 backoffDelayMs 作為安全下限', () => {
+        expect(ApiService.resolveRetryDelayMs({ status: 429, retryAfterMs: 0, backoffDelayMs: 300 })).toBe(300);
+    });
+
+    it('429 且 retryAfterMs 超過 RETRY_AFTER_CAP_MS：夾在上限，不會讓一個誇張/惡意的標頭卡住整個流程', () => {
+        const result = ApiService.resolveRetryDelayMs({ status: 429, retryAfterMs: 3600000, backoffDelayMs: 300 });
+        expect(result).toBe(ApiService.RETRY_AFTER_CAP_MS);
+        expect(result).toBeLessThan(3600000);
+    });
+
+    it('恆為非負整數', () => {
+        const result = ApiService.resolveRetryDelayMs({ status: 429, retryAfterMs: 1500, backoffDelayMs: 300 });
+        expect(Number.isInteger(result)).toBe(true);
+        expect(result).toBeGreaterThanOrEqual(0);
+    });
+
+    it('未提供任何參數時不拋錯，安全預設為 0', () => {
+        expect(() => ApiService.resolveRetryDelayMs()).not.toThrow();
+        expect(ApiService.resolveRetryDelayMs()).toBe(0);
+    });
+});
+
 describe('ApiService.isRetryableFailure（純函式：method/status 重試矩陣）', () => {
     // ---- 最重要的規則：非 GET 一律不重試，不論失敗原因 ----
     it.each([
@@ -290,17 +336,46 @@ describe('ApiService.fetchAPI 整合：GET 重試迴圈', () => {
         expect(fetchMock).toHaveBeenCalledTimes(1);
     });
 
-    it('429 帶 Retry-After → 重試；帶的值會影響延遲但不影響「有沒有重試」這件事的驗證', async () => {
+    it('429 帶 Retry-After：等待時間確實反映伺服器要求的秒數，不是套用一般的指數退避', async () => {
+        // Retry-After: 2 → 2000ms，遠大於 attempt=0 的一般退避（基準 300ms，
+        // 抖動最多 ±20% 也不會超過 360ms）。用這個量級差距證明 fetchAPI
+        // 真的把 Retry-After 的值接進了 sleep()，而不是算完就丟掉。
         const fetchMock = vi.fn()
-            .mockResolvedValueOnce(jsonResponse({}, { ok: false, status: 429, headers: { 'Retry-After': '1' } }))
+            .mockResolvedValueOnce(jsonResponse({}, { ok: false, status: 429, headers: { 'Retry-After': '2' } }))
             .mockResolvedValueOnce(jsonResponse({ ok: true }));
         window.fetch = fetchMock;
 
         const promise = ApiService.fetchAPI('/calendar/events?start=2026-01-01&end=2026-01-02', { method: 'GET' });
-        await flushAllRetries();
-        const result = await promise;
 
+        // 推進到遠超過一般退避、但還沒到 2000ms——若程式碼仍在用一般退避，
+        // 這裡就已經重試過了；斷言還沒重試，證明等待的是 Retry-After。
+        await vi.advanceTimersByTimeAsync(1000);
+        expect(fetchMock).toHaveBeenCalledTimes(1);
+
+        await vi.advanceTimersByTimeAsync(1500); // 累積推進到 2500ms，過了 2000ms
         expect(fetchMock).toHaveBeenCalledTimes(2);
+
+        const result = await promise;
+        expect(result).toEqual({ ok: true });
+    });
+
+    it('429 帶超大 Retry-After：等待時間被夾在 RETRY_AFTER_CAP_MS，不會讓一次請求卡住到伺服器要求的那麼久', async () => {
+        // Retry-After: 3600（一小時）——不應該讓 fetchAPI 這個前景操作真的
+        // 卡住一小時；ApiService.RETRY_AFTER_CAP_MS 是實際會等待的上限。
+        const fetchMock = vi.fn()
+            .mockResolvedValueOnce(jsonResponse({}, { ok: false, status: 429, headers: { 'Retry-After': '3600' } }))
+            .mockResolvedValueOnce(jsonResponse({ ok: true }));
+        window.fetch = fetchMock;
+
+        const promise = ApiService.fetchAPI('/calendar/events?start=2026-01-01&end=2026-01-02', { method: 'GET' });
+
+        await vi.advanceTimersByTimeAsync(ApiService.RETRY_AFTER_CAP_MS - 200);
+        expect(fetchMock).toHaveBeenCalledTimes(1); // 上限前還沒重試
+
+        await vi.advanceTimersByTimeAsync(500); // 越過上限（離 3600 秒還遠得很）
+        expect(fetchMock).toHaveBeenCalledTimes(2);
+
+        const result = await promise;
         expect(result).toEqual({ ok: true });
     });
 

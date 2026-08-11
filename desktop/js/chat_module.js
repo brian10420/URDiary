@@ -463,8 +463,15 @@ const ChatModule = (function() {
                 messageContent = I18N.t('chat.cantUnderstand');
             }
 
-            // 成功了：清掉傳送中標記，添加系統消息
+            // 成功了：清掉傳送中標記，以及（如果這是一次重試）殘留的失敗
+            // 文字備份——code review 修復：先前只清視覺上的 .pending，
+            // dataset.pendingText 會一直留在成功的氣泡上，雖然沒有任何地方
+            // 會再讀到它（重試按鈕已經被 clearSendFailure 移除），但終究是
+            // 用不到的殘留資料，成功了就一併清掉。
             clearPending(bubbleElement);
+            if (bubbleElement && bubbleElement.dataset) {
+                delete bubbleElement.dataset.pendingText;
+            }
             addSystemMessage(messageContent);
 
             // 保存聊天歷史
