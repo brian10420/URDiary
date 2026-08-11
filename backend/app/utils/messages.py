@@ -97,6 +97,10 @@ MESSAGES = {
         "zh-TW": "欄位 {fields} 不可清空為 null，若要維持原值請不要提供該欄位",
         "en": "Field(s) {fields} cannot be cleared to null — omit them to keep the existing value",
     },
+    "rate_limited": {
+        "zh-TW": "請求過於頻繁，請稍後再試",
+        "en": "Too many requests — please try again later",
+    },
 
     # --- 認證 / 工作階段 (api/routes/user.py, api/deps.py) ---
     "username_taken": {

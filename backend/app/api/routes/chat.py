@@ -5,6 +5,7 @@ from pydantic import BaseModel
 import llm
 from api.deps import get_current_user, get_llm_config, get_memory_prefs, get_language
 from api.schemas import UserDiaryCreate
+from middleware.rate_limit import enforce_llm_rate_limit
 from utils.messages import msg
 from database.models import User
 from providers.base import LLMConfig, LLMError
@@ -41,7 +42,8 @@ class EnhancedChatInput(BaseModel):
 def chat_with_ai(user_input: ChatInput,
                  current_user: User = Depends(get_current_user),
                  llm_config: Optional[LLMConfig] = Depends(get_llm_config),
-                 lang: str = Depends(get_language)):
+                 lang: str = Depends(get_language),
+                 _rate_limit: None = Depends(enforce_llm_rate_limit)):
     """對話 API，調用所選的 LLM 供應商進行回應"""
     # 對話歷史鍵以 token 導出的使用者 id 命名，不信任 body
     user_id = str(current_user.id)
@@ -84,7 +86,8 @@ def enhanced_chat_with_ai(user_input: EnhancedChatInput,
                           current_user: User = Depends(get_current_user),
                           llm_config: Optional[LLMConfig] = Depends(get_llm_config),
                           memory_semantic: bool = Depends(get_memory_prefs),
-                          lang: str = Depends(get_language)):
+                          lang: str = Depends(get_language),
+                          _rate_limit: None = Depends(enforce_llm_rate_limit)):
     """使用互動筆記增強的對話API"""
     # 身分由 token 導出：對話歷史與 DB 查詢共用同一個 id
     user_id = str(current_user.id)
@@ -118,7 +121,8 @@ def enhanced_chat_with_ai(user_input: EnhancedChatInput,
            description="今日首次開啟 App 時，由 AI 主動生成個人化問候（依昨日日記與時段）")
 def daily_checkin_route(current_user: User = Depends(get_current_user),
                         llm_config: Optional[LLMConfig] = Depends(get_llm_config),
-                        lang: str = Depends(get_language)):
+                        lang: str = Depends(get_language),
+                        _rate_limit: None = Depends(enforce_llm_rate_limit)):
     """每日 check-in：今日已問候過或 LLM 不可用時回 checkin:false（不報錯）。
 
     開場問候失敗不值得一個錯誤彈窗——全新安裝尚未設定金鑰時，
@@ -145,7 +149,8 @@ def daily_checkin_route(current_user: User = Depends(get_current_user),
 def end_chat_session(user_input: UserDiaryCreate,
                      current_user: User = Depends(get_current_user),
                      llm_config: Optional[LLMConfig] = Depends(get_llm_config),
-                     lang: str = Depends(get_language)):
+                     lang: str = Depends(get_language),
+                     _rate_limit: None = Depends(enforce_llm_rate_limit)):
     """結束當前對話，生成日記並更新互動筆記"""
     # 身分由 token 導出，不信任 body
     user_id = str(current_user.id)

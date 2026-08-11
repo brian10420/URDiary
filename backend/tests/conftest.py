@@ -22,6 +22,11 @@ os.environ["URDIARY_DATA_DIR"] = _TMP_DATA
 # 不會被意外打斷。要測「旗標開啟」行為的測試自行對 config 模組屬性 monkeypatch
 # (見 tests/test_invite_codes.py)。
 os.environ["URDIARY_REQUIRE_INVITE"] = "0"
+# 速率限制預設開啟 (config.RATE_LIMIT_ENABLED)；套件裡大量測試在短時間內對
+# 同一個 TestClient「IP」(testclient) 打幾十甚至上百次請求，開著限流跑會
+# 讓既有 267 個測試無端 429。明確關閉，要測「限制生效」行為的測試自行對
+# config 模組屬性 monkeypatch (見 tests/test_rate_limit.py)。
+os.environ["URDIARY_RATE_LIMIT_ENABLED"] = "0"
 
 APP_DIR = Path(__file__).resolve().parents[1] / "app"
 sys.path.insert(0, str(APP_DIR))
@@ -95,6 +100,21 @@ def auth_header(client):
 def other_auth_header(client):
     """第二個獨立使用者，供跨用戶權限 (403/404) 測試使用。"""
     return _create_and_login(client, _unique_username())
+
+
+@pytest.fixture(autouse=True)
+def _reset_rate_limits():
+    """`middleware/rate_limit.py` 的計數器是模組級 dict，`client` fixture又是
+    整個 session 共用一份——沒有這個，某個測試 (tests/test_rate_limit.py)
+    monkeypatch 打開限流、把某個桶打滿之後，後面完全不相關的測試會平白
+    繼承那個計數。`config.RATE_LIMIT_ENABLED` 本身在其餘測試維持關閉
+    (上面的環境區塊)，所以這裡的 reset() 對它們是無副作用的 no-op；
+    只有 test_rate_limit.py 會真的用到。
+    """
+    from middleware import rate_limit
+    rate_limit.reset()
+    yield
+    rate_limit.reset()
 
 
 @pytest.fixture

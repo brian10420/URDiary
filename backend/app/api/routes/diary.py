@@ -7,6 +7,7 @@ import llm
 from api.deps import get_db, get_current_user, get_llm_config, get_language
 from api.schemas import UserDiaryCreate
 from database.models import User
+from middleware.rate_limit import enforce_llm_rate_limit
 from utils.messages import msg
 from providers.base import LLMConfig, LLMError
 from utils.api_exceptions import BadRequestError, ForbiddenError, NotFoundError, ServerError, ServiceUnavailableError
@@ -36,7 +37,8 @@ class DiaryUpdate(BaseModel):
 def generate_diary(user_input: UserDiaryCreate,
                    current_user: User = Depends(get_current_user),
                    llm_config: Optional[LLMConfig] = Depends(get_llm_config),
-                   lang: str = Depends(get_language)):
+                   lang: str = Depends(get_language),
+                   _rate_limit: None = Depends(enforce_llm_rate_limit)):
     """根據用戶的對話歷史自動生成日記"""
     # 身分由 token 導出，不信任 body
     user_id = str(current_user.id)
@@ -135,7 +137,8 @@ def get_diary(diary_id: int, db: Session = Depends(get_db),
 def get_emotion_analytics(user_id: int, time_range: str = "month",
                           current_user: User = Depends(get_current_user),
                           llm_config: Optional[LLMConfig] = Depends(get_llm_config),
-                          lang: str = Depends(get_language)):
+                          lang: str = Depends(get_language),
+                          _rate_limit: None = Depends(enforce_llm_rate_limit)):
     """獲取用戶情緒分析數據（僅限本人）"""
     if user_id != current_user.id:
         api_logger.warning(f"拒絕跨用戶存取情緒分析: token_user={current_user.id}, requested={user_id}")
@@ -253,7 +256,8 @@ def delete_diary(diary_id: int, db: Session = Depends(get_db),
 def generate_enhanced_diary_api(user_input: UserDiaryCreate,
                                 current_user: User = Depends(get_current_user),
                                 llm_config: Optional[LLMConfig] = Depends(get_llm_config),
-                                lang: str = Depends(get_language)):
+                                lang: str = Depends(get_language),
+                                _rate_limit: None = Depends(enforce_llm_rate_limit)):
     """使用互動筆記增強的日記生成"""
     # 身分由 token 導出，不信任 body
     user_id = str(current_user.id)
@@ -327,7 +331,8 @@ def get_interaction_note(user_id: int, db: Session = Depends(get_db),
 def update_interaction_notes(user_input: UserDiaryCreate,
                              current_user: User = Depends(get_current_user),
                              llm_config: Optional[LLMConfig] = Depends(get_llm_config),
-                             lang: str = Depends(get_language)):
+                             lang: str = Depends(get_language),
+                             _rate_limit: None = Depends(enforce_llm_rate_limit)):
     """根據今日日記更新互動筆記"""
     # 身分由 token 導出，不信任 body
     user_id = str(current_user.id)

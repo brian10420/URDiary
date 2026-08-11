@@ -84,10 +84,23 @@ class ServerError(APIError):
 # 503錯誤：服務不可用
 class ServiceUnavailableError(APIError):
     """服務不可用錯誤"""
-    
+
     def __init__(self, error_code: str = ErrorCode.SERVICE_UNAVAILABLE, detail: str = None, headers: dict = None):
         super().__init__(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            error_code=error_code,
+            detail=detail,
+            headers=headers
+        )
+
+
+# 429錯誤：請求過於頻繁 (v2.3 task 1.5：middleware/rate_limit.py 用)
+class TooManyRequestsError(APIError):
+    """請求過於頻繁錯誤；呼叫端應一併帶 headers={"Retry-After": "<秒數>"}"""
+
+    def __init__(self, error_code: str = ErrorCode.RATE_LIMITED, detail: str = None, headers: dict = None):
+        super().__init__(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             error_code=error_code,
             detail=detail,
             headers=headers

@@ -14,7 +14,8 @@ class ErrorCode:
     OPERATION_FAILED = "E1003"
     UNAUTHORIZED = "E1004"
     FORBIDDEN = "E1005"
-    
+    RATE_LIMITED = "E1006"
+
     # 用戶相關錯誤 (2000-2999)
     USER_NOT_FOUND = "E2000"
     USER_ALREADY_EXISTS = "E2001"
@@ -60,7 +61,8 @@ ERROR_DESCRIPTIONS = {
     ErrorCode.OPERATION_FAILED: "操作失敗",
     ErrorCode.UNAUTHORIZED: "未經授權",
     ErrorCode.FORBIDDEN: "禁止訪問",
-    
+    ErrorCode.RATE_LIMITED: "請求過於頻繁",
+
     # 用戶相關錯誤
     ErrorCode.USER_NOT_FOUND: "用戶不存在",
     ErrorCode.USER_ALREADY_EXISTS: "用戶已存在",

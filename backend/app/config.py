@@ -124,6 +124,26 @@ SERVE_FRONTEND = _env_flag("URDIARY_SERVE_FRONTEND", default=FRONTEND_DIR.is_dir
 # 把值綁死在 import 當下 —— 否則測試沒辦法用 monkeypatch 逐案切換。
 REQUIRE_INVITE = _env_flag("URDIARY_REQUIRE_INVITE", default=False)
 
+# -----------------------
+# 速率限制 (v2.3 task 1.5：對外開放前的安全閘門後半)
+# -----------------------
+# 預設開啟：這是曝險面最大的一道閘 (含 LLM 花費端點)，「忘記另外開」不該是
+# 安全的預設狀態。測試套件在 conftest 環境區塊關閉 (見 backend/tests/
+# conftest.py)，要測「限制生效」行為的測試自行對 config 模組屬性
+# monkeypatch —— 與 REQUIRE_INVITE 同一套模式：middleware/dependency
+# 必須用 `import config; config.RATE_LIMIT_ENABLED` 在請求當下讀，
+# 不能 `from config import RATE_LIMIT_ENABLED` 把值綁死在 import 當下。
+RATE_LIMIT_ENABLED = _env_flag("URDIARY_RATE_LIMIT_ENABLED", default=True)
+
+# 信任代理標頭 (CF-Connecting-IP / X-Forwarded-For) 取得真實用戶端 IP。
+# 預設關閉：這兩個都是請求者能自己塞值的一般 HTTP 標頭，沒有受信任的反向
+# 代理/tunnel 把關時，攻擊者可以讓每個請求自報不同 IP，直接繞過限流。
+# 只有明確架在受信任代理後面才開啟 (URDIARY_TRUSTED_PROXY=1)——例如
+# Tailscale serve/funnel 會替請求補上 X-Forwarded-For，此時
+# request.client.host 只會是 tunnel 的本機連線，每個使用者都會共用同一個
+# IP，限流形同虛設，必須改讀轉發標頭 (見 middleware/rate_limit.py)。
+TRUSTED_PROXY = _env_flag("URDIARY_TRUSTED_PROXY", default=False)
+
 # 必要的配置檢查
 # XAI_API_KEY 不再是必要條件：金鑰主要由前端提供（X-LLM-* 標頭），.env 只是後備
 if ENV == "production" and not XAI_API_KEY:

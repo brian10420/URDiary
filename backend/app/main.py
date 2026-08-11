@@ -8,6 +8,7 @@ from api.routes import api_router
 from middleware.error_handler import error_handler
 from middleware.exception_handlers import register_exception_handlers
 from middleware.security_headers import SecurityHeadersMiddleware
+from middleware.rate_limit import RateLimitMiddleware
 from config import CORS_ALLOWED_ORIGINS, ENV, SERVE_FRONTEND, FRONTEND_DIR
 from utils.logger import cleanup_old_logs, app_logger
 from memory_manager import purge_expired_chat_messages
@@ -56,6 +57,18 @@ app = FastAPI(
     redoc_url="/redoc" if ENV != "production" else None
 )
 
+# 添加限流中間件 (v2.3 task 1.5)：刻意排在 error_handler 之前註冊，
+# 讓它成為 user_middleware 裡最內層的一個 (add_middleware 是
+# insert(0, ...)，最先呼叫的排在最內層，緊鄰路由；見下面 SecurityHeaders
+# 的排序註解)。放最內層有兩個理由：
+# 1. ErrorHandler 包住它，所以被擋下的 429 一樣會拿到 request_id、
+#    一樣會被請求 timing 記錄到 app_errors.log——不會因為被限流就少了
+#    可追蹤性。
+# 2. CORS 也包住它：CORS 對 preflight (OPTIONS) 直接短路回應、不呼叫
+#    更內層，等於 preflight 永遠不會碰到限流——這是刻意的，preflight
+#    不是「真的」請求，不該消耗使用者的限流額度。
+app.add_middleware(RateLimitMiddleware)
+
 # 添加錯誤處理中間件
 app.middleware("http")(error_handler)
 
@@ -80,6 +93,8 @@ app.add_middleware(
 # add_middleware() 是 insert(0, ...)，最後呼叫的排在最外層。CORS 對
 # preflight (OPTIONS) 請求會直接短路回應、不呼叫更內層，只有放在最外層
 # 才能保證「所有」回應都會被加上安全標頭 (見 middleware/security_headers.py)。
+# 這也涵蓋限流中間件回的 429：SecurityHeaders 包住 CORS 包住限流，
+# 429 回應一路往外走一定會先後經過兩者。
 app.add_middleware(SecurityHeadersMiddleware)
 
 # 註冊API路由

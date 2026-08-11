@@ -9,6 +9,7 @@ main.py:63-74、預設是最外層)。
 from starlette.middleware.cors import CORSMiddleware
 
 from middleware.security_headers import SecurityHeadersMiddleware
+from middleware.rate_limit import RateLimitMiddleware
 
 
 def test_registered_outermost_relative_to_cors(client):
@@ -17,6 +18,11 @@ def test_registered_outermost_relative_to_cors(client):
     build_middleware_stack)。main.py 刻意把安全標頭中間件排在 CORS 之後
     註冊，讓它包住 CORS——CORS 對 preflight (OPTIONS) 請求會直接短路回應、
     不呼叫更內層，只有放在最外層才能保證「所有」回應都會被加上安全標頭。
+
+    限流中間件 (v2.3 task 1.5) 則刻意排在最內層 (比 CORS 更內)：
+    - 仍然要在 CORS 之內，preflight 短路才不會白白算進限流額度。
+    - 一樣要在 SecurityHeaders 之內，被擋下的 429 才拿得到安全標頭。
+    見 main.py 的排序註解與 middleware/rate_limit.py 模組docstring。
     """
     import main
 
@@ -24,7 +30,9 @@ def test_registered_outermost_relative_to_cors(client):
 
     assert SecurityHeadersMiddleware in classes
     assert CORSMiddleware in classes
+    assert RateLimitMiddleware in classes
     assert classes.index(SecurityHeadersMiddleware) < classes.index(CORSMiddleware)
+    assert classes.index(CORSMiddleware) < classes.index(RateLimitMiddleware)
 
 
 def test_headers_present_on_api_json_response(client):

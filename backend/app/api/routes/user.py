@@ -28,6 +28,7 @@ from datetime import datetime, timedelta
 import uuid
 
 from api.deps import get_db, get_current_user, get_current_token_data, get_language
+from middleware import rate_limit
 from utils.api_exceptions import BadRequestError, NotFoundError, UnauthorizedError, ForbiddenError
 from utils.error_codes import ErrorCode
 from utils.messages import msg
@@ -209,9 +210,16 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends(),
                 lang: str = Depends(get_language),
                 user_agent: Optional[str] = Header(None)):
     """用戶登入並獲取訪問令牌"""
+    # 速率限制 (v2.3 task 1.5)：先查有沒有被鎖定，鎖定的話直接 429，
+    # 連查詢使用者、算 bcrypt 的成本都省下來。用「請求附上的原始字串」
+    # 當鍵，不先判斷帳號存不存在——鎖定行為必須跟帳號是否存在無關，
+    # 否則「多快被鎖定」本身就變成能拿來探測帳號是否存在的側路。
+    rate_limit.check_username_lockout(form_data.username, lang)
+
     # 查詢用戶
     user = crud.get_user_by_username(db, form_data.username)
     if not user:
+        rate_limit.record_login_failure(form_data.username)
         raise UnauthorizedError(
             error_code=ErrorCode.UNAUTHORIZED,
             detail=msg("invalid_credentials", lang)
@@ -220,15 +228,20 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends(),
     # 驗證密碼（bcrypt + pepper，見 utils/security）
     if not user.password_hash:
         # 加密碼欄位之前建立的舊帳號 —— 不能無條件放行
+        rate_limit.record_login_failure(form_data.username)
         raise UnauthorizedError(
             error_code=ErrorCode.UNAUTHORIZED,
             detail=msg("account_has_no_password", lang)
         )
     if not verify_password(form_data.password, user.password_hash):
+        rate_limit.record_login_failure(form_data.username)
         raise UnauthorizedError(
             error_code=ErrorCode.UNAUTHORIZED,
             detail=msg("invalid_credentials", lang)
         )
+
+    # 登入成功：清掉這個使用者名稱先前累積的失敗次數，重新給滿鎖定額度
+    rate_limit.record_login_success(form_data.username)
 
     jti = str(uuid.uuid4())
     expires_at = datetime.utcnow() + timedelta(days=REFRESH_TOKEN_DAYS)
