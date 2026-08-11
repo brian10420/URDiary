@@ -1,7 +1,7 @@
 # URDiary — Your Local-First AI Diary Companion
 
 <p align="center">
-  <img src="desktop/assets/icon.jpg" alt="URDiary toast-diary mascot" width="170">
+  <img src="desktop/assets/icon.jpg" alt="URDiary toast-diary mascot" width="333">
 </p>
 
 **URDiary** is a free, open-source emotional diary that runs entirely on your own computer. You chat with an AI companion that truly listens — it remembers your past entries, checks in on you daily, and turns each conversation into a structured diary entry. Built for students and anyone under pressure who is used to bottling things up, so they can feel heard, remembered, and seen.
