@@ -7,6 +7,7 @@ sw.js 的更新流程沒有在 install 時就 skipWaiting。
 標頭」是不同層次，兩者刻意分開。
 """
 import json
+import re
 import struct
 
 import pytest
@@ -131,3 +132,38 @@ def test_sw_js_delegates_routing_to_shared_sw_logic_module():
     assert "importScripts" in source
     assert "sw_logic.js" in source
     assert "SWLogic.classifyRequestPath" in source
+
+
+def _sw_js_shell_assets():
+    source = (FRONTEND_DIR / "sw.js").read_text(encoding="utf-8")
+    start = source.index("const SHELL_ASSETS = [")
+    end = source.index("];", start)
+    return re.findall(r"'([^']+)'", source[start:end])
+
+
+def test_every_precached_shell_asset_is_actually_reachable(client):
+    """回歸測試 (code review 修復，見 task-2.2-report.md 的 fix log)：
+    sw.js 的 install handler 呼叫 cache.addAll(SHELL_ASSETS)，這個 API
+    是 all-or-nothing——清單裡任何一個路徑回應非 200 (例如打字誤植了一個
+    後端根本沒有註冊的路由)，整個 install 就會失敗，service worker 從此
+    卡在「安裝從未成功過」，且不會有任何顯眼的錯誤（只有瀏覽器 devtools
+    的 Application 分頁看得到，一般開發流程不會注意到）。
+
+    這正是 '/index.html' 曾經誤植進 SHELL_ASSETS 時，應該被抓到、卻沒有
+    測試覆蓋的洞：main.py 只註冊了 '/' 這個路由，'/index.html' 實際上
+    404。這裡對清單裡的每一個路徑真的透過 TestClient 發一次請求，鎖住
+    「這份清單裡的每一項都必須是後端真的能 200 回應的路徑」。
+    """
+    shell_assets = _sw_js_shell_assets()
+    assert len(shell_assets) > 10, "解析到的 SHELL_ASSETS 數量異常少，正規表達式可能沒抓對"
+
+    failures = []
+    for path in shell_assets:
+        resp = client.get(path)
+        if resp.status_code != 200:
+            failures.append(f"{path} -> HTTP {resp.status_code}")
+
+    assert not failures, (
+        "sw.js 的 SHELL_ASSETS 有無法連通的路徑，會讓整個 service worker "
+        "install 失敗:\n" + "\n".join(failures)
+    )

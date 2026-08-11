@@ -31,9 +31,15 @@ const CACHE_VERSION = 'urdiary-shell-v1';
 // nothing here is discovered automatically (no build step to do that for
 // us), so a file added to the page without being added here just won't be
 // available offline (fails soft: falls through to network, doesn't break).
+//
+// Deliberately NOT '/index.html': backend/app/main.py only registers a
+// route at '/' (serve_frontend_index) — there is no separate '/index.html'
+// route, it 404s. cache.addAll() is all-or-nothing: a single 404 in this
+// list fails the ENTIRE install, silently, every time (this shipped once —
+// see task-2.2-report.md's fix log). Same reason the offline-navigation
+// fallback below matches against '/', not '/index.html'.
 const SHELL_ASSETS = [
     '/',
-    '/index.html',
     '/manifest.webmanifest',
     '/favicon.ico',
 
@@ -93,11 +99,27 @@ self.addEventListener('activate', function (event) {
                     .map(function (name) { return caches.delete(name); })
             );
         }).then(function () {
-            // Safe to claim here: activate only runs once this worker has
-            // already won control (either the very first install with no
-            // prior controller, or after the page explicitly accepted the
-            // update and told us to skipWaiting — see the message handler
-            // below). Never reached as a side effect of install alone.
+            // clients.claim() runs here in BOTH cases activate can be
+            // reached: the very first install (no prior controller — the
+            // browser activates automatically, nothing waited for
+            // skipWaiting) and an accepted update (skipWaiting() was just
+            // called from the message handler below). Claiming immediately
+            // hands control of any already-open page to this worker rather
+            // than waiting for that page's next navigation.
+            //
+            // That means a first install DOES fire a `controllerchange` on
+            // the already-open page — that's expected and harmless on its
+            // own. What makes it harmless is on the page side
+            // (js/main.js's initServiceWorker): the reload-on-
+            // controllerchange listener is only ever armed inside the
+            // update prompt's accept handler, never at registration time.
+            // So this claim() firing controllerchange during a first
+            // install has nothing listening for it — no reload, no
+            // disruption. Don't "fix" a first-install reload by removing
+            // clients.claim(); fix it on the listener side, which is
+            // exactly what SWLogic.createControllerChangeReloadArmer is
+            // for. See task-2.2-report.md's fix log for the incident this
+            // comment is guarding against.
             return self.clients.claim();
         })
     );
@@ -156,7 +178,10 @@ self.addEventListener('fetch', function (event) {
     if (request.mode === 'navigate') {
         event.respondWith(
             fetch(request).catch(function () {
-                return caches.match('/index.html');
+                // '/' is the cache key that's actually precached (see
+                // SHELL_ASSETS above) — it's also the only URL a navigation
+                // in this app ever targets (start_url/scope are both '/').
+                return caches.match('/');
             })
         );
         return;

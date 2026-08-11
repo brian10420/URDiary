@@ -169,10 +169,24 @@ function initLogoImageFallback() {
 // 停在 waiting，直到使用者在下面的提示按下「重新載入」才會發訊息叫它
 // skipWaiting——這是唯一能讓更新生效的路徑，確保更新不會在使用者操作到
 // 一半時把整個 App 悄悄換掉。
+//
+// code review 修復（見 task-2.2-report.md fix log）：controllerchange 的
+// reload 監聽器「不能」像先前那樣在這裡就無條件掛上去。sw.js 的 activate
+// 無條件呼叫 clients.claim()，這在「第一次安裝」時也會執行到——目前開著
+// 的分頁 controller 從 null 變成新 worker，一樣會觸發 controllerchange，
+// 但那不是使用者同意更新，是任何人第一次造訪就會發生的背景事件。改用
+// SWLogic.createControllerChangeReloadArmer() 建立一個「武裝前完全不掛
+// 監聽器」的 armer，只在使用者按下更新提示的動作鈕時才呼叫 arm()——
+// 第一次安裝那次 controllerchange 因為從未 arm() 過，不會有任何反應。
 function initServiceWorker() {
     if (!('serviceWorker' in navigator) || window.location.protocol === 'file:') {
         return;
     }
+
+    const reloadArmer = SWLogic.createControllerChangeReloadArmer(
+        navigator.serviceWorker,
+        function() { window.location.reload(); }
+    );
 
     navigator.serviceWorker.register('/sw.js', { scope: '/' }).then(function(registration) {
         registration.addEventListener('updatefound', function() {
@@ -189,6 +203,13 @@ function initServiceWorker() {
                     I18N.t('pwa.updateAvailable'),
                     I18N.t('pwa.updateReload'),
                     function() {
+                        // 使用者主動按下「重新載入」——現在才武裝
+                        // controllerchange 監聽器，reload 才可能發生。
+                        // 武裝放在 postMessage 之前/之後皆可（真正的
+                        // controllerchange 要等 SW 非同步處理完
+                        // skipWaiting 才會觸發），這裡選先武裝、再送
+                        // 訊息，純粹避免任何理論上的時序疑慮。
+                        reloadArmer.arm();
                         newWorker.postMessage({ type: 'SKIP_WAITING' });
                     }
                 );
@@ -196,20 +217,6 @@ function initServiceWorker() {
         });
     }).catch(function(error) {
         console.warn('Service worker 註冊失敗:', error);
-    });
-
-    // skipWaiting() 讓新 worker 取得控制權時會觸發 controllerchange；
-    // 這個事件只會在使用者按下上面的「重新載入」之後才會發生（見
-    // sw.js 的 message handler），所以這裡重新整理頁面是使用者主動同意
-    // 之後的結果，不是背景偷偷換版本。reloading 旗標防止極端情況下
-    // controllerchange 觸發多次而重複整理。
-    let reloading = false;
-    navigator.serviceWorker.addEventListener('controllerchange', function() {
-        if (reloading) {
-            return;
-        }
-        reloading = true;
-        window.location.reload();
     });
 }
 

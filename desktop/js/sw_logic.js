@@ -33,12 +33,19 @@ const SWLogic = (function () {
     ];
 
     // App shell：精確路徑 + 目錄前綴，對應 backend/app/main.py 的
-    // StaticFiles 掛載（/js /css /assets）與明確檔案路由（/、/index.html、
-    // /manifest.webmanifest、/favicon.ico）。注意 /sw.js 刻意不在這份清單
-    // 裡——它由伺服器以 Cache-Control: no-cache 提供，瀏覽器自己的「是否有
-    // 新版 SW」檢查機制會繞過目前執行中的 SW 直接打網路比對位元組，SW 的
-    // fetch handler 本身也不該把自己的腳本當成可快取的殼層資源。
-    const SHELL_EXACT_PATHS = ['/', '/index.html', '/manifest.webmanifest', '/favicon.ico'];
+    // StaticFiles 掛載（/js /css /assets）與明確檔案路由（/、
+    // /manifest.webmanifest、/favicon.ico）。注意兩個刻意的排除：
+    //   - /sw.js 不在這份清單裡——它由伺服器以 Cache-Control: no-cache
+    //     提供，瀏覽器自己的「是否有新版 SW」檢查機制會繞過目前執行中的
+    //     SW 直接打網路比對位元組，SW 的 fetch handler 本身也不該把自己
+    //     的腳本當成可快取的殼層資源。
+    //   - /index.html 也不在這份清單裡——main.py 只註冊了 '/' 這個路由
+    //     (serve_frontend_index)，沒有 '/index.html'，真的打這個路徑會
+    //     404。曾經誤把它跟 '/' 並列在這裡、也列進 sw.js 的 SHELL_ASSETS，
+    //     導致 cache.addAll() 因為其中一個 404 而整批失敗、service worker
+    //     從未真正安裝成功過（cache.addAll 是 all-or-nothing）——見
+    //     task-2.2-report.md 的 fix log。
+    const SHELL_EXACT_PATHS = ['/', '/manifest.webmanifest', '/favicon.ico'];
     const SHELL_PATH_PREFIXES = ['/js/', '/css/', '/assets/'];
 
     function _matchesPrefix(pathname, prefix) {
@@ -88,10 +95,57 @@ const SWLogic = (function () {
         return workerState === 'installed' && hasExistingController === true;
     }
 
+    /**
+     * 把「使用者同意更新」跟「真的重新整理頁面」之間的唯一合法路徑封裝
+     * 起來（code review 修復，見 task-2.2-report.md 的 fix log）。
+     *
+     * 背景：sw.js 的 activate 無條件呼叫 self.clients.claim()——這是刻意
+     * 的（見 sw.js 檔頭），因為「使用者同意更新」流程需要它才能讓已經開著
+     * 的分頁從舊 worker 換到新 worker。但 clients.claim() 在「這個 origin
+     * 第一次安裝 service worker」時也會執行到：目前開著的分頁原本沒有
+     * controller（null），claim() 會把它變成新 worker，一樣觸發
+     * controllerchange——這跟「使用者同意更新」是兩件完全不同的事，卻是
+     * 同一個瀏覽器事件。如果隨頁面初始化就無條件監聽 controllerchange
+     * 並直接 reload()，會讓「第一次安裝」也悄悄重新整理頁面（登入中、打字
+     * 到一半都會被打斷）——這正是這個修復要擋掉的行為。
+     *
+     * 用法：只有在使用者按下更新提示的動作鈕時才呼叫 arm()；在那之前，
+     * container 上完全沒有掛任何 controllerchange 監聽器，第一次安裝的
+     * 那次 controllerchange 自然沒有人理會。
+     *
+     * container 只要求有 addEventListener(type, fn) 介面（正式環境傳入
+     * navigator.serviceWorker，測試傳入任何 EventTarget-like 的替身），
+     * 讓這段邏輯不必依賴 jsdom 沒有實作的真實 service worker API 就能
+     * 單元測試。
+     *
+     * arm() 本身、以及回傳的 reload 觸發，兩者都是 idempotent：
+     *   - 重複呼叫 arm() 只會掛一個監聽器（不會讓一次 controllerchange
+     *     觸發多次 reload）。
+     *   - 就算 controllerchange 因為某種極端情況觸發不只一次，reloadFn
+     *     也只會被呼叫一次。
+     */
+    function createControllerChangeReloadArmer(container, reloadFn) {
+        let armed = false;
+        let reloaded = false;
+
+        function arm() {
+            if (armed) return;
+            armed = true;
+            container.addEventListener('controllerchange', function () {
+                if (reloaded) return;
+                reloaded = true;
+                reloadFn();
+            });
+        }
+
+        return { arm: arm };
+    }
+
     const api = {
         API_PATH_PREFIXES: API_PATH_PREFIXES.slice(),
         classifyRequestPath: classifyRequestPath,
-        shouldPromptUpdate: shouldPromptUpdate
+        shouldPromptUpdate: shouldPromptUpdate,
+        createControllerChangeReloadArmer: createControllerChangeReloadArmer
     };
 
     // 明確賦值在 self 上（見檔頭說明）：頁面情境下 self === window，

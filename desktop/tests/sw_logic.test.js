@@ -31,7 +31,6 @@ describe('sw_logic: classifyRequestPath', () => {
 
     const SHELL_PATHS = [
         '/',
-        '/index.html',
         '/manifest.webmanifest',
         '/favicon.ico',
         '/js/main.js',
@@ -46,6 +45,15 @@ describe('sw_logic: classifyRequestPath', () => {
 
     it.each(SHELL_PATHS)('%s 分類為 cache-first', (path) => {
         expect(window.SWLogic.classifyRequestPath(path)).toBe('cache-first');
+    });
+
+    // fix log（見 task-2.2-report.md）：main.py 只註冊 '/' 這個路由，沒有
+    // '/index.html'；曾經誤把它跟 '/' 並列在 shell 清單裡，讓 sw.js 的
+    // cache.addAll() 因為這一個 404 整批失敗，service worker 從未真正
+    // 安裝成功過。這裡鎖住「/index.html 不是殼層路徑」，避免有人日後又
+    // 把它加回去。
+    it('/index.html 不是真實路由（backend 只有 "/"），不分類為 cache-first', () => {
+        expect(window.SWLogic.classifyRequestPath('/index.html')).toBe('network-only');
     });
 
     it('/sw.js 本身不是殼層資源，分類為 network-only（伺服器已用 no-cache 提供，SW 自己也不該快取它）', () => {
@@ -89,5 +97,62 @@ describe('sw_logic: shouldPromptUpdate', () => {
     it('redundant/activating 等其他 state 一律不提示', () => {
         expect(window.SWLogic.shouldPromptUpdate('redundant', true)).toBe(false);
         expect(window.SWLogic.shouldPromptUpdate('activating', true)).toBe(false);
+    });
+});
+
+describe('sw_logic: createControllerChangeReloadArmer（code review 修復：見 task-2.2-report.md fix log）', () => {
+    beforeAll(() => {
+        loadScript('js/sw_logic.js');
+    });
+
+    // sw.js 的 activate 會無條件呼叫 clients.claim()（見 sw.js 檔頭/activate
+    // 註解）。對「第一次安裝」來說，這是正常、非破壞性的行為：目前開著的分頁
+    // controller 從 null 變成新 worker，會觸發一次 controllerchange——但這
+    // 不是使用者同意更新。這裡要鎖住的正是「沒有人呼叫 arm() 之前，這種
+    // 背景事件絕對不能造成 reload」。
+    it('沒有呼叫 arm()（等同使用者從未按下更新提示的按鈕）時，controllerchange 不會觸發 reload', () => {
+        const container = new EventTarget();
+        let reloadCount = 0;
+        window.SWLogic.createControllerChangeReloadArmer(container, () => { reloadCount += 1; });
+
+        container.dispatchEvent(new Event('controllerchange'));
+
+        expect(reloadCount).toBe(0);
+    });
+
+    it('呼叫 arm()（等同使用者按下更新提示的動作鈕）之後，下一次 controllerchange 觸發恰好一次 reload', () => {
+        const container = new EventTarget();
+        let reloadCount = 0;
+        const armer = window.SWLogic.createControllerChangeReloadArmer(container, () => { reloadCount += 1; });
+
+        armer.arm();
+        container.dispatchEvent(new Event('controllerchange'));
+
+        expect(reloadCount).toBe(1);
+    });
+
+    it('arm() 之後 controllerchange 觸發多次，reload 仍然只發生一次（雙重保險，不因任何極端情況重複整理）', () => {
+        const container = new EventTarget();
+        let reloadCount = 0;
+        const armer = window.SWLogic.createControllerChangeReloadArmer(container, () => { reloadCount += 1; });
+
+        armer.arm();
+        container.dispatchEvent(new Event('controllerchange'));
+        container.dispatchEvent(new Event('controllerchange'));
+
+        expect(reloadCount).toBe(1);
+    });
+
+    it('重複呼叫 arm() 不會疊加監聽器（不會讓單一次 controllerchange 觸發多次 reload）', () => {
+        const container = new EventTarget();
+        let reloadCount = 0;
+        const armer = window.SWLogic.createControllerChangeReloadArmer(container, () => { reloadCount += 1; });
+
+        armer.arm();
+        armer.arm();
+        armer.arm();
+        container.dispatchEvent(new Event('controllerchange'));
+
+        expect(reloadCount).toBe(1);
     });
 });
