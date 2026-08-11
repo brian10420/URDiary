@@ -225,7 +225,160 @@ const ApiService = (function() {
             return false;
         }
     }
-    
+
+    // ------------------------------------------------------------------
+    // v2.3 task 2.3：離線容忍 —— 以下都是不碰 DOM/window 的純函式，供
+    // fetchAPI 內部的重試迴圈使用，也直接曝光給 vitest 單元測試（見檔案
+    // 最下方「以下為純函式」的匯出區塊）。
+    // ------------------------------------------------------------------
+
+    /**
+     * 算出第 attempt 次重試前要等待的毫秒數（指數退避 + 上限 + 可選抖動）。
+     * 純函式：只吃參數、只回傳數字，不讀寫任何外部狀態（Math.random 除外——
+     * 有抖動時本來就該是隨機的，測試想要確定值時把 jitterRatio 設 0）。
+     *
+     * @param {number} attempt - 第幾次重試，從 0 開始（0 = 第一次嘗試失敗後，
+     *   準備發出第二次嘗試前的延遲）
+     * @param {number} [baseMs=300] - 基礎延遲（毫秒）；非正數時退回預設值
+     * @param {Object} [options]
+     * @param {number} [options.capMs=4000] - 延遲上限（毫秒）——不管指數長到
+     *   多大，實際等待永遠不會超過這個值，讓最壞情況下的總重試時間有界。
+     * @param {number} [options.jitterRatio=0.2] - 抖動比例（0~1 之間為典型值，
+     *   但更大的值也會被安全夾住，見下方實作）。實際延遲會落在 capped 值的
+     *   ±jitterRatio 範圍內隨機，同時仍被 [0, capMs] 夾住上下限。傳 0 停用
+     *   抖動，回傳確定值（方便測試）。
+     * @returns {number} 毫秒數，恆為 >= 0 的有限整數
+     */
+    function computeBackoffDelay(attempt, baseMs = 300, options = {}) {
+        const capMs = Number.isFinite(options.capMs) ? options.capMs : 4000;
+        const jitterRatio = Number.isFinite(options.jitterRatio) ? options.jitterRatio : 0.2;
+
+        const safeAttempt = Number.isFinite(attempt) && attempt > 0 ? Math.floor(attempt) : 0;
+        const safeBase = Number.isFinite(baseMs) && baseMs > 0 ? baseMs : 300;
+
+        const exponential = safeBase * Math.pow(2, safeAttempt);
+        const capped = Math.min(exponential, capMs);
+
+        if (jitterRatio <= 0) {
+            return Math.round(capped);
+        }
+
+        const spread = capped * jitterRatio;
+        const jittered = capped + (Math.random() * 2 - 1) * spread;
+        return Math.round(Math.min(capMs, Math.max(0, jittered)));
+    }
+
+    /**
+     * 這個 (method, 失敗原因) 組合是否應該重試。純函式，不碰 DOM/window。
+     *
+     * method/status 矩陣（完整測試見 tests/api_retry.test.js）：
+     *   - method 不是 GET → 一律不重試。這是最重要的一條規則：POST/PUT/DELETE
+     *     有副作用，自動重試可能讓伺服器真的收到兩次請求（雙重寫入、聊天訊息
+     *     重複送出、雙重扣費……），絕不能鬆動。
+     *   - GET + 網路層失敗（連不上/逾時/離線）→ 重試（暫時性，值得再試）。
+     *   - GET + 5xx → 重試（伺服器端暫時性錯誤，值得再試）。
+     *   - GET + 429 → 只有帶 Retry-After 才重試；沒有就不知道要等多久，
+     *     寧可如實回報，也不要用猜的延遲繼續打伺服器。
+     *   - GET + 其餘 4xx（400/401/403/404/409/422...）→ 一律不重試（應用層
+     *     拒絕，重試只會得到一樣的結果，白白浪費一次往返）。
+     *   - 2xx/3xx（沒有失敗）→ 不適用，回傳 false。
+     *
+     * @param {Object} [params]
+     * @param {string} [params.method='GET']
+     * @param {boolean} [params.isNetworkFailure=false] - true 代表這次失敗
+     *   發生在拿到 HTTP 回應「之前」（fetch() 本身 reject，例如逾時/斷線），
+     *   與 status 互斥——網路層失敗時沒有 status 可看。
+     * @param {number|null} [params.status=null] - HTTP 狀態碼（有拿到回應時）
+     * @param {number|null} [params.retryAfterMs=null] - 解析後的 Retry-After
+     *   （毫秒），只有 status===429 時有意義
+     * @returns {boolean}
+     */
+    function isRetryableFailure(params) {
+        const { method = 'GET', isNetworkFailure = false, status = null, retryAfterMs = null } = params || {};
+        const normalizedMethod = String(method || 'GET').toUpperCase();
+        if (normalizedMethod !== 'GET') {
+            return false;
+        }
+        if (isNetworkFailure) {
+            return true;
+        }
+        if (typeof status !== 'number' || !Number.isFinite(status)) {
+            return false;
+        }
+        if (status >= 500 && status <= 599) {
+            return true;
+        }
+        if (status === 429) {
+            return Number.isFinite(retryAfterMs) && retryAfterMs >= 0;
+        }
+        return false;
+    }
+
+    /**
+     * 解析 Retry-After 標頭 —— 只支援秒數格式（本專案後端目前也只送秒數）；
+     * HTTP-date 格式（例如 "Wed, 21 Oct 2026 07:28:00 GMT"）回傳 null，交由
+     * 呼叫端視為「沒有 Retry-After」，不強行猜測日期字串的意圖。純函式。
+     * @param {string|null|undefined} headerValue
+     * @returns {number|null} 毫秒數，或 null（沒有/無法解析/負值）
+     */
+    function parseRetryAfterMs(headerValue) {
+        if (!headerValue) return null;
+        const seconds = Number(headerValue);
+        if (Number.isFinite(seconds) && seconds >= 0) {
+            return seconds * 1000;
+        }
+        return null;
+    }
+
+    // GET 重試的基礎退避延遲（毫秒）——實際等待時間由 computeBackoffDelay()
+    // 算出（指數成長、有上限、含抖動），這裡只提供「第一次重試等多久」的基準。
+    //
+    // 搭配預設 CONFIG.API.MAX_RETRIES=2：兩次重試的延遲分別約 300ms/600ms
+    // （抖動 ±20%），退避本身累積多花的時間 < 1.1 秒。每次嘗試若真的卡住，
+    // 個別上限仍是前面算出的 timeoutDuration（預設 30 秒）——但離線/斷線時
+    // fetch() 幾乎立即 reject，不會真的等到逾時，所以現實中的離線重試總耗時
+    // 遠低於「每次都真的等滿 30 秒」這個理論最壞值（(MAX_RETRIES+1) ×
+    // timeoutDuration + 退避總和）。
+    const RETRY_BASE_DELAY_MS = 300;
+
+    // 純粹把 setTimeout 包成 Promise，讓重試迴圈可以 await。vitest 用
+    // vi.useFakeTimers() + advanceTimersByTimeAsync() 控制它，不必真的等待。
+    function sleep(ms) {
+        return new Promise(resolve => setTimeout(resolve, ms));
+    }
+
+    /**
+     * 這次請求最多可以重試幾次（只給 GET 用；呼叫端會再乘上「method 是否為
+     * GET」這個條件——這裡只負責從設定值算出一個安全的次數）。
+     * CONFIG.API.AUTO_RETRY 明確設為 false 時整個停用（0 次）；MAX_RETRIES
+     * 不是合法的非負數時退回與 config.js 預設值一致的 2。
+     * @returns {number}
+     */
+    function getConfiguredMaxRetries() {
+        if (CONFIG && CONFIG.API && CONFIG.API.AUTO_RETRY === false) {
+            return 0;
+        }
+        const configured = CONFIG && CONFIG.API ? CONFIG.API.MAX_RETRIES : undefined;
+        if (!Number.isFinite(configured) || configured < 0) {
+            return 2;
+        }
+        return configured;
+    }
+
+    // 回報「這次請求觀察到的連線狀態」給 UIManager 的離線橫幅（v2.3 task
+    // 2.3）。navigator.onLine 在部分平台/瀏覽器離線時仍可能回報 true，實際
+    // 打 API 成功/失敗才是更準的訊號。UIManager 可能尚未載入（例如純後端
+    // 測試情境），typeof 檢查是這個檔案一貫的防禦寫法。
+    function reportConnectivity(isOnline) {
+        try {
+            if (typeof UIManager !== 'undefined' && typeof UIManager.reportNetworkStatus === 'function') {
+                UIManager.reportNetworkStatus(isOnline);
+            }
+        } catch (reportError) {
+            console.warn('回報連線狀態失敗:', reportError);
+        }
+    }
+
     /**
      * 發送API請求
      * @param {string} endpoint - API端點
@@ -346,22 +499,77 @@ const ApiService = (function() {
             // 使用AbortController設置超時 - 增加超時時間，特別是對於結束聊天請求
             const isEndChatRequest = endpoint.includes('/chat/end/') || endpoint.includes('/diary/enhanced-generate');
             // 為結束聊天請求設置更長的超時時間
-            const timeoutDuration = isEndChatRequest ? 
+            const timeoutDuration = isEndChatRequest ?
                 180000 : // 180秒（3分鐘）
                 (CONFIG && CONFIG.API && CONFIG.API.TIMEOUT ? CONFIG.API.TIMEOUT : 30000); // 默認30秒
-            
-            const controller = new AbortController();
-            const timeoutId = setTimeout(() => {
-                console.warn(`請求超時: ${url} (${timeoutDuration}ms)`);
-                controller.abort(`請求超時 (${timeoutDuration}ms)`);
-            }, timeoutDuration);
-            
-            fetchOptions.signal = controller.signal;
-            
-            // 發送請求
-            const response = await fetch(url, fetchOptions);
-            clearTimeout(timeoutId);
-            
+
+            // v2.3 task 2.3：只有 GET 才會進到下面的重試迴圈。POST/PUT/DELETE
+            // 有副作用，自動重試可能讓伺服器真的收到兩次請求，絕不重試——
+            // maxAttempts 在這裡直接鎖成 1（isRetryableMethod 為 false 時）
+            // 是第一道防線，isRetryableFailure() 的 method 檢查是第二道，
+            // 就算其中一處判斷式寫錯，另一處仍能擋下。
+            const isRetryableMethod = (fetchOptions.method || 'GET').toUpperCase() === 'GET';
+            const maxAttempts = 1 + (isRetryableMethod ? getConfiguredMaxRetries() : 0);
+
+            let response = null;
+            let attempt = 0;
+
+            while (true) {
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => {
+                    console.warn(`請求超時: ${url} (${timeoutDuration}ms)`);
+                    controller.abort(`請求超時 (${timeoutDuration}ms)`);
+                }, timeoutDuration);
+
+                fetchOptions.signal = controller.signal;
+
+                let networkFailure = null;
+                try {
+                    // 發送請求
+                    response = await fetch(url, fetchOptions);
+                } catch (fetchError) {
+                    networkFailure = fetchError;
+                } finally {
+                    clearTimeout(timeoutId);
+                }
+
+                attempt++;
+
+                if (networkFailure) {
+                    // 尚未離線才值得重試——navigator.onLine 在重試等待期間變成
+                    // false，代表裝置在這段時間離線了，繼續重試只是白燒重試
+                    // 次數，不如把原始錯誤如實丟出去（外層 catch 會分類成
+                    // OFFLINE_MODE/逾時等，訊息仍然正確）。
+                    const canRetry = attempt < maxAttempts && navigator.onLine &&
+                        isRetryableFailure({ method: fetchOptions.method, isNetworkFailure: true });
+                    if (canRetry) {
+                        console.warn(`網路層失敗，等待後進行第 ${attempt + 1}/${maxAttempts} 次嘗試: ${endpoint}`);
+                        await sleep(computeBackoffDelay(attempt - 1, RETRY_BASE_DELAY_MS));
+                        continue;
+                    }
+                    throw networkFailure;
+                }
+
+                // 401/403/其餘 4xx 一律不重試（isRetryableFailure 只認 5xx 與
+                // 帶 Retry-After 的 429），不會被下面這段誤攔——非重試情況
+                // 直接落到迴圈外，交給既有的狀態碼處理邏輯（完全不變）。
+                if (!response.ok) {
+                    const retryAfterMs = parseRetryAfterMs(
+                        response.headers && typeof response.headers.get === 'function' ?
+                            response.headers.get('Retry-After') : null
+                    );
+                    const canRetry = attempt < maxAttempts && navigator.onLine &&
+                        isRetryableFailure({ method: fetchOptions.method, status: response.status, retryAfterMs });
+                    if (canRetry) {
+                        console.warn(`HTTP ${response.status}，等待後進行第 ${attempt + 1}/${maxAttempts} 次嘗試: ${endpoint}`);
+                        await sleep(computeBackoffDelay(attempt - 1, RETRY_BASE_DELAY_MS));
+                        continue;
+                    }
+                }
+
+                break;
+            }
+
             // 檢查是否為401未授權錯誤
             if (response.status === 401 && accessToken) {
                 console.warn('認證令牌已過期或無效 (401)');
@@ -515,7 +723,11 @@ const ApiService = (function() {
             } catch (logError) {
                 console.warn('記錄API響應信息失敗:', logError);
             }
-            
+
+            // v2.3 task 2.3：這次請求最終成功（可能是重試後成功）——回報連線
+            // 正常，離線橫幅若正顯示中會被清除。
+            reportConnectivity(true);
+
             return data;
         } catch (error) {
             const requestTime = Date.now() - startTime;
@@ -546,6 +758,13 @@ const ApiService = (function() {
             const isTimeout = (error && error.name === 'AbortError') || rawMessage.includes('請求超時');
             const isNetworkFailure = errorCode === 'OFFLINE_MODE' || isTimeout ||
                 (error && (error.name === 'TypeError' || error.name === 'NetworkError'));
+
+            // v2.3 task 2.3：只有網路層失敗（離線/逾時/連不上）才回報——
+            // 4xx/5xx 之類「有連上但被拒絕/伺服器出錯」不算，不該讓離線橫幅
+            // 在那種情況下出現（那不是連線問題，是別的問題）。
+            if (isNetworkFailure) {
+                reportConnectivity(false);
+            }
 
             // 組出如實、可讀的錯誤訊息（不再以模擬數據掩蓋錯誤）
             let friendlyMessage;
@@ -651,23 +870,24 @@ const ApiService = (function() {
     }
     
     // 發送聊天消息
+    //
+    // v2.3 task 2.3 修復：這裡先前有一個手寫的重試迴圈，對 500 系列錯誤會
+    // 自動重打 CONFIG.API.MAX_RETRIES 次（等 1 秒後再送）。POST 是非冪等
+    // 請求——若第一次其實已經送達（只是回應遺失/逾時），自動重試會讓後端
+    // 真的收到兩次同一句話，可能造成訊息重複或重複觸發 LLM 呼叫（雙重扣費）。
+    // 這條路徑違反本次任務的核心規則（絕不自動重試非冪等請求），予以移除：
+    // 現在只送一次，失敗如實拋出，交由 ChatModule 在聊天氣泡上提供「點擊
+    // 重試」——那才是使用者主動決定的重送，不是背著使用者自動重來。
     async function sendChatMessage(message, model = null) {
         try {
             console.log(`開始發送聊天消息${model ? `(模型: ${model})` : ''}:`, message.substring(0, 50) + (message.length > 50 ? '...' : ''));
-            
+
             // 檢查網絡連接
             if (!navigator.onLine) {
                 console.warn('設備處於離線狀態，使用離線模式');
                 throw new Error('網絡連接不可用');
             }
-            
-            // 最大重試次數
-            const maxRetries = CONFIG && CONFIG.API && CONFIG.API.MAX_RETRIES ? CONFIG.API.MAX_RETRIES : 1;
-            let retryCount = 0;
-            let lastError = null;
-            
-            while (retryCount <= maxRetries) {
-                try {
+
             // 直接調用chat/enhanced端點
             // 身分由後端從 JWT 導出、供應商/模型由 X-LLM-* 標頭提供，body 只需訊息本身
             const data = await fetchAPI('/chat/enhanced/', {
@@ -676,15 +896,15 @@ const ApiService = (function() {
                     message: message
                 }
             });
-            
+
             console.log('聊天API返回原始數據:', data);
-            
+
             // 標準化響應格式
             let response;
             if (typeof data === 'string') {
                 response = { message: data, response: data };
             } else if (data && data.response) {
-                response = { 
+                response = {
                     message: data.response,
                     response: data.response,
                     ...data
@@ -702,54 +922,29 @@ const ApiService = (function() {
 
             console.log('標準化後的響應:', response);
             return response;
-                } catch (error) {
-                    lastError = error;
-                    retryCount++;
-
-                    // 只有在重試次數未達到最大值且錯誤是服務器錯誤(500系列)時才重試
-                    const isServerError = error.code === 'SERVER_ERROR' ||
-                                         error.message.includes('500') ||
-                                         error.message.includes('服務器內部錯誤') ||
-                                         error.message.includes('伺服器內部錯誤');
-
-                    if (retryCount <= maxRetries && isServerError) {
-                        console.warn(`嘗試第 ${retryCount} 次重新發送消息...`);
-                        // 等待一段時間再重試，避免立即重試造成服務器負擔
-                        await new Promise(resolve => setTimeout(resolve, 1000));
-                    } else {
-                        // 不再重試，拋出錯誤
-                        break;
-                    }
-                }
-            }
-
-            // 如果所有重試都失敗，拋出錯誤
-            throw lastError || new Error('發送消息失敗');
         } catch (error) {
             console.error('發送消息錯誤:', error);
             // 如實拋出錯誤（訊息已由 fetchAPI 轉為可讀格式），由聊天模塊顯示給使用者
             throw error;
         }
     }
-    
+
     // 結束聊天並生成日記
+    //
+    // v2.3 task 2.3 修復：理由與 sendChatMessage 相同——這同樣是非冪等的
+    // POST（會觸發 LLM 產生日記、寫入資料庫），先前的自動重試迴圈同樣移除，
+    // 只送一次，失敗如實拋出。對話歷史仍保留在伺服器端，使用者可以自己
+    // 決定要不要再按一次「結束對話」。
     async function endChat(model = null) {
         try {
             console.log(`調用API結束聊天並生成日記${model ? `(模型: ${model})` : ''}`);
-            
+
             // 檢查網絡連接
             if (!navigator.onLine) {
                 console.warn('設備處於離線狀態，使用離線模式');
                 throw new Error('網絡連接不可用');
             }
-            
-            // 最大重試次數
-            const maxRetries = CONFIG && CONFIG.API && CONFIG.API.MAX_RETRIES ? CONFIG.API.MAX_RETRIES : 1;
-            let retryCount = 0;
-            let lastError = null;
-            
-            while (retryCount <= maxRetries) {
-                try {
+
             // 使用較長的超時時間
             // 身分由後端從 JWT 導出、供應商/模型由 X-LLM-* 標頭提供
             const data = await fetchAPI('/chat/end/', {
@@ -758,39 +953,16 @@ const ApiService = (function() {
                     exclude_interaction_notes: true  // 防止將互動筆記融入日記
                 }
             });
-            
+
             console.log('生成日記API響應:', data);
-            
+
             // 檢查響應數據
             if (!data || (!data.success && !data.diary)) {
                 console.warn('API返回的數據缺少必要字段');
                 throw new Error('無效的API響應數據');
             }
-            
+
             return data;
-                } catch (error) {
-                    lastError = error;
-                    retryCount++;
-
-                    // 只有在重試次數未達到最大值且錯誤是服務器錯誤(500系列)時才重試
-                    const isServerError = error.code === 'SERVER_ERROR' ||
-                                         error.message.includes('500') ||
-                                         error.message.includes('服務器內部錯誤') ||
-                                         error.message.includes('伺服器內部錯誤');
-
-                    if (retryCount <= maxRetries && isServerError) {
-                        console.warn(`嘗試第 ${retryCount} 次結束聊天...`);
-                        // 等待時間稍微長一些，結束聊天是重操作
-                        await new Promise(resolve => setTimeout(resolve, 2000));
-                    } else {
-                        // 不再重試，拋出錯誤
-                        break;
-                    }
-                }
-            }
-
-            // 如果所有重試都失敗，拋出錯誤
-            throw lastError || new Error('結束聊天失敗');
         } catch (error) {
             console.error('結束聊天錯誤:', error);
             // 如實拋出錯誤（訊息已由 fetchAPI 轉為可讀格式），由聊天模塊顯示給使用者；
@@ -819,7 +991,16 @@ const ApiService = (function() {
         // fetchAPI 在連不上伺服器時可能回傳本機快取（內容已是客戶端格式，勿再轉換）
         if (response && response._fromCache && Array.isArray(response.diaries)) {
             console.warn('顯示本機快取的日記資料');
-            return response.diaries;
+            const cachedDiaries = response.diaries;
+            // v2.3 task 2.3：把「這是快取資料」標記在陣列物件本身上，而不是
+            // 改成回傳 { diaries, fromCache } 包一層——DiaryModule 既有程式碼
+            // 到處假設 ApiService.getDiaries() 直接回傳陣列（Array.isArray、
+            // .length、.forEach、.find...），改變回傳形狀要同步改掉好幾處
+            // 呼叫端，風險比較大。陣列本身也是物件，掛一個屬性上去，不在乎
+            // 這件事的呼叫端完全不受影響，想知道的（DiaryModule 的快取標籤）
+            // 才需要多讀 diaries._fromCache。
+            cachedDiaries._fromCache = true;
+            return cachedDiaries;
         }
 
         // 驗證響應格式 —— 格式錯誤是真實問題，如實回報
@@ -1175,9 +1356,14 @@ const ApiService = (function() {
         // 「還握有可用的憑證」：訪問令牌未過期，或還有刷新令牌可以換一張。
         // 不能再用 60 分鐘當門檻 —— 訪問令牌只有 30 分鐘，那樣永遠是 false。
         isAuthenticated: () => (!!accessToken && !isTokenExpiringSoon(0)) || !!getRefreshToken(),
-        // 以下兩個是純函式，僅為 vitest 單元測試曝光，行為不變
+        // 以下皆為純函式，僅為 vitest 單元測試曝光，行為不變（fetchAPI 內部
+        // 也是這幾個函式的呼叫端，見該函式內的重試迴圈）
         deriveDiaryTitle: deriveDiaryTitle,
-        getMoodFromValence: getMoodFromValence
+        getMoodFromValence: getMoodFromValence,
+        computeBackoffDelay: computeBackoffDelay,
+        isRetryableFailure: isRetryableFailure,
+        parseRetryAfterMs: parseRetryAfterMs,
+        getConfiguredMaxRetries: getConfiguredMaxRetries
     };
 })();
 
