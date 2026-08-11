@@ -97,6 +97,82 @@ MESSAGES = {
         "zh-TW": "欄位 {fields} 不可清空為 null，若要維持原值請不要提供該欄位",
         "en": "Field(s) {fields} cannot be cleared to null — omit them to keep the existing value",
     },
+
+    # --- 認證 / 工作階段 (api/routes/user.py, api/deps.py) ---
+    "username_taken": {
+        "zh-TW": "該用戶名稱已存在",
+        "en": "That username is already taken",
+    },
+    "password_too_weak": {
+        "zh-TW": "密碼強度不足：{reasons}",
+        "en": "Password is too weak: {reasons}",
+    },
+    "forbidden_user": {
+        "zh-TW": "無權存取其他使用者的資料",
+        "en": "You cannot access another user's data",
+    },
+    "invalid_credentials": {
+        "zh-TW": "用戶名或密碼不正確",
+        "en": "Incorrect username or password",
+    },
+    "account_has_no_password": {
+        "zh-TW": "此帳號尚未設定密碼，請重新建立帳號",
+        "en": "This account has no password set — please create the account again",
+    },
+    "invalid_token": {
+        "zh-TW": "無法驗證憑證",
+        "en": "Could not validate credentials",
+    },
+    "token_missing": {
+        "zh-TW": "未提供令牌",
+        "en": "No token provided",
+    },
+    "refresh_token_invalid": {
+        "zh-TW": "刷新令牌無效或已過期，請重新登入",
+        "en": "The refresh token is invalid or expired — please sign in again",
+    },
+    "refresh_token_reused": {
+        "zh-TW": "偵測到刷新令牌被重複使用，已登出此帳號的所有裝置，請重新登入",
+        "en": "Refresh-token reuse detected — every device for this account was signed out, please sign in again",
+    },
+    "user_not_found": {
+        "zh-TW": "用戶不存在",
+        "en": "User not found",
+    },
+    "session_not_found": {
+        "zh-TW": "工作階段不存在",
+        "en": "Session not found",
+    },
+    "logged_out": {
+        "zh-TW": "已登出此裝置",
+        "en": "Signed out on this device",
+    },
+    "session_revoked": {
+        "zh-TW": "已撤銷該裝置的登入狀態",
+        "en": "That device has been signed out",
+    },
+
+    # --- 密碼強度規則 (utils/password_validator.py) ---
+    "password_min_length": {
+        "zh-TW": "密碼長度至少需要8個字符",
+        "en": "Password must be at least 8 characters",
+    },
+    "password_need_upper": {
+        "zh-TW": "密碼需要包含至少一個大寫字母",
+        "en": "Password needs at least one uppercase letter",
+    },
+    "password_need_lower": {
+        "zh-TW": "密碼需要包含至少一個小寫字母",
+        "en": "Password needs at least one lowercase letter",
+    },
+    "password_need_digit": {
+        "zh-TW": "密碼需要包含至少一個數字",
+        "en": "Password needs at least one digit",
+    },
+    "password_need_special": {
+        "zh-TW": "密碼需要包含至少一個特殊字符",
+        "en": "Password needs at least one special character",
+    },
 }
 
 

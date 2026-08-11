@@ -19,6 +19,31 @@ class User(Base):
 
     diaries = relationship("Diary", back_populates="user")
 
+class AuthSession(Base):
+    """一台裝置的登入工作階段 (v2.3 認證強化)。
+
+    刷新令牌每被使用一次就輪替：舊列填上 replaced_by_jti 保留下來當稽核
+    軌跡，另插一列新的。因此「目前活著的工作階段」= revoked_at 為 NULL、
+    replaced_by_jti 為 NULL、且 expires_at 還沒過的那一列 (每台裝置剛好
+    一列)；輪替時 created_at 會沿用原本的登入時間，裝置清單才顯示得出
+    「何時登入」而不是「何時剛好刷新過」。
+
+    舊列不清理 (無清理排程，YAGNI)：它們正是重用偵測的依據 ——
+    拿一張已經 replaced 的令牌來刷新，就代表令牌外洩。
+    """
+    __tablename__ = "auth_sessions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    refresh_jti = Column(String(36), unique=True, nullable=False, index=True)
+    device_label = Column(String(80), nullable=True)
+    user_agent = Column(String(255), nullable=True)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    last_used_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    expires_at = Column(DateTime, nullable=False)
+    revoked_at = Column(DateTime, nullable=True)
+    replaced_by_jti = Column(String(36), nullable=True)
+
 class Diary(Base):
     __tablename__ = "diaries"
 

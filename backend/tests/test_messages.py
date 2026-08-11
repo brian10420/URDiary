@@ -12,6 +12,21 @@ def test_known_key_has_both_languages_and_they_differ():
     assert zh_text != en_text
 
 
+def test_every_key_has_both_languages_and_they_differ():
+    """雙語對等的機器把關 (global-constraints「Bilingual parity」)。
+
+    只靠 msg() 的 fallback 兜底，漏譯的鍵會安靜地回中文給英文使用者，
+    要等有人切到 en 剛好用到那個畫面才會發現。
+    """
+    missing_en = sorted(k for k, v in messages_module.MESSAGES.items() if not v.get("en"))
+    missing_zh = sorted(k for k, v in messages_module.MESSAGES.items() if not v.get("zh-TW"))
+    assert missing_en == [], f"缺少 en 翻譯: {missing_en}"
+    assert missing_zh == [], f"缺少 zh-TW 翻譯: {missing_zh}"
+
+    identical = sorted(k for k, v in messages_module.MESSAGES.items() if v["en"] == v["zh-TW"])
+    assert identical == [], f"en 與 zh-TW 完全相同 (疑似漏譯): {identical}"
+
+
 def test_unknown_key_returns_the_key_itself():
     assert msg("this_key_does_not_exist") == "this_key_does_not_exist"
 

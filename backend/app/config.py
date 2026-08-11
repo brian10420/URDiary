@@ -63,6 +63,15 @@ HASH_SALT = _secrets["HASH_SALT"]
 ALGORITHM = "HS256"
 TOKEN_EXPIRE_MINUTES = int(os.getenv("TOKEN_EXPIRE_MINUTES", "1440"))  # 默認24小時
 
+# -----------------------
+# 令牌有效期 (v2.3 認證強化)
+# -----------------------
+# 訪問令牌短命 (30 分鐘)：它是無狀態的，撤銷工作階段後仍會活到 exp 為止，
+# 這個長度就是「撤銷生效的最壞延遲」上限。刷新令牌長命 (30 天) 但每次使用
+# 都會輪替 + 落地 auth_sessions，可即時撤銷 (見 api/routes/user.py)。
+ACCESS_TOKEN_MINUTES = int(os.getenv("URDIARY_ACCESS_TOKEN_MINUTES", "30"))
+REFRESH_TOKEN_DAYS = int(os.getenv("URDIARY_REFRESH_TOKEN_DAYS", "30"))
+
 # LLM 後備設定：主路徑是前端經 X-LLM-* 標頭提供供應商與金鑰（見 api/deps.get_llm_config），
 # XAI_API_KEY 降為「未帶標頭時」的可選 Grok 後備
 GROK_API_URL = os.getenv("GROK_API_URL", "https://api.x.ai/v1")

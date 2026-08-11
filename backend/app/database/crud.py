@@ -1,6 +1,6 @@
 from sqlalchemy import or_, and_
 from sqlalchemy.orm import Session
-from datetime import timedelta
+from datetime import datetime, timedelta
 from typing import List, Optional
 from database import models
 from utils.time_utils import get_diary_datetime  # 修正导入路径
@@ -21,6 +21,100 @@ def get_user(db: Session, user_id: int):
 def get_user_by_username(db: Session, username: str):
     """Get a user by username"""
     return db.query(models.User).filter(models.User.username == username).first()
+
+# AuthSession CRUD operations (v2.3 認證強化)
+# 時間欄位一律用 datetime.utcnow()，與 JWT 的 iat/exp 同一個時間軸
+# (日記那邊用的是台北牆上時間，兩者不可混用)。
+
+def create_auth_session(db: Session, user_id: int, refresh_jti: str, expires_at: datetime,
+                        device_label: Optional[str] = None, user_agent: Optional[str] = None,
+                        created_at: Optional[datetime] = None):
+    """新增一列工作階段 (created_at 可指定，供輪替時沿用原本的登入時間)"""
+    now = datetime.utcnow()
+    session = models.AuthSession(
+        user_id=user_id,
+        refresh_jti=refresh_jti,
+        device_label=device_label,
+        user_agent=user_agent,
+        created_at=created_at or now,
+        last_used_at=now,
+        expires_at=expires_at,
+    )
+    db.add(session)
+    db.commit()
+    db.refresh(session)
+    return session
+
+
+def get_auth_session_by_jti(db: Session, refresh_jti: str):
+    """依刷新令牌的 jti 取工作階段 (含已撤銷／已輪替的舊列)"""
+    return db.query(models.AuthSession).filter(
+        models.AuthSession.refresh_jti == refresh_jti
+    ).first()
+
+
+def get_auth_session(db: Session, session_id: int):
+    return db.query(models.AuthSession).filter(models.AuthSession.id == session_id).first()
+
+
+def list_active_auth_sessions(db: Session, user_id: int) -> List[models.AuthSession]:
+    """使用者目前活著的工作階段 (每台裝置一列)：未撤銷、未輪替、未過期"""
+    return (db.query(models.AuthSession)
+            .filter(models.AuthSession.user_id == user_id)
+            .filter(models.AuthSession.revoked_at.is_(None))
+            .filter(models.AuthSession.replaced_by_jti.is_(None))
+            .filter(models.AuthSession.expires_at > datetime.utcnow())
+            .order_by(models.AuthSession.last_used_at.desc())
+            .all())
+
+
+def claim_auth_session_rotation(db: Session, session_id: int, new_jti: str) -> bool:
+    """把「這一列還沒被輪替過」的檢查與寫入合成一次條件式 UPDATE (CAS)。
+
+    先讀後寫會有競態：兩個並行的刷新請求都讀到「未輪替」，就會從同一張
+    刷新令牌長出兩條有效的鏈。這裡靠 WHERE ... IS NULL 讓資料庫來裁決，
+    只有 rowcount == 1 的那一方算贏。
+    """
+    updated = (db.query(models.AuthSession)
+               .filter(models.AuthSession.id == session_id)
+               .filter(models.AuthSession.replaced_by_jti.is_(None))
+               .filter(models.AuthSession.revoked_at.is_(None))
+               .update({"replaced_by_jti": new_jti, "last_used_at": datetime.utcnow()},
+                       synchronize_session=False))
+    db.commit()
+    return updated == 1
+
+
+def revoke_auth_session_chain(db: Session, session: models.AuthSession) -> int:
+    """撤銷一條輪替鏈上所有還活著的列 (從 session 沿 replaced_by_jti 往後走)。
+
+    登出時客戶端手上的訪問令牌可能是輪替前簽發的，sid 指向鏈中間的舊列；
+    只撤那一列的話，鏈尾那個真正還能用的工作階段會活下來。
+    """
+    now = datetime.utcnow()
+    revoked = 0
+    current = session
+    seen = set()
+    while current is not None and current.id not in seen:
+        seen.add(current.id)
+        if current.revoked_at is None:
+            current.revoked_at = now
+            revoked += 1
+        next_jti = current.replaced_by_jti
+        current = get_auth_session_by_jti(db, next_jti) if next_jti else None
+    db.commit()
+    return revoked
+
+
+def revoke_all_user_auth_sessions(db: Session, user_id: int) -> int:
+    """撤銷該使用者所有未撤銷的工作階段 (重用偵測時的緊急煞車)"""
+    count = (db.query(models.AuthSession)
+             .filter(models.AuthSession.user_id == user_id)
+             .filter(models.AuthSession.revoked_at.is_(None))
+             .update({"revoked_at": datetime.utcnow()}, synchronize_session=False))
+    db.commit()
+    return count
+
 
 # Diary CRUD operations
 def create_diary(db: Session, user_id: int, content: str,

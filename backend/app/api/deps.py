@@ -5,9 +5,10 @@ from fastapi.security import OAuth2PasswordBearer
 from typing import Optional
 
 from providers.base import LLMConfig
-from utils.security import decode_token
+from utils.security import decode_token, TokenData
 from utils.api_exceptions import BadRequestError, UnauthorizedError
 from utils.error_codes import ErrorCode
+from utils.messages import msg
 import database.crud as crud
 
 # OAuth2 scheme for token authentication
@@ -23,29 +24,6 @@ def get_db():
     finally:
         db.close()
 
-async def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
-    """
-    獲取當前認證用戶的依賴項
-    """
-    credentials_exception = UnauthorizedError(
-        error_code=ErrorCode.UNAUTHORIZED,
-        detail="無法驗證憑證",
-        headers={"WWW-Authenticate": "Bearer"},
-    )
-
-    # 解碼令牌
-    token_data = decode_token(token)
-    if token_data is None:
-        raise credentials_exception
-
-    # 獲取用戶
-    user = crud.get_user(db, user_id=token_data.user_id)
-    if user is None:
-        raise credentials_exception
-
-    return user
-
-
 async def get_language(
     x_language: Optional[str] = Header(None, description="介面/對話語言: zh-TW 或 en"),
 ) -> str:
@@ -55,6 +33,46 @@ async def get_language(
     """
     from services.prompt_loader import normalize_lang
     return normalize_lang(x_language)
+
+
+async def get_current_token_data(
+    token: str = Depends(oauth2_scheme),
+    lang: str = Depends(get_language),
+) -> TokenData:
+    """驗證 Bearer 訪問令牌並回傳其聲明 (含工作階段參照 sid)。
+
+    decode_token 只接受 type=access 的令牌 —— 刷新令牌走不到這裡。
+    需要知道「請求來自哪個工作階段」的端點 (logout / 裝置清單) 依賴這個
+    而不是 get_current_user。
+    """
+    token_data = decode_token(token)
+    if token_data is None:
+        raise UnauthorizedError(
+            error_code=ErrorCode.UNAUTHORIZED,
+            detail=msg("invalid_token", lang),
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    return token_data
+
+
+async def get_current_user(
+    token_data: TokenData = Depends(get_current_token_data),
+    db: Session = Depends(get_db),
+    lang: str = Depends(get_language),
+):
+    """
+    獲取當前認證用戶的依賴項
+    """
+    user = crud.get_user(db, user_id=token_data.user_id)
+    if user is None:
+        raise UnauthorizedError(
+            error_code=ErrorCode.UNAUTHORIZED,
+            detail=msg("invalid_token", lang),
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    return user
 
 
 async def get_memory_prefs(

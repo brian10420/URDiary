@@ -52,7 +52,9 @@ def test_login_success_returns_access_and_refresh_tokens(client):
     assert body["access_token"]
     assert body["refresh_token"]
     assert body["token_type"] == "bearer"
-    assert body["expires_in"] == 24 * 60 * 60
+    # v2.3 認證強化：訪問令牌縮到 30 分鐘 (config.ACCESS_TOKEN_MINUTES)，
+    # 長命的部分交給可撤銷、每次使用都輪替的刷新令牌
+    assert body["expires_in"] == 30 * 60
     assert body["username"] == username
 
 
@@ -99,17 +101,22 @@ def test_list_users_returns_only_self(client, auth_header, other_auth_header):
     assert body[0]["user_id"] == user_id
 
 
-def test_refresh_token_returns_new_token(client, auth_header):
-    headers, _ = auth_header
-    old_token = headers["Authorization"].split(" ", 1)[1]
+def test_refresh_token_returns_new_token(client):
+    """v2.3 認證強化：刷新要帶「刷新令牌」(舊行為是拿訪問令牌來刷，已封死)，
+    回應同時換發新的刷新令牌 (rotation)，新訪問令牌一樣是 30 分鐘。"""
+    username = _username()
+    client.post("/users/create", json={"username": username, "password": TEST_PASSWORD})
+    login = client.post("/users/login", data={"username": username, "password": TEST_PASSWORD}).json()
+    old_token, refresh = login["access_token"], login["refresh_token"]
 
-    resp = client.post("/users/token/refresh", headers=headers)
+    resp = client.post("/users/token/refresh", json={"refresh_token": refresh})
 
     assert resp.status_code == 200
     body = resp.json()
     assert body["token_type"] == "bearer"
-    assert body["expires_in"] == 7 * 24 * 60 * 60
+    assert body["expires_in"] == 30 * 60
     assert body["access_token"] != old_token
+    assert body["refresh_token"] != refresh
 
 
 def test_protected_endpoint_without_token_returns_401(client):
