@@ -278,14 +278,15 @@ async def refresh_token(
     previous_label = session.device_label
     previous_user_agent = session.user_agent
 
-    # 先以條件式 UPDATE 認領輪替，成功了才簽新令牌 (併發輸的一方視同重用)
+    # 先以條件式 UPDATE 認領輪替，成功了才簽新令牌
     if not crud.claim_auth_session_rotation(db, session.id, new_jti):
-        # 併發刷新：已經有另一個請求輪替過這一列
-        crud.revoke_all_user_auth_sessions(db, session.user_id)
-        raise UnauthorizedError(
-            error_code=ErrorCode.UNAUTHORIZED,
-            detail=msg("refresh_token_reused", lang)
-        )
+        # 輸掉微秒級的競態 ≠ 令牌外洩。走到這裡代表查表當下這一列還是乾淨的
+        # (沒撤銷、沒輪替)，只是另一個請求在這幾微秒內先認領走了 —— 合法
+        # 客戶端同時送出兩個刷新請求就會這樣。單純回 401 讓對方改用贏家換到
+        # 的令牌，**不撤銷任何東西**：把它當重用處理的話，客戶端一個併發
+        # bug 就會把使用者所有裝置踢下線 (含剛剛贏得輪替的那一個)。
+        # 真正的重用偵測在上面的查表階段，那裡才有「舊令牌又冒出來」的證據。
+        raise invalid
 
     crud.create_auth_session(
         db,

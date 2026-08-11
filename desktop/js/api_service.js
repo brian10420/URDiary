@@ -124,14 +124,38 @@ const ApiService = (function() {
         return tokenExpiry <= thresholdTime;
     }
     
+    // 進行中的刷新請求（single-flight）。刷新令牌是一次性的：後端每用一次
+    // 就輪替，同一張令牌送兩次，慢的那一次必定失敗。而併發刷新在這個 app
+    // 是常態不是例外 —— 啟動時 initializeAuth() 沒有被 await，後面的
+    // CalendarModule.init() 會立刻再打一次 API，兩條路徑都會看到「令牌
+    // 即將過期」而各自去刷新。所以同一時間只准有一個刷新在路上，其餘呼叫
+    // 共用同一個 promise。
+    let refreshInFlight = null;
+
     /**
-     * 嘗試刷新令牌
+     * 嘗試刷新令牌（併發呼叫共用同一次請求）
+     * @returns {Promise<boolean>} 是否成功刷新
+     */
+    function refreshToken() {
+        if (refreshInFlight) {
+            console.log('已有刷新請求在進行中，共用其結果');
+            return refreshInFlight;
+        }
+
+        refreshInFlight = doRefreshToken().finally(() => {
+            refreshInFlight = null;
+        });
+        return refreshInFlight;
+    }
+
+    /**
+     * 實際發出刷新請求（只由 refreshToken 呼叫，確保 single-flight）
      *
      * 送的是「刷新令牌」，不是過期的訪問令牌 —— 後端 v2.3 起只收
      * type=refresh 且未過期的令牌，且每次使用都會輪替（回應帶新的一對）。
      * @returns {Promise<boolean>} 是否成功刷新
      */
-    async function refreshToken() {
+    async function doRefreshToken() {
         if (typeof SecureStore !== 'undefined' && SecureStore.ready) {
             await SecureStore.ready; // 首次載入後為已解決的 promise
         }
@@ -1099,6 +1123,7 @@ const ApiService = (function() {
         login: login,
         autoLogin: autoLogin,
         logout: logout,
+        refreshToken: refreshToken,
         getSessions: getSessions,
         revokeSession: revokeSession,
         // 「還握有可用的憑證」：訪問令牌未過期，或還有刷新令牌可以換一張。

@@ -196,6 +196,46 @@ def test_rotation_can_only_be_claimed_once(client):
         db.close()
 
 
+def test_losing_the_rotation_race_revokes_nothing(client, monkeypatch):
+    """CAS 輸掉 ≠ 令牌外洩：回 401，但不撤銷任何工作階段。
+
+    這一列在查表當下是乾淨的（沒撤銷、沒輪替），只是另一個請求早幾微秒
+    認領走了輪替 —— 合法客戶端同時送兩個刷新請求就會這樣。若把它當重用
+    處理，客戶端一個併發 bug 就會把使用者所有裝置踢下線，包含剛剛贏得
+    輪替、手上握著有效令牌的那一台。
+    """
+    from database import SessionLocal
+    from database import crud
+    import api.routes.user as user_routes
+
+    sess = _register_and_login(client)
+    other = client.post("/users/login", data={"username": sess["username"], "password": TEST_PASSWORD})
+    other_refresh = other.json()["refresh_token"]
+    jti = _claims(sess["refresh"])["jti"]
+
+    # 模擬「另一個請求早一步認領了輪替」：CAS 比對 0 列
+    monkeypatch.setattr(user_routes.crud, "claim_auth_session_rotation",
+                        lambda db, session_id, new_jti: False)
+
+    resp = client.post("/users/token/refresh", json={"refresh_token": sess["refresh"]})
+    assert resp.status_code == 401
+
+    db = SessionLocal()
+    try:
+        row = crud.get_auth_session_by_jti(db, jti)
+        # 這一列本身沒被撤銷、也沒被標記成已輪替（沒有連鎖撤銷）
+        assert row.revoked_at is None, "輸掉競態不該撤銷自己的工作階段"
+        assert row.replaced_by_jti is None
+        # 同一帳號的其他裝置也完好無缺
+        assert len(crud.list_active_auth_sessions(db, row.user_id)) == 2
+    finally:
+        db.close()
+
+    monkeypatch.undo()  # 拿掉假的 CAS，確認一切照常運作
+    assert client.post("/users/token/refresh", json={"refresh_token": other_refresh}).status_code == 200
+    assert client.post("/users/token/refresh", json={"refresh_token": sess["refresh"]}).status_code == 200
+
+
 def test_refresh_token_unknown_to_the_server_is_rejected(client):
     """簽章有效但伺服器沒有對應工作階段列 (例如已被清掉) 也要拒絕。"""
     from utils.security import create_refresh_token
