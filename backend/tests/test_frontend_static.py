@@ -90,44 +90,46 @@ def test_favicon_returns_clean_404_when_missing(client):
     assert resp.json()["code"] == "HTTP_404"
 
 
-def test_manifest_served_normally_once_present_without_forced_cache_control(client):
+def test_manifest_served_normally_once_present_without_forced_cache_control(client, monkeypatch, tmp_path):
     """manifest.webmanifest 沒有像 index.html/sw.js 那樣明確的 no-cache
     需求，應該單純交給 FileResponse 自己的 ETag/Last-Modified 機制。這裡
     順便鎖定 _serve_frontend_file() 的「headers=None」分支——js/css/assets
     都是 StaticFiles 在處理，不會走到這個 helper 的成功路徑，只有這裡會。
+
+    用 monkeypatch 把 main.FRONTEND_DIR 換成 pytest 的 tmp_path，不寫進
+    真正的 desktop/ (git 追蹤的原始碼目錄，conftest.py 的資料目錄隔離只管
+    data/，desktop/ 需要測試自己注意)：明確檔案路由 (_serve_frontend_file)
+    每次請求都重新讀 main.FRONTEND_DIR 這個模組全域變數，不像 /js /css
+    /assets 的 StaticFiles 掛載在啟動時就把目錄路徑固定下來，所以這樣替換
+    是安全的，不會影響那三個子樹掛載。
     """
     import main
 
-    manifest_path = main.FRONTEND_DIR / "manifest.webmanifest"
-    assert not manifest_path.exists()
+    monkeypatch.setattr(main, "FRONTEND_DIR", tmp_path)
+    (tmp_path / "manifest.webmanifest").write_text('{"name": "test-only placeholder"}', encoding="utf-8")
 
-    manifest_path.write_text('{"name": "test-only placeholder"}', encoding="utf-8")
-    try:
-        resp = client.get("/manifest.webmanifest")
-        assert resp.status_code == 200
-        assert resp.headers.get("cache-control") is None
-        assert "etag" in resp.headers
-    finally:
-        manifest_path.unlink(missing_ok=True)
+    resp = client.get("/manifest.webmanifest")
+
+    assert resp.status_code == 200
+    assert resp.headers.get("cache-control") is None
+    assert "etag" in resp.headers
 
 
-def test_sw_js_served_with_no_cache_once_present(client):
+def test_sw_js_served_with_no_cache_once_present(client, monkeypatch, tmp_path):
     """sw.js 的 scope 必須涵蓋整個 app，瀏覽器每次都要重新驗證才能讓 PWA
-    更新不卡在舊版 SW。no-cache 邏輯與 index.html 共用同一段程式，這裡放一個
-    暫時檔案驗證 route 真的接上了 no-cache，用完立刻刪除、不留下真正的 sw.js
-    (那是後續任務的工作)。"""
+    更新不卡在舊版 SW。no-cache 邏輯與 index.html 共用同一段程式，這裡用
+    monkeypatch 把 main.FRONTEND_DIR 換成 pytest 的 tmp_path 驗證 route
+    真的接上了 no-cache，不寫進真正的 desktop/ (見上一個測試的說明)。
+    """
     import main
 
-    sw_path = main.FRONTEND_DIR / "sw.js"
-    assert not sw_path.exists()
+    monkeypatch.setattr(main, "FRONTEND_DIR", tmp_path)
+    (tmp_path / "sw.js").write_text("// test-only placeholder\n", encoding="utf-8")
 
-    sw_path.write_text("// test-only placeholder, removed at end of test\n", encoding="utf-8")
-    try:
-        resp = client.get("/sw.js")
-        assert resp.status_code == 200
-        assert resp.headers["cache-control"] == "no-cache"
-    finally:
-        sw_path.unlink(missing_ok=True)
+    resp = client.get("/sw.js")
+
+    assert resp.status_code == 200
+    assert resp.headers["cache-control"] == "no-cache"
 
 
 # --- desktop/ 底下不該曝露到網路的檔案/目錄 ---------------------------------

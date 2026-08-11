@@ -55,3 +55,57 @@ def test_hsts_present_when_x_forwarded_proto_is_https(client):
     scheme (見 global-constraints 的行動裝置部署脈絡)。"""
     resp = client.get("/health", headers={"x-forwarded-proto": "https"})
     assert "max-age=" in resp.headers.get("strict-transport-security", "")
+
+
+# --- /docs /redoc /openapi.json：FastAPI 內建、未自架的文件工具頁 -----------
+#
+# get_swagger_ui_html/get_redoc_html (fastapi/openapi/docs.py) 從
+# cdn.jsdelivr.net 載入 JS/CSS，Swagger UI 另外有一段行內 <script> 做
+# 初始化、ReDoc 預設載 Google Fonts。嚴格 CSP (script-src 退回
+# default-src 'self') 會讓這些頁面在真實瀏覽器裡整個空白或功能失效——
+# TestClient 不會執行/擋下瀏覽器資源載入，所以只看狀態碼/文字內容的測試
+# (test_docs_route_not_shadowed 等) 完全看不出這個問題，必須直接斷言
+# CSP 標頭本身的內容。/docs /redoc 明列在 brief 的「不可被遮蔽」清單，
+# 代表它們必須維持「可用」，不只是「連得到」。
+
+def test_docs_path_gets_relaxed_csp_allowing_swagger_ui_cdn(client):
+    resp = client.get("/docs")
+    csp = resp.headers.get("content-security-policy", "")
+
+    assert "https://cdn.jsdelivr.net" in csp
+    assert "'unsafe-inline'" in csp  # Swagger UI 的行內初始化 script
+
+
+def test_redoc_path_gets_relaxed_csp_allowing_redoc_cdn(client):
+    resp = client.get("/redoc")
+    csp = resp.headers.get("content-security-policy", "")
+
+    assert "https://cdn.jsdelivr.net" in csp
+
+
+def test_openapi_json_path_gets_relaxed_csp_for_consistency_with_docs(client):
+    """/openapi.json 本身是 JSON、CSP 對它其實是惰性的，但跟 /docs /redoc
+    劃為同一組「文件工具」路徑處理，行為保持一致、好理解。"""
+    resp = client.get("/openapi.json")
+    csp = resp.headers.get("content-security-policy", "")
+
+    assert "https://cdn.jsdelivr.net" in csp
+
+
+def test_root_path_keeps_strict_csp_without_external_hosts(client):
+    """根路徑「/」是 URDiary 自己的前端頁面，不是 FastAPI 的文件工具頁：
+    CDN 放寬僅限 /docs /redoc /openapi.json (與 swagger 的 oauth2-redirect)，
+    其餘所有路徑 (含 API 與前端靜態檔) 一律維持嚴格版本，不允許任何外部主機。
+    """
+    resp = client.get("/")
+    csp = resp.headers.get("content-security-policy", "")
+
+    assert "cdn.jsdelivr.net" not in csp
+    assert "style-src 'self' 'unsafe-inline'" in csp
+
+
+def test_health_path_keeps_strict_csp_without_external_hosts(client):
+    resp = client.get("/health")
+    csp = resp.headers.get("content-security-policy", "")
+
+    assert "cdn.jsdelivr.net" not in csp
