@@ -52,42 +52,61 @@ def test_assets_subtree_serves_real_file(client):
     assert resp.content == (main.FRONTEND_DIR / "assets" / "icon.jpg").read_bytes()
 
 
-# --- manifest / sw.js / favicon：尚未由後續任務建立，須乾淨 404 而非 500 ----
+# --- manifest / sw.js / favicon：v2.3 task 2.2 已建立，改鎖「正確提供真實
+# --- 內容」；task 1.1 當時的「乾淨 404」行為則交給下面 test_config.py 旁邊
+# --- 沒有變動的 _serve_frontend_file() 本體邏輯，與 test_manifest_served_
+# --- normally_once_present_without_forced_cache_control / test_sw_js_served_
+# --- with_no_cache_once_present 這兩個既有的 monkeypatch 測試繼續覆蓋 -------
 
-def test_manifest_returns_clean_404_when_missing(client):
+def test_manifest_served_for_real(client):
     import main
-
-    assert not (main.FRONTEND_DIR / "manifest.webmanifest").exists(), \
-        "manifest.webmanifest 應由後續任務建立；此測試假設現在還不存在"
 
     resp = client.get("/manifest.webmanifest")
 
-    assert resp.status_code == 404
-    assert resp.json()["code"] == "HTTP_404"
+    assert resp.status_code == 200
+    assert resp.content == (main.FRONTEND_DIR / "manifest.webmanifest").read_bytes()
+
+    body = resp.json()
+    assert body["name"] == "URDiary"
+    assert body["short_name"] == "URDiary"
+    assert body["display"] == "standalone"
+    assert body["start_url"] == "/"
+    assert body["scope"] == "/"
 
 
-def test_sw_js_returns_clean_404_when_missing(client):
+def test_sw_js_served_for_real_with_no_cache(client):
     import main
-
-    assert not (main.FRONTEND_DIR / "sw.js").exists(), \
-        "sw.js 應由後續任務建立；此測試假設現在還不存在"
 
     resp = client.get("/sw.js")
 
-    assert resp.status_code == 404
-    assert resp.json()["code"] == "HTTP_404"
+    assert resp.status_code == 200
+    assert resp.content == (main.FRONTEND_DIR / "sw.js").read_bytes()
+    assert resp.headers["cache-control"] == "no-cache"
 
 
-def test_favicon_returns_clean_404_when_missing(client):
+def test_favicon_served_for_real(client):
     import main
-
-    assert not (main.FRONTEND_DIR / "favicon.ico").exists(), \
-        "favicon.ico 應由後續任務建立；此測試假設現在還不存在"
 
     resp = client.get("/favicon.ico")
 
-    assert resp.status_code == 404
-    assert resp.json()["code"] == "HTTP_404"
+    assert resp.status_code == 200
+    assert resp.content == (main.FRONTEND_DIR / "favicon.ico").read_bytes()
+    # favicon.ico 跟 manifest.webmanifest 一樣呼叫 _serve_frontend_file()
+    # 時沒有帶 no_cache=True，交給 FileResponse 自己的 ETag 機制。
+    assert resp.headers.get("cache-control") is None
+    assert "etag" in resp.headers
+
+
+def test_vendor_assets_subtree_serves_real_file(client):
+    """自架字型/圖示 (v2.3 task 2.2) 放在 assets/vendor/ 底下，走既有的
+    /assets StaticFiles 掛載——這裡確認巢狀子目錄一樣能被正確提供，不只是
+    assets/ 底下的一層檔案 (test_assets_subtree_serves_real_file 已經測過)。"""
+    import main
+
+    resp = client.get("/assets/vendor/fonts/fonts.css")
+
+    assert resp.status_code == 200
+    assert resp.content == (main.FRONTEND_DIR / "assets" / "vendor" / "fonts" / "fonts.css").read_bytes()
 
 
 def test_manifest_served_normally_once_present_without_forced_cache_control(client, monkeypatch, tmp_path):
