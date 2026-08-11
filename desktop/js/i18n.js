@@ -27,6 +27,7 @@ const I18N = (function() {
             'nav.chat': '對話',
             'nav.diary': '日記',
             'nav.calendar': '行事曆',
+            'nav.tabBarLabel': '底部導覽',
 
             'tools.settings': '設定',
             'tools.switchUser': '切換用戶',
@@ -262,6 +263,7 @@ const I18N = (function() {
             'nav.chat': 'Chat',
             'nav.diary': 'Diary',
             'nav.calendar': 'Calendar',
+            'nav.tabBarLabel': 'Bottom navigation',
 
             'tools.settings': 'Settings',
             'tools.switchUser': 'Switch user',
@@ -513,7 +515,8 @@ const I18N = (function() {
         return text;
     }
 
-    // 靜態 DOM 節點翻譯 (data-i18n / data-i18n-placeholder / data-i18n-title)
+    // 靜態 DOM 節點翻譯
+    // (data-i18n / data-i18n-placeholder / data-i18n-title / data-i18n-aria-label)
     function applyDom(root) {
         const scope = root || document;
         scope.querySelectorAll('[data-i18n]').forEach(el => {
@@ -524,6 +527,12 @@ const I18N = (function() {
         });
         scope.querySelectorAll('[data-i18n-title]').forEach(el => {
             el.setAttribute('title', t(el.getAttribute('data-i18n-title')));
+        });
+        // v2.3 task 2.1：底部分頁列（.tab-bar）用得到——它的 aria-label 不是
+        // 元素自身的文字內容（元素內還有圖示 <i> 子節點，不能用 data-i18n
+        // 直接指到它，textContent 賦值會把圖示一起清掉）。
+        scope.querySelectorAll('[data-i18n-aria-label]').forEach(el => {
+            el.setAttribute('aria-label', t(el.getAttribute('data-i18n-aria-label')));
         });
         document.documentElement.setAttribute('lang', getLang());
         document.title = t('app.title');

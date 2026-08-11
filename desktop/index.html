@@ -383,6 +383,25 @@
         </footer>
     </div>
 
+    <!-- 底部分頁列（v2.3 task 2.1）：只在窄螢幕顯示（見 css/mobile.css），
+         取代頭部導覽。重用 .nav-item + data-view，js/ui_manager.js 既有的
+         導覽事件綁定（init() 對 .nav-item 的 click 監聽）與高亮邏輯
+         （updateNavHighlight）原封不動涵蓋這裡的按鈕，不需要另外寫 JS。
+         放在 .app-container 外面（跟 loading-spinner/toast/error-container/
+         splash-screen 等既有的固定定位覆蓋層同一層級），position:fixed
+         不受 .app-container 的 overflow:hidden 影響。
+         純文字、不帶圖示：跟頭部導覽（.app-nav 的三個 .nav-item）維持同樣
+         的視覺語言——它們本來就沒有圖示。也刻意不用 Font Awesome：
+         assets/vendor/fontawesome/fontawesome-subset.css 是手動裁切過的
+         10 個字符集（見該檔案檔頭註解），沒有對話/日記/行事曆對應的字符，
+         用了會直接渲染成空白，補字符集需要重新跑 pyftsubset，不在本次
+         任務範圍內。 -->
+    <nav class="tab-bar" aria-label="底部導覽" data-i18n-aria-label="nav.tabBarLabel">
+        <button type="button" class="nav-item active" data-view="chat" aria-current="page" data-i18n="nav.chat">對話</button>
+        <button type="button" class="nav-item" data-view="diary" data-i18n="nav.diary">日記</button>
+        <button type="button" class="nav-item" data-view="calendar" data-i18n="nav.calendar">行事曆</button>
+    </nav>
+
     <!-- 加載動畫 -->
     <div class="loading-spinner">
         <div class="loading-message" data-i18n="chat.generatingDiary">生成日記中...</div>
