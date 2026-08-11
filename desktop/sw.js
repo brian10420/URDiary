@@ -50,6 +50,7 @@ const SHELL_ASSETS = [
     '/css/diary.css',
     '/css/calendar.css',
     '/css/components.css',
+    '/css/mobile.css',
 
     '/js/security_utils.js',
     '/js/i18n.js',

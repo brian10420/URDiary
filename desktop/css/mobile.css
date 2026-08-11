@@ -1,0 +1,234 @@
+/**
+ * 行動裝置樣式（v2.3 task 2.1）
+ *
+ * 幾乎整份檔案只有一個 @media (max-width: 768px) 區塊——寬螢幕完全不受
+ * 影響，這是刻意的設計：不想要任何一條規則意外洩漏到桌面版面。唯一的
+ * 例外是檔案最前面的 .tab-bar 基準規則（display:none，不包在 media
+ * query 裡）：.tab-bar 是新元素、瀏覽器對 <nav> 的預設 display 是
+ * block，若不主動關掉，寬螢幕時它會被排在 .app-container（剛好
+ * 100vh）後面、只是恰好被 body 既有的 overflow:hidden 裁掉、實際上仍是
+ * display:block 且可以被 Tab 鍵聚焦到（螢幕看不到、鍵盤使用者卻會聚焦
+ * 到 3 顆「看不見」的按鈕）——explicit display:none 才是正確做法，窄螢幕
+ * 再用 media query 內的 display:flex 蓋回來。
+ *
+ * 斷點數字跟 js/ui_manager.js 的 MOBILE_BREAKPOINT_QUERY 必須保持一致
+ * （本專案無建置流程，兩邊沒有共用來源，改動其中一處務必同步修改另一處）。
+ *
+ * 在 css/styles.css 最後 @import：同一個 selector、同樣的 specificity 時，
+ * CSS 用來源順序決勝負，排最後代表這裡的規則優先權最高，可以直接覆蓋
+ * base.css/chat.css/diary.css/calendar.css/components.css 已經定義過的
+ * class，不需要刻意堆疊更高的 specificity（僅 #event-dialog .modal-content
+ * 例外——calendar.css 那條本身是 ID+class 組合，這裡用同樣的組合對齊，
+ * 詳見下方說明）。
+ *
+ * 對應 js/ui_manager.js 的 resolvePaneClasses()：mobile 模式只會輸出
+ * '' 或 'active'，不會有任何一個面板拿到 'half'。這裡的
+ * .view-container.half 覆蓋是防禦性的第二層保險（例如螢幕從寬轉窄、
+ * matchMedia 的 change 事件觸發到 switchToState 真的重跑之間的極短暫
+ * 瞬間），不是主要機制。
+ */
+
+/* 寬螢幕基準狀態：見檔頭說明，刻意放在 media query 外面 */
+.tab-bar {
+    display: none;
+}
+
+@media (max-width: 768px) {
+    :root {
+        --tab-bar-height: 56px;
+    }
+
+    /* -----------------------------------------------------------------
+     * 安全區域（iPhone 瀏海／Home Indicator／橫向瀏海）
+     * env(safe-area-inset-*) 在非瀏海裝置上就是 0，calc() 疊加在既有留白
+     * 上不影響沒有安全區域的裝置。
+     * --------------------------------------------------------------- */
+    .app-header {
+        padding-top: calc(var(--spacing-md) + env(safe-area-inset-top));
+        padding-left: calc(var(--spacing-lg) + env(safe-area-inset-left));
+        padding-right: calc(var(--spacing-lg) + env(safe-area-inset-right));
+    }
+
+    .chat-input-area {
+        padding-bottom: calc(15px + env(safe-area-inset-bottom));
+    }
+
+    .tab-bar {
+        padding-bottom: env(safe-area-inset-bottom);
+        padding-left: env(safe-area-inset-left);
+        padding-right: env(safe-area-inset-right);
+    }
+
+    .modal-header {
+        padding-top: calc(15px + env(safe-area-inset-top));
+    }
+
+    /* .toast-message（base.css）預設 bottom:20px，在寬螢幕沒有底部 tab bar
+       時沒問題；窄螢幕加了 tab bar 之後，20px 會落在 tab bar 的範圍內，
+       提示訊息會被蓋住一部分。往上推到 tab bar 上方（實測發現：日曆/
+       事件儲存成功、PWA 更新提示等都是走這條 .toast-message，出現頻率
+       不低，值得補這個間距）。 */
+    .toast-message {
+        bottom: calc(var(--tab-bar-height) + env(safe-area-inset-bottom) + 12px);
+    }
+
+    .modal-body {
+        padding-bottom: calc(20px + env(safe-area-inset-bottom));
+    }
+
+    /* -----------------------------------------------------------------
+     * 頭部收合：logo 文字 + 3 個 nav item + 4 個工具鈕在 390px 寬放不下。
+     * nav 改由底部 tab bar 負責（見下方），版權頁腳在窄螢幕沒有空間，且
+     * 本來就快被 tab bar 蓋住，直接收起。
+     * --------------------------------------------------------------- */
+    .app-nav {
+        display: none;
+    }
+
+    .app-logo span {
+        display: none;
+    }
+
+    .app-footer {
+        display: none;
+    }
+
+    /* app-content 原本吃滿 app-header 與 app-footer 之間的剩餘高度；
+       app-footer 收起後，底部改留給固定定位的 tab bar，不然畫面最下面
+       的內容會被 tab bar 蓋住 */
+    .app-content {
+        padding-bottom: calc(var(--tab-bar-height) + env(safe-area-inset-bottom));
+    }
+
+    /* -----------------------------------------------------------------
+     * 觸控目標 ≥44px（WCAG 2.5.5 / iOS HIG 建議值）
+     * --------------------------------------------------------------- */
+    .icon-btn {
+        width: 44px;
+        height: 44px;
+    }
+
+    #send-button {
+        width: 44px;
+        height: 44px;
+    }
+
+    .calendar-cell {
+        min-height: 44px;
+    }
+
+    .day-event-actions .btn {
+        min-height: 36px;
+        padding: 6px 10px;
+    }
+
+    /* -----------------------------------------------------------------
+     * 底部 Tab Bar（chat / diary / calendar）—— 取代頭部 nav。
+     * 重用既有的 .nav-item + data-view，js/ui_manager.js 的
+     * elements.navItems（document.querySelectorAll('.nav-item')）與
+     * updateNavHighlight 因此天然涵蓋這裡新增的按鈕，不需要另外綁定
+     * click 事件或另一套高亮邏輯（詳見 index.html 的 .tab-bar 標記與
+     * task-2.1-report.md 的說明）。
+     * --------------------------------------------------------------- */
+    .tab-bar {
+        display: flex;
+        position: fixed;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        z-index: 500;
+        background-color: var(--card-background);
+        border-top: 1px solid var(--border-color);
+        box-shadow: var(--shadow-md);
+    }
+
+    .tab-bar .nav-item {
+        flex: 1;
+        min-height: var(--tab-bar-height);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 6px 4px;
+        border-radius: 0;
+        background: none;
+        box-shadow: none;
+        color: var(--text-secondary);
+        font-size: var(--font-size-sm);
+        font-weight: 500;
+        white-space: nowrap;
+        cursor: pointer;
+    }
+
+    .tab-bar .nav-item:hover {
+        background: none;
+        color: var(--text-secondary);
+    }
+
+    .tab-bar .nav-item.active {
+        color: var(--accent-color);
+    }
+
+    /* -----------------------------------------------------------------
+     * 單面板：resolvePaneClasses 在 mobile 模式只會輸出 '' 或 'active'。
+     * 這裡是防禦性保險（見檔頭說明），不是主要機制。
+     * --------------------------------------------------------------- */
+    .view-container.half {
+        flex: 1;
+        width: auto;
+        max-width: 100%;
+    }
+
+    .view-container.left,
+    .view-container.right {
+        order: initial;
+    }
+
+    /* -----------------------------------------------------------------
+     * 日記列表：多欄 grid 在窄螢幕擠成一欄。
+     * --------------------------------------------------------------- */
+    .diary-list {
+        grid-template-columns: 1fr;
+    }
+
+    /* 日記詳情全螢幕：桌面版是列表/詳情左右各半，窄螢幕改成詳情佔滿、
+       列表整個隱藏（而不只是縮窄）—— resolvePaneClasses 在
+       DIARY_DETAIL_SPLIT / CHAT_DETAIL_SPLIT 兩個狀態都會讓 diaryList 拿到
+       'with-detail'，退出靠既有的 #back-to-list-btn（觸發
+       UIManager.hideDiaryDetail，跟桌面版共用同一套退出邏輯）。 */
+    .diary-detail.active {
+        width: 100%;
+        max-width: 100%;
+    }
+
+    .diary-list.with-detail {
+        display: none;
+    }
+
+    /* -----------------------------------------------------------------
+     * 行事曆：.calendar-body 在既有的 900px 斷點（calendar.css）已經改成
+     * 單欄（週標頭/月曆格/日面板上下堆疊），768px 比 900px 窄，那條規則
+     * 在這裡本來就持續生效，不需要重複定義。
+     * --------------------------------------------------------------- */
+
+    /* -----------------------------------------------------------------
+     * Modal 變成全高 sheet（取代置中卡片），避免窄螢幕上內容被壓縮成
+     * 難以操作的一小塊。
+     * --------------------------------------------------------------- */
+    .modal-content {
+        width: 100%;
+        max-width: 100%;
+        min-height: 100%;
+        margin: 0;
+        border-radius: 0;
+    }
+
+    /* 事件表單對話框（calendar.css）比其他對話框長很多，本來就有自己的
+       margin: 4vh auto / max-height: 92vh 這組 ID+class 規則，specificity
+       跟上面的 .modal-content 不同層級，這裡用同樣的 ID+class 組合對齊，
+       靠 mobile.css 最後載入的來源順序覆蓋回全高 sheet。 */
+    #event-dialog .modal-content {
+        margin: 0;
+        max-height: 100vh;
+        min-height: 100vh;
+    }
+}

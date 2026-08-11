@@ -20,4 +20,8 @@
 /* 6. 組件 (components.css) - 常用UI、按鈕、Spinner等 */
 @import url('components.css');
 
+/* 7. 行動裝置 (mobile.css，v2.3 task 2.1) - 響應式版面，必須放最後，
+   確保同 specificity 下，窄螢幕規則永遠贏過前面幾份桌面樣式 */
+@import url('mobile.css');
+
 /* 這裡若有需要額外的覆蓋樣式 (Override)，可在 import 之後進行 */
