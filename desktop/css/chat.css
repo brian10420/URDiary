@@ -226,11 +226,18 @@
     }
 }
 
-/* 聊天輸入區域 */
-.chat-input-container {
+/* 聊天輸入區域（v2.3 task 2.1 修復：原本這裡寫的是 .chat-input-container，
+   index.html 的實際結構從來不是這個 class，這段規則等同沒套用過，聊天
+   輸入區長期只靠瀏覽器預設樣式撐著。改成對應真實 DOM 巢狀結構：
+     .chat-input-area（外層，留白/上邊界/底色）
+       └ .chat-input-wrapper（內層，textarea + 送出鈕橫向排列） */
+.chat-input-area {
     padding: 15px;
     border-top: 1px solid var(--border-color);
     background-color: var(--card-background);
+}
+
+.chat-input-wrapper {
     display: flex;
     align-items: center;
 }
@@ -255,8 +262,12 @@
     box-shadow: 0 0 0 2px rgba(var(--primary-color-rgb), 0.2);
 }
 
-/* 按鈕樣式 */
-.chat-button {
+/* 送出鈕（v2.3 task 2.1 修復：原本分成 .chat-button [圓形/尺寸] 與
+   .send-button [配色] 兩個 class，但 index.html 的 <button id="send-button">
+   從未帶這兩個 class（只有 id），兩段規則統統沒套用過，送出鈕長期只是瀏覽
+   器預設外觀 + base.css 通用 button 樣式。目前只有這一顆按鈕用得到，直接
+   合併成 #send-button，不再維持沒有第二個使用者的兩層抽象）。 */
+#send-button {
     border: none;
     border-radius: 50%;
     width: 40px;
@@ -266,18 +277,15 @@
     justify-content: center;
     cursor: pointer;
     transition: background-color 0.2s;
-}
-
-.send-button {
     background-color: var(--success-color);
     color: white;
 }
 
-.send-button:hover {
+#send-button:hover {
     background-color: var(--success-color-dark);
 }
 
-.send-button:disabled {
+#send-button:disabled {
     background-color: var(--disabled-color);
     cursor: not-allowed;
 }
@@ -378,7 +386,7 @@
         max-width: 80%;
     }
 
-    .chat-input-container {
+    .chat-input-area {
         padding: 10px;
     }
 
@@ -398,7 +406,7 @@
         padding: 8px 12px;
     }
 
-    .chat-button {
+    #send-button {
         width: 36px;
         height: 36px;
     }

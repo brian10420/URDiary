@@ -91,6 +91,47 @@ body {
     --header-height: 60px;
     --footer-height: 40px;
     --sidebar-width: 240px;
+
+    /* ---------------------------------------------------------------
+     * v2.3 task 2.1：以下 20 個自訂屬性先前只在 chat.css/diary.css/
+     * calendar.css/components.css 被 var() 參照，:root 從未定義過。
+     * 其中 3 個 (--background-color/--card-background/--text-secondary)
+     * 唯一的「有值」來源是 ui_manager.js applyThemeCSSVariables() 對
+     * document.documentElement 的 inline root.style.setProperty()——inline
+     * style 永遠贏過任何樣式表規則，所以套用主題後這 3 個「看起來」是好的，
+     * 只有 JS 尚未執行的極短暫瞬間（或未來任何純 CSS 情境）會失真。其餘
+     * 17 個完全沒有任何來源，用到它們的規則等同沒套用（transparent /
+     * 繼承上層 —— mobile.css 與下面 chat.css 的輸入框重構都會用到其中幾個，
+     * 若不補上會直接看到破版）。
+     *
+     * 這裡補上正確的亮色主題預設值，讓兩者一致；深色主題對應值在下面
+     * [data-theme="dark"] 區塊補齊。多數用「別名」指到既有 token
+     * （--neutral-200、--primary-light、既有的 --shadow-md 等），而不是
+     * 又長出一套平行的顏色定義——來源見各行註解。不影響任何既有渲染結果：
+     * 這 20 個屬性目前全部是「從未定義過」，此處新增只會把原本失效/穿透的
+     * 規則第一次真正套用，不會覆蓋任何已經在運作的樣式（--text-color、
+     * --border-color、--bg-color 等既有變數維持原樣不動）。
+     * ------------------------------------------------------------- */
+    --background-color: #f5f5f5;             /* ui_manager.js 亮色主題實際設定值 */
+    --card-background: #ffffff;              /* ui_manager.js 亮色主題實際設定值 */
+    --card-bg: var(--card-background);       /* .user-item 用的舊名，同一概念 */
+    --text-secondary: #666666;               /* ui_manager.js 亮色主題實際設定值 */
+    --text-on-primary: #ffffff;              /* 疊在 --primary-color 底色上的文字色（聊天頭部） */
+    --hover-color: var(--neutral-200);       /* 列表項 hover 提示色 */
+    --background-hover: var(--neutral-200);  /* 同上，chat.css 用的另一個名字 */
+    --input-background: var(--bg-color);     /* 沿用既有 input/textarea/select 的底色慣例 */
+    --input-bg: var(--bg-color);             /* 同上，base.css 表單用的另一個名字 */
+    --light-bg: var(--neutral-100);          /* 捲軸滾動軌道、.tag 等淺底 */
+    --secondary-color: var(--primary-light); /* 捲軸滑塊，比 hover 時的 --primary-color 淺一階 */
+    --primary-light-color: var(--primary-light); /* 使用者訊息泡泡底色，同一個「淺主色」概念 */
+    --disabled-color: var(--neutral-400);    /* 停用狀態按鈕底色 */
+    --success-color-dark: var(--accent-dark); /* --success-color 與 --accent-color 本就同值，沿用既有的深綠 token */
+    --shadow: var(--shadow-md);              /* 補上缺少強度後綴的舊名 */
+    --transition-normal: var(--transition-medium); /* 補上缺少的第 4 個過渡時長 token */
+    --primary-color-rgb: 141, 110, 99;       /* #8D6E63 的 R,G,B —— 供 rgba(var(...), a) 焦點環使用 */
+    --accent-color-rgb: 76, 175, 80;         /* #4CAF50 的 R,G,B */
+    --primary-rgb: var(--primary-color-rgb); /* base.css 表單焦點環用的另一個名字 */
+    --warning-color-rgb: 255, 183, 77;       /* #FFB74D 的 R,G,B */
 }
 
 /* 暗色主題 */
@@ -105,6 +146,19 @@ body {
     --neutral-200: #3d392f;         /* 反轉對比度 */
     --neutral-300: #555048;
     --neutral-600: #c9c5b6;
+
+    /* v2.3 task 2.1：上面 20 個新屬性裡，會隨主題變化的暗色值。其餘沒
+       列在這裡的（--card-bg/--hover-color/--input-bg/--light-bg/
+       --secondary-color/--primary-light-color/--disabled-color/
+       --success-color-dark/--shadow/--transition-normal/--primary-rgb
+       等）全是「別名」，指到的 token 本身若有暗色版本就會自動跟著換
+       （例如 --hover-color: var(--neutral-200) 在暗色主題下自動變成
+       #3d392f），不必在這裡重複列一次。 */
+    --background-color: #121212;             /* ui_manager.js 暗色主題實際設定值 */
+    --card-background: #1e1e1e;              /* ui_manager.js 暗色主題實際設定值 */
+    --text-secondary: #a0a0a0;               /* ui_manager.js 暗色主題實際設定值 */
+    --primary-color-rgb: 169, 144, 126;      /* 上面 --primary-color 暗色值 #a9907e 的 R,G,B */
+    --accent-color-rgb: 106, 158, 135;       /* 上面 --accent-color 暗色值 #6a9e87 的 R,G,B */
 }
 
 /* 全局樣式重置 */
