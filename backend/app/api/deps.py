@@ -4,6 +4,7 @@ from fastapi import Depends, Header
 from fastapi.security import OAuth2PasswordBearer
 from typing import Optional
 
+from database.models import User
 from providers.base import LLMConfig
 from utils.security import decode_token, TokenData
 from utils.api_exceptions import BadRequestError, UnauthorizedError
@@ -92,29 +93,59 @@ async def get_llm_config(
     x_llm_api_key: Optional[str] = Header(None, description="該供應商的 API Key（僅存在於請求範圍）"),
     x_llm_base_url: Optional[str] = Header(None, description="自訂端點 Base URL（local/自架用）"),
     x_language: Optional[str] = Header(None, description="錯誤訊息語言"),
+    current_user: User = Depends(get_current_user),
 ) -> Optional[LLMConfig]:
-    """從 X-LLM-* 標頭讀取請求範圍的 LLM 設定。
+    """解析本次請求要用的 LLM 設定 (v2.3 task 1.6：雙軌金鑰儲存)。
 
-    - 未帶 X-LLM-Provider 時回 None，服務層改用 .env 的 Grok 後備（llm.default_config）
-    - 金鑰只存在於本次請求的 LLMConfig，不寫入資料庫、不落地、不記入日誌
+    順序固定為：
+
+        1. X-LLM-Api-Key 標頭 —— Electron 桌面版把金鑰放在系統金鑰鏈，
+           解密後隨請求送來；這一層完全不碰資料庫，桌面版行為與改版前相同。
+        2. 使用者存在伺服器上的憑證 —— 手機瀏覽器沒有 safeStorage 可用
+           (js/secure_store.js 在非 Electron 環境會拋錯)，金鑰改存資料庫。
+        3. 伺服器預設憑證 (llm_credentials.user_id IS NULL) —— 家人零設定即可用。
+        4. .env 的 XAI_API_KEY Grok 後備 (回 None 讓 llm.default_config 接手)。
+        5. 都沒有 → 與改版前完全相同的 400 / 503。
+
+    **每一層都是一組完整設定**：provider / model / api_key / base_url 一律
+    同源，絕不把某層的金鑰配上另一層的 base_url —— 那等於讓任何登入者
+    塞一個 X-LLM-Base-Url 就能把伺服器預設金鑰送去自己的伺服器。
+
+    **金鑰的落地位置**：標頭來的金鑰仍然只活在本次請求的 LLMConfig 裡；
+    存在資料庫的那兩層是 Fernet 密文 (utils/key_vault)，解密後同樣只活在
+    這個 LLMConfig 內。任何情況都不寫進日誌。
+
+    **鐵律 (database.db_session 的說明)**：查資料庫的 session 由
+    llm_credential_service 自己開、讀完立刻關，回傳純資料快照。這個依賴項
+    絕不可以宣告 `db: Session = Depends(get_db)` —— FastAPI 的 yield 依賴
+    會活到整個請求結束，那就等於在等模型回應的數十秒內一直釘著一條連線。
     """
-    if not x_llm_provider:
-        return None
+    provider = (x_llm_provider or "").strip().lower()
 
-    provider = x_llm_provider.strip().lower()
+    # 1. 標頭層：本地端點通常免金鑰，所以「provider=local」也算這一層
+    #    (不這樣寫的話，Electron 既有的 Ollama/LM Studio 設定會被往下踢，
+    #    改用資料庫憑證——那是行為回歸)。
+    if provider and (x_llm_api_key or provider == "local"):
+        return LLMConfig(
+            provider=provider,
+            model=(x_llm_model or "").strip(),
+            api_key=x_llm_api_key or "",
+            base_url=(x_llm_base_url or "").strip() or None,
+        )
 
-    # 本地自架端點通常不驗金鑰，其餘供應商必須帶 Key
-    if not x_llm_api_key and provider != "local":
+    # 2 & 3. 資料庫層 (短 session，函式回傳前已關閉)
+    from services.llm_credential_service import resolve_stored_config
+    stored_config, _source = resolve_stored_config(current_user.id)
+    if stored_config is not None:
+        return stored_config
+
+    # 5. 帶了供應商卻沒有任何金鑰可用：維持改版前那句明確的 400
+    if provider:
         from services.prompt_loader import normalize_lang
-        from utils.messages import msg
         raise BadRequestError(
             error_code=ErrorCode.INVALID_INPUT,
             detail=msg("missing_api_key", normalize_lang(x_language), provider=x_llm_provider)
         )
 
-    return LLMConfig(
-        provider=provider,
-        model=(x_llm_model or "").strip(),
-        api_key=x_llm_api_key or "",
-        base_url=(x_llm_base_url or "").strip() or None,
-    )
+    # 4. 回 None → llm.resolve_config 走 .env Grok 後備 (沒設就拋 LLMError → 503)
+    return None

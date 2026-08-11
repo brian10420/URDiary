@@ -215,6 +215,69 @@ def revoke_invite_code(db: Session, invite_id: int):
     return invite
 
 
+# LLMCredential CRUD operations (v2.3 task 1.6：雙軌 LLM 金鑰儲存)
+# 這些函式一律只碰 `api_key_enc` (密文)，加解密由 utils/key_vault 負責、
+# 由呼叫端在進出資料庫「之前/之後」完成——與邀請碼只存 code_hash 同一個
+# 分層原則：CRUD 不該看到、也不需要看到明文。
+# user_id=None 代表伺服器預設那一列 (SQL 上是 IS NULL，不能寫成 == None)。
+
+def _llm_credential_owner_filter(query, user_id: Optional[int]):
+    if user_id is None:
+        return query.filter(models.LLMCredential.user_id.is_(None))
+    return query.filter(models.LLMCredential.user_id == user_id)
+
+
+def get_user_llm_credential(db: Session, user_id: int):
+    """該使用者的個人憑證 (沒有則 None)。"""
+    return (_llm_credential_owner_filter(db.query(models.LLMCredential), user_id)
+            .order_by(models.LLMCredential.id.desc())
+            .first())
+
+
+def get_server_llm_credential(db: Session):
+    """伺服器預設憑證 (user_id IS NULL；沒有則 None)。"""
+    return (_llm_credential_owner_filter(db.query(models.LLMCredential), None)
+            .order_by(models.LLMCredential.id.desc())
+            .first())
+
+
+def set_llm_credential(db: Session, user_id: Optional[int], provider: str,
+                       api_key_enc: str, base_url: Optional[str] = None,
+                       model: Optional[str] = None):
+    """設定「這個擁有者唯一的一組憑證」：先刪光既有列，再插入新的一列。
+
+    刪與插之間**不 commit**，整段是同一個交易——兩個並發的 PUT 才不會出現
+    「都刪完了、都要插入」而撞上 unique(user_id, provider)，或更糟的
+    「刪掉了但沒插回去」。SQLite 的寫鎖會把兩個交易排成先後順序。
+
+    刻意不做「就地更新既有列」：換供應商時舊列必須消失，否則同一個使用者
+    會同時留著兩組憑證，解析順序得多一條「該挑哪一個」的規則。
+    """
+    _llm_credential_owner_filter(db.query(models.LLMCredential), user_id).delete(
+        synchronize_session=False)
+
+    credential = models.LLMCredential(
+        user_id=user_id,
+        provider=provider,
+        api_key_enc=api_key_enc,
+        base_url=base_url,
+        model=model,
+        updated_at=datetime.utcnow(),
+    )
+    db.add(credential)
+    db.commit()
+    db.refresh(credential)
+    return credential
+
+
+def delete_llm_credentials(db: Session, user_id: Optional[int]) -> int:
+    """刪除該擁有者的憑證 (回傳刪掉幾列；沒有時回 0，冪等)。"""
+    deleted = _llm_credential_owner_filter(
+        db.query(models.LLMCredential), user_id).delete(synchronize_session=False)
+    db.commit()
+    return deleted
+
+
 # Diary CRUD operations
 def create_diary(db: Session, user_id: int, content: str,
                 valence: Optional[float] = None, arousal: Optional[float] = None,

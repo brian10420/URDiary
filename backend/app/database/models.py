@@ -1,6 +1,7 @@
 # app/database/models.py
 from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy import Column, Integer, String, DateTime, Date, Text, Float, ForeignKey, LargeBinary
+from sqlalchemy import (Column, Integer, String, DateTime, Date, Text, Float,
+                        ForeignKey, LargeBinary, UniqueConstraint)
 from sqlalchemy.orm import relationship
 from datetime import datetime
 
@@ -65,6 +66,40 @@ class InviteCode(Base):
     expires_at = Column(DateTime, nullable=True)   # NULL = 永不過期
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
     revoked_at = Column(DateTime, nullable=True)   # NULL = 未撤銷
+
+
+class LLMCredential(Base):
+    """LLM 供應商憑證 (v2.3 task 1.6：雙軌金鑰儲存)。
+
+    兩種列共用同一張表，靠 user_id 區分：
+
+    - `user_id IS NULL` → **伺服器預設**：家人在手機瀏覽器上零設定就能用，
+      只由 CLI (`urdiary_admin.py set-server-key`) 管理，永遠只保留一列。
+    - `user_id` 有值 → 該使用者的**個人覆寫**，優先於伺服器預設；
+      由 `/users/me/llm` 端點管理，一個使用者同樣只保留一列
+      (PUT 會先刪光既有列再插入，見 crud.set_llm_credential)。
+
+    `api_key_enc` 存的是 utils/key_vault 的 Fernet 密文，**不是明文**；
+    解密金鑰由 SECRET_KEY 導出，因此輪換 SECRET_KEY 會讓這些憑證全部失效
+    (降級成「沒有憑證」，不是錯誤，見 services/llm_credential_service)。
+
+    unique(user_id, provider) 是結構上的保險。注意 SQLite 的 unique 索引
+    對 NULL 一律視為互異，所以它擋不住「多列伺服器預設」——「只保留一列」
+    這件事是由 CRUD 的先刪後插保證的，不能只靠這個約束。
+    """
+    __tablename__ = "llm_credentials"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
+    provider = Column(String(20), nullable=False)   # claude/openai/grok/gemini/local
+    api_key_enc = Column(Text, nullable=False)      # Fernet 密文 (可為空字串的密文：local 端點免金鑰)
+    base_url = Column(String(255), nullable=True)
+    model = Column(String(80), nullable=True)
+    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    __table_args__ = (
+        UniqueConstraint("user_id", "provider", name="uq_llm_credentials_user_provider"),
+    )
 
 
 class Diary(Base):

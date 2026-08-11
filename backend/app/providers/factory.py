@@ -5,6 +5,14 @@ from providers.gemini_provider import GeminiProvider
 
 GROK_BASE_URL = "https://api.x.ai/v1"
 
+# build_provider 認得的供應商全集。存憑證的端點/CLI 要在寫進資料庫「之前」
+# 就擋掉打錯的供應商名稱 (不然要等到真的呼叫模型才炸)，因此把這份清單從
+# build_provider 的 if 串裡抽出來共用——新增供應商時兩處要一起改，放在
+# 同一個檔案裡就看得到彼此。
+# 注意 local 不在 PROVIDER_DEFAULT_MODELS 內 (它沒有預設模型)，所以不能
+# 拿那個 dict 的鍵當成「合法供應商清單」。
+KNOWN_PROVIDERS = ("claude", "openai", "grok", "gemini", "local")
+
 # 各供應商的預設模型（模型欄位在前端可自訂，這裡只是未填時的預設值）
 PROVIDER_DEFAULT_MODELS = {
     "grok": "grok-4.3",

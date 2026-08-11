@@ -1,15 +1,23 @@
 #!/usr/bin/env python3
-"""URDiary 管理 CLI —— 邀請碼管理 (v2.3 task 1.4)。
+"""URDiary 管理 CLI —— 邀請碼 (v2.3 task 1.4) 與伺服器預設 LLM 金鑰 (task 1.6)。
 
-對外開放 (tunnel) 前的安全閘門一半：`URDIARY_REQUIRE_INVITE=1` 開啟後，
-/users/create 會要求一組有效邀請碼。這支 CLI 是唯一的邀請碼管理入口
-(YAGNI：沒有對應的管理 UI)，只給有 shell 存取權的伺服器擁有者使用。
+只給有 shell 存取權的伺服器擁有者使用 (YAGNI：沒有對應的管理 UI)。
+
+**邀請碼**：對外開放 (tunnel) 前的安全閘門一半 ——
+`URDIARY_REQUIRE_INVITE=1` 開啟後，/users/create 會要求一組有效邀請碼。
+
+**伺服器預設 LLM 金鑰**：讓家人在手機瀏覽器上零設定就能用 —— 沒有自己
+金鑰的帳號會自動用這一組 (解析順序見 api/deps.get_llm_config)。金鑰以
+SECRET_KEY 導出的金鑰加密後存進 llm_credentials (user_id IS NULL 那一列)，
+**輪換 SECRET_KEY 會讓它失效**，需要重新設定一次。
 
 用法 (在 repo 根目錄執行；venv 路徑依安裝方式調整)：
 
     .venv/bin/python backend/scripts/urdiary_admin.py mint-invite --uses 5 --days 30 --note "beta 使用者"
     .venv/bin/python backend/scripts/urdiary_admin.py list-invites
     .venv/bin/python backend/scripts/urdiary_admin.py revoke-invite 3
+    .venv/bin/python backend/scripts/urdiary_admin.py set-server-key --provider grok
+    .venv/bin/python backend/scripts/urdiary_admin.py show-server-key
 
 也可以先 cd 進 backend/ 再用相對路徑執行 (./start-backend.sh 用的就是
 這個習慣)：
@@ -22,11 +30,13 @@
 (測試套件正是這樣做到隔離：conftest.py 在任何 app 模組 import 之前就把
 URDIARY_DATA_DIR 設成臨時目錄，子行程會繼承這個環境變數)。
 
-明文邀請碼只有 mint-invite 當下會印出一次：資料庫只存 sha256 雜湊
-(utils/invite_codes.hash_invite_code)，之後任何指令 (包含 list-invites)
-都無法、也不會再顯示明文。
+**機密永遠不從命令列參數進來**：明文邀請碼只有 mint-invite 當下會印出
+一次 (資料庫只存 sha256 雜湊)；API Key 則是用 getpass 提示輸入 (或
+`--key-stdin` 從管道讀)，絕不接受 `--key sk-...` 這種寫法 —— 命令列參數
+會留在 shell history，也會被同一台機器上的其他使用者從 `ps` 看見。
 """
 import argparse
+import getpass
 import secrets
 import sys
 from datetime import datetime, timedelta
@@ -42,6 +52,8 @@ sys.path.insert(0, str(_APP_DIR))
 from database import SessionLocal, engine       # noqa: E402
 from database.models import Base                 # noqa: E402
 import database.crud as crud                      # noqa: E402
+from providers.factory import KNOWN_PROVIDERS     # noqa: E402
+from services import llm_credential_service       # noqa: E402
 from utils.invite_codes import hash_invite_code   # noqa: E402
 
 
@@ -101,6 +113,78 @@ def cmd_revoke_invite(args, db) -> int:
     return 0
 
 
+def _read_api_key(from_stdin: bool) -> str:
+    """取得 API Key：管道 (--key-stdin) 或 getpass 提示，**永遠不從 argv**。
+
+    getpass 不會回顯輸入，也不會進 shell history；--key-stdin 是給
+    `pass show grok | urdiary_admin.py set-server-key --provider grok --key-stdin`
+    這類腳本化用法。兩者都 strip()：貼上時很容易多帶一個換行或空白，
+    那會讓送給供應商的 Authorization 標頭壞掉、而且極難察覺。
+    """
+    if from_stdin:
+        return sys.stdin.read().strip()
+    return getpass.getpass("請貼上 API Key（輸入時不會顯示）: ").strip()
+
+
+def cmd_set_server_key(args, db) -> int:
+    provider = (args.provider or "").strip().lower()
+    if not llm_credential_service.is_known_provider(provider):
+        print(f"錯誤：不支援的 AI 供應商 {args.provider!r}"
+              f"（可用: {' / '.join(KNOWN_PROVIDERS)}）", file=sys.stderr)
+        return 1
+
+    base_url = (args.base_url or "").strip()
+    model = (args.model or "").strip()
+    api_key = _read_api_key(args.key_stdin)
+
+    # local 端點通常免金鑰，但少了 Base URL / 模型名稱就一定跑不起來；
+    # 其餘供應商沒有金鑰就毫無意義 —— 都在寫入資料庫之前擋掉。
+    if provider == "local":
+        if not base_url:
+            print("錯誤：--provider local 需要 --base-url（例如 http://localhost:11434/v1）",
+                  file=sys.stderr)
+            return 1
+        if not model:
+            print("錯誤：--provider local 需要 --model（例如 llama3）", file=sys.stderr)
+            return 1
+    elif not api_key:
+        print("錯誤：未輸入 API Key", file=sys.stderr)
+        return 1
+
+    described = llm_credential_service.store_credential(
+        user_id=None, provider=provider, api_key=api_key,
+        base_url=base_url, model=model)
+
+    print("伺服器預設 LLM 金鑰已更新（加密儲存，只保留這一組）")
+    _print_server_key(described)
+    print("沒有自己設定金鑰的帳號，之後都會用這一組；"
+          "注意輪換 SECRET_KEY 會讓它失效，需要重新設定。")
+    return 0
+
+
+def _print_server_key(described: dict) -> None:
+    """印出伺服器預設金鑰的狀態。**只印遮罩，永不印明文或密文。**"""
+    print(f"供應商: {described['provider']}")
+    print(f"模型: {described['model'] or '(未指定，用供應商預設)'}")
+    print(f"Base URL: {described['base_url'] or '(未指定)'}")
+    print(f"API Key: {described['key_masked'] or '(無，本地端點免金鑰)'}")
+    print(f"最後更新: {described['updated_at'] or '(未知)'}")
+
+
+def cmd_show_server_key(args, db) -> int:
+    described = llm_credential_service.describe_server_credential()
+    if described is None:
+        print("目前沒有設定伺服器預設 LLM 金鑰。")
+        print("設定方式: urdiary_admin.py set-server-key --provider grok")
+        return 0
+
+    _print_server_key(described)
+    if not described.get("decryptable", True):
+        print("警告：這組憑證解不開（SECRET_KEY 已被輪換過？），"
+              "目前等同沒有設定，請重新執行 set-server-key。", file=sys.stderr)
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="urdiary_admin.py",
@@ -118,6 +202,24 @@ def build_parser() -> argparse.ArgumentParser:
 
     revoke = sub.add_parser("revoke-invite", help="撤銷一組邀請碼，之後無法再用來註冊")
     revoke.add_argument("invite_id", type=int, help="邀請碼 id (見 list-invites 的 [id])")
+
+    set_key = sub.add_parser(
+        "set-server-key",
+        help="設定伺服器預設 LLM 金鑰 (沒有自己金鑰的帳號都會用這一組)")
+    set_key.add_argument("--provider", required=True,
+                         help=f"AI 供應商: {' / '.join(KNOWN_PROVIDERS)}")
+    set_key.add_argument("--base-url", default=None,
+                         help="自訂端點 Base URL (local 必填)")
+    set_key.add_argument("--model", default=None,
+                         help="模型名稱 (留空用供應商預設；local 必填)")
+    # 刻意沒有 --key/--api-key：金鑰只能用 getpass 提示或這個旗標從管道讀，
+    # 不能出現在命令列參數裡 (shell history / ps 都看得到)。
+    set_key.add_argument("--key-stdin", action="store_true",
+                         help="從標準輸入讀金鑰 (例如 `pass show grok | ... --key-stdin`)，"
+                              "不加這個旗標時會用不回顯的提示輸入")
+
+    sub.add_parser("show-server-key",
+                   help="顯示伺服器預設金鑰的設定狀態 (金鑰只顯示最後 4 碼)")
 
     return parser
 
@@ -139,6 +241,10 @@ def main(argv=None) -> int:
             return cmd_list_invites(args, db)
         if args.command == "revoke-invite":
             return cmd_revoke_invite(args, db)
+        if args.command == "set-server-key":
+            return cmd_set_server_key(args, db)
+        if args.command == "show-server-key":
+            return cmd_show_server_key(args, db)
         parser.error(f"未知的子指令: {args.command}")  # pragma: no cover - argparse 已擋掉
         return 2
     finally:

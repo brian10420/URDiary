@@ -22,7 +22,7 @@ from fastapi import APIRouter, Depends, Header
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 from typing import List, Dict, Any, Optional
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from datetime import datetime, timedelta
 
 import uuid
@@ -36,6 +36,8 @@ from utils.password_validator import validate_password_and_get_errors
 from utils.invite_codes import hash_invite_code
 from database import crud
 from database.models import User
+from providers.factory import KNOWN_PROVIDERS
+from services import llm_credential_service
 from utils.security import (
     TokenData,
     create_access_token,
@@ -76,6 +78,20 @@ class TokenResponse(BaseModel):
 
 class RefreshTokenRequest(BaseModel):
     refresh_token: Optional[str] = None
+
+
+class LLMCredentialIn(BaseModel):
+    """PUT /users/me/llm 的請求 body (v2.3 task 1.6)。
+
+    長度上限只是防呆／防止把資料庫塞爆，真正的合法性由路由層檢查
+    (供應商是否認得、local 是否有 Base URL 與模型名稱)。
+    """
+    # 上限刻意比欄位的 20 字元寬鬆：打錯的供應商名稱要走路由層那句雙語的
+    # 400 (「不支援的 AI 供應商」)，而不是 Pydantic 的 422 驗證錯誤
+    provider: str = Field(max_length=50)
+    api_key: str = Field(default="", max_length=500)
+    base_url: Optional[str] = Field(default=None, max_length=255)
+    model: Optional[str] = Field(default=None, max_length=80)
 
 
 # --- 工作階段輔助 -------------------------------------------------------------
@@ -420,6 +436,72 @@ async def revoke_session(session_id: int,
 
     crud.revoke_auth_session_chain(db, session)
     return {"message": msg("session_revoked", lang)}
+
+
+# --- 個人 LLM 金鑰 (v2.3 task 1.6：手機瀏覽器沒有 safeStorage，金鑰改存伺服器) ---
+# 註冊順序同樣要在 /{user_id} 之前 (見上面 /sessions 的說明)。這三個端點
+# **永遠不回傳明文金鑰，也不回傳密文**，只回最後 4 碼的遮罩。
+
+@router.get("/me/llm", response_model=Dict[str, Any],
+            summary="查詢目前生效的 AI 金鑰設定",
+            description="回報這個帳號在不帶 X-LLM-* 標頭時會用到哪一組設定（永遠不含金鑰明文）")
+def get_my_llm_credential(current_user: User = Depends(get_current_user)):
+    """目前生效的 LLM 設定與來源 (user / server / env / 無)。"""
+    return llm_credential_service.describe_for_user(current_user.id)
+
+
+@router.put("/me/llm", response_model=Dict[str, Any],
+            summary="儲存個人 AI 金鑰",
+            description="以伺服器金鑰加密後儲存；同一個帳號只保留一組（重複呼叫會取代舊的）")
+def put_my_llm_credential(payload: LLMCredentialIn,
+                          current_user: User = Depends(get_current_user),
+                          lang: str = Depends(get_language)):
+    """設定這個帳號的 LLM 憑證。
+
+    先驗證再寫入：供應商名稱要認得 (打錯的話等到真的呼叫模型才報錯就太晚了)、
+    local 端點要有 Base URL 與模型名稱 (否則存進去的是一組永遠不能用的設定)。
+    """
+    provider = (payload.provider or "").strip().lower()
+    api_key = (payload.api_key or "").strip()
+    base_url = (payload.base_url or "").strip()
+    model = (payload.model or "").strip()
+
+    if not llm_credential_service.is_known_provider(provider):
+        raise BadRequestError(
+            error_code=ErrorCode.INVALID_INPUT,
+            detail=msg("llm_unknown_provider", lang, provider=payload.provider,
+                       providers=" / ".join(KNOWN_PROVIDERS))
+        )
+
+    if provider == "local":
+        # 本地端點通常不驗金鑰，但沒有 Base URL / 模型名稱就一定跑不起來
+        if not base_url:
+            raise BadRequestError(error_code=ErrorCode.INVALID_INPUT,
+                                  detail=msg("llm_base_url_required", lang))
+        if not model:
+            raise BadRequestError(error_code=ErrorCode.INVALID_INPUT,
+                                  detail=msg("llm_model_required", lang))
+    elif not api_key:
+        raise BadRequestError(error_code=ErrorCode.INVALID_INPUT,
+                              detail=msg("llm_key_required", lang))
+
+    llm_credential_service.store_credential(
+        user_id=current_user.id, provider=provider, api_key=api_key,
+        base_url=base_url, model=model)
+
+    return {"message": msg("llm_credential_saved", lang),
+            **llm_credential_service.describe_for_user(current_user.id)}
+
+
+@router.delete("/me/llm", response_model=Dict[str, Any],
+               summary="刪除個人 AI 金鑰",
+               description="刪除這個帳號存在伺服器上的金鑰（之後回退到伺服器預設或 .env 後備）")
+def delete_my_llm_credential(current_user: User = Depends(get_current_user),
+                             lang: str = Depends(get_language)):
+    """刪除自己的憑證 (冪等；不會動到伺服器預設那一列)。"""
+    llm_credential_service.delete_user_credential(current_user.id)
+    return {"message": msg("llm_credential_deleted", lang),
+            **llm_credential_service.describe_for_user(current_user.id)}
 
 
 @router.get("/{user_id}", response_model=Dict[str, Any],

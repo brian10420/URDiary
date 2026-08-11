@@ -28,6 +28,13 @@ DB_PATH = DATA_DIR / "urdiary.db"
 # 且 HASH_SALT 會混入 bcrypt 雜湊，變動等於讓所有帳號密碼失效。
 # 本地部署改為：首次啟動生成一次並持久化 (0600)；env 有值時永遠優先，
 # 且 env 的值不寫入磁碟 (避免把使用者的環境秘密複製到檔案裡)。
+#
+# SECRET_KEY 還有第三個用途 (v2.3 task 1.6)：utils/key_vault 用它導出
+# 加密金鑰，把 llm_credentials 裡的 LLM API Key 加密存放。因此**輪換
+# SECRET_KEY 會讓所有已儲存的 LLM 金鑰解不開** —— 那不會讓 App 壞掉
+# (解不開就當成「沒有這組憑證」往下一層找)，但每個人都要在設定面板重新
+# 填一次金鑰、伺服器擁有者也要重跑一次 urdiary_admin.py set-server-key。
+# 同理：刪掉 data/secrets.json 等同輪換。
 def _load_or_create_secrets() -> dict:
     secrets_file = DATA_DIR / "secrets.json"
     stored = {}

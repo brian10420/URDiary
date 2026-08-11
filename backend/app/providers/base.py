@@ -17,8 +17,16 @@ class LLMError(RuntimeError):
 class LLMConfig:
     """單一請求範圍的 LLM 設定。
 
-    api_key 來自前端 X-LLM-* 標頭（本機 safeStorage 解密後隨請求送來），
-    只存在於請求生命週期，不寫入資料庫、不落地、不記入日誌。
+    api_key 有三種來源 (v2.3 task 1.6 之後；解析順序見 api/deps.get_llm_config)：
+
+    1. 前端 X-LLM-* 標頭 —— Electron 桌面版從系統金鑰鏈 (safeStorage) 解密後
+       隨請求送來，只存在於請求生命週期，不寫入資料庫。
+    2. 這台伺服器上該使用者存的憑證 (llm_credentials)。
+    3. 伺服器預設憑證 (同一張表，user_id IS NULL) 或 .env 的 XAI_API_KEY。
+
+    後兩者在資料庫裡是 Fernet 密文 (utils/key_vault，加密金鑰由 SECRET_KEY
+    導出)，不是明文。無論來源為何，解密後的金鑰都只活在這個 LLMConfig 物件
+    裡，**不記入日誌**，也只會送往 provider 欄位指定的那家供應商。
     """
     provider: str                 # claude | openai | grok | gemini | local
     model: str = ""               # 空字串時由 llm.chat 補上該供應商的預設模型

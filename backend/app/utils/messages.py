@@ -73,6 +73,32 @@ MESSAGES = {
         "zh-TW": "缺少 {provider} 的 API Key，請在「設定」面板填入後再試",
         "en": "Missing API key for {provider} — add it in the Settings panel and try again",
     },
+
+    # --- LLM 金鑰儲存 (api/routes/user.py 的 /users/me/llm) ---
+    "llm_unknown_provider": {
+        "zh-TW": "不支援的 AI 供應商「{provider}」，可用的有：{providers}",
+        "en": "Unsupported AI provider \"{provider}\" — available options: {providers}",
+    },
+    "llm_key_required": {
+        "zh-TW": "請填入 API Key",
+        "en": "An API key is required",
+    },
+    "llm_base_url_required": {
+        "zh-TW": "本地供應商需要 Base URL（例如 http://localhost:11434/v1）",
+        "en": "A local provider needs a Base URL (e.g. http://localhost:11434/v1)",
+    },
+    "llm_model_required": {
+        "zh-TW": "本地供應商需要指定模型名稱（例如 llama3）",
+        "en": "A local provider needs a model name (e.g. llama3)",
+    },
+    "llm_credential_saved": {
+        "zh-TW": "API Key 已加密儲存，之後這個帳號的請求都會使用它",
+        "en": "Your API key is encrypted and saved — this account will use it from now on",
+    },
+    "llm_credential_deleted": {
+        "zh-TW": "已刪除這個帳號存在伺服器上的 API Key",
+        "en": "Removed the API key stored on the server for this account",
+    },
     "event_not_found": {
         "zh-TW": "行事曆事件不存在",
         "en": "Calendar event not found",

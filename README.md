@@ -6,7 +6,7 @@
 
 **URDiary** is a free, open-source emotional diary that runs entirely on your own computer. You chat with an AI companion that truly listens — it remembers your past entries, checks in on you daily, and turns each conversation into a structured diary entry. Built for students and anyone under pressure who is used to bottling things up, so they can feel heard, remembered, and seen.
 
-**你的資料不離開你的電腦。** 日記存在本機 SQLite 檔案裡，API 金鑰以作業系統金鑰鏈加密存放，沒有雲端伺服器、沒有帳號註冊、沒有追蹤。[繁體中文說明請見下方](#繁體中文)。
+**你的資料不離開你的電腦。** 日記存在本機 SQLite 檔案裡，API 金鑰加密存在你自己的機器上，沒有雲端伺服器、沒有帳號註冊、沒有追蹤。[繁體中文說明請見下方](#繁體中文)。
 
 ## Features
 
@@ -84,13 +84,23 @@ By meaning, not just keywords — "work stuff" can recall an entry about your bo
 |---|---|
 | Diaries, chat history, memory notes | `data/urdiary.db` (SQLite, single file) |
 | Auto-generated server secrets | `data/secrets.json` |
-| Your LLM API keys | OS keychain via Electron safeStorage (`~/.config/desktop/provider-keys.enc` on Linux) |
+| Your LLM API keys (desktop app) | OS keychain via Electron safeStorage (`~/.config/desktop/provider-keys.enc` on Linux) |
+| Your LLM API keys (phone / browser) | `data/urdiary.db`, encrypted at rest with a key derived from your server's `SECRET_KEY` |
 
 **Backup = copy the `data/` folder.** Nothing is ever uploaded.
+
+Browsers have no OS keychain, so a key you save from a phone is stored — encrypted — in your own database on your own machine. You can remove it at any time from Settings. Rotating `SECRET_KEY` (or deleting `data/secrets.json`) makes those stored keys unreadable; the app keeps working and simply asks you to enter the key again.
 
 ### Configuration (optional)
 
 Everything works with zero configuration. To customize, create `backend/.env` (see `.env.example`): timezone (`URDIARY_TIMEZONE`, default `Asia/Taipei`), data directory, port, or a fallback Grok API key for requests without a provider configured in the UI.
+
+Sharing your instance with family? Set one server-side key so they need no setup at all — accounts without their own key fall back to it:
+
+```bash
+.venv/bin/python backend/scripts/urdiary_admin.py set-server-key --provider grok   # prompts for the key, never takes it from argv
+.venv/bin/python backend/scripts/urdiary_admin.py show-server-key                  # masked status only
+```
 
 ## Running tests
 
@@ -110,7 +120,8 @@ npm test
 ## Privacy
 
 - Diaries and conversations are stored **only** in the local SQLite file.
-- API keys are encrypted by your OS keychain and sent only to your local backend, which forwards them directly to the AI provider you chose.
+- API keys are encrypted at rest on your own machine — by your OS keychain in the desktop app, or in your own database (Fernet, keyed from your `SECRET_KEY`) when you save one from a phone browser. They are never sent anywhere except the AI provider you chose.
+- Keys are never returned by the API, never written to logs, and never shown again in full — only the last 4 characters.
 - The only network traffic is between your machine and your chosen AI provider.
 - No telemetry, no analytics, no accounts.
 
@@ -191,13 +202,23 @@ npm start
 |---|---|
 | 日記、對話、記憶筆記 | `data/urdiary.db`（單一 SQLite 檔） |
 | 自動生成的伺服器密鑰 | `data/secrets.json` |
-| 你的 LLM API 金鑰 | 系統金鑰鏈加密（Electron safeStorage） |
+| 你的 LLM API 金鑰（桌面版） | 系統金鑰鏈加密（Electron safeStorage） |
+| 你的 LLM API 金鑰（手機／瀏覽器） | `data/urdiary.db`，以伺服器 `SECRET_KEY` 導出的金鑰加密後存放 |
 
 **備份＝複製 `data/` 資料夾。** 任何資料都不會上傳。
+
+瀏覽器沒有系統金鑰鏈可用，所以從手機儲存的金鑰會加密後存進你自己機器上的資料庫，隨時可以在設定面板刪除。輪換 `SECRET_KEY`（或刪掉 `data/secrets.json`）會讓這些金鑰解不開；App 仍然可以正常使用，只是會請你重新填一次金鑰。
 
 ### 設定（可選）
 
 零設定即可使用。要客製化時建立 `backend/.env`（參考 `.env.example`）：時區（`URDIARY_TIMEZONE`，預設 `Asia/Taipei`，建議安裝時一次決定）、資料目錄、埠號等。
+
+要分享給家人用？設定一組「伺服器預設金鑰」，他們就完全不必自己設定——沒有自己金鑰的帳號會自動用這一組：
+
+```bash
+.venv/bin/python backend/scripts/urdiary_admin.py set-server-key --provider grok   # 會提示輸入金鑰，不從命令列參數讀
+.venv/bin/python backend/scripts/urdiary_admin.py show-server-key                  # 只顯示遮罩後的狀態
+```
 
 ## 執行測試
 
@@ -217,7 +238,8 @@ npm test
 ## 隱私
 
 - 日記與對話**只**存在本機 SQLite 檔案。
-- API 金鑰由作業系統金鑰鏈加密，只送往本機後端、再直達你選擇的 AI 供應商。
+- API 金鑰一律加密存在你自己的機器上——桌面版用作業系統金鑰鏈，從手機瀏覽器儲存的則加密存在你自己的資料庫（Fernet，金鑰由 `SECRET_KEY` 導出）。除了你選擇的 AI 供應商之外，不會送去任何地方。
+- 金鑰不會被 API 回傳、不會寫進日誌，之後也不會再完整顯示——只看得到最後 4 碼。
 - 唯一的網路流量是你的電腦與 AI 供應商之間。
 - 沒有遙測、沒有分析、沒有帳號系統。
 

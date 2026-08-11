@@ -23,10 +23,10 @@ from database import SessionLocal
 SCRIPT_PATH = Path(__file__).resolve().parents[1] / "scripts" / "urdiary_admin.py"
 
 
-def _run_cli(*args, timeout=30):
+def _run_cli(*args, stdin=None, timeout=60):
     return subprocess.run(
         [sys.executable, str(SCRIPT_PATH), *args],
-        capture_output=True, text=True, timeout=timeout,
+        input=stdin, capture_output=True, text=True, timeout=timeout,
     )
 
 
@@ -56,10 +56,11 @@ def test_script_file_exists():
     assert SCRIPT_PATH.is_file(), f"CLI 腳本不存在: {SCRIPT_PATH}"
 
 
-def test_help_documents_all_three_subcommands():
+def test_help_documents_all_subcommands():
     result = _run_cli("--help")
     assert result.returncode == 0, result.stderr
-    for name in ("mint-invite", "list-invites", "revoke-invite"):
+    for name in ("mint-invite", "list-invites", "revoke-invite",
+                 "set-server-key", "show-server-key"):
         assert name in result.stdout, f"--help 沒有列出子指令 {name}:\n{result.stdout}"
 
 
@@ -207,3 +208,167 @@ def test_revoke_invite_unknown_id_fails_cleanly():
     result = _run_cli("revoke-invite", "999999999")
     assert result.returncode != 0
     assert "Traceback" not in result.stderr
+
+
+# --- set-server-key / show-server-key (v2.3 task 1.6：伺服器預設 LLM 金鑰) -----
+#
+# 一律用 --key-stdin 餵金鑰。預設的 getpass 提示路徑刻意不在這裡測：
+# getpass 會先嘗試開 /dev/tty，從終端機啟動 pytest 時那是開發者的終端機，
+# 子行程會停在那裡等人打字 —— 測試會掛住而不是失敗。
+
+SERVER_KEY_PLAINTEXT = "sk-cli-server-key-abcdefgh1234"
+
+
+def _server_credential_row():
+    from database.models import LLMCredential
+    db = SessionLocal()
+    try:
+        return (db.query(LLMCredential)
+                .filter(LLMCredential.user_id.is_(None))
+                .order_by(LLMCredential.id.desc())
+                .first())
+    finally:
+        db.close()
+
+
+def _server_credential_rows():
+    from database.models import LLMCredential
+    db = SessionLocal()
+    try:
+        return db.query(LLMCredential).filter(LLMCredential.user_id.is_(None)).all()
+    finally:
+        db.close()
+
+
+def _clear_server_credentials():
+    db = SessionLocal()
+    try:
+        crud.delete_llm_credentials(db, user_id=None)
+    finally:
+        db.close()
+
+
+def test_set_server_key_stores_an_encrypted_key_and_never_echoes_it():
+    _clear_server_credentials()
+    try:
+        result = _run_cli("set-server-key", "--provider", "grok", "--key-stdin",
+                          stdin=SERVER_KEY_PLAINTEXT + "\n")
+        assert result.returncode == 0, result.stderr
+
+        # CLI 的輸出只能有遮罩，不可以有明文 (終端機會留在 scrollback / 記錄檔裡)
+        assert SERVER_KEY_PLAINTEXT not in result.stdout
+        assert SERVER_KEY_PLAINTEXT not in result.stderr
+        assert SERVER_KEY_PLAINTEXT[-4:] in result.stdout
+
+        row = _server_credential_row()
+        assert row is not None
+        assert row.provider == "grok"
+        assert SERVER_KEY_PLAINTEXT not in row.api_key_enc     # 資料庫裡是密文
+        from utils.key_vault import decrypt_secret
+        assert decrypt_secret(row.api_key_enc) == SERVER_KEY_PLAINTEXT
+    finally:
+        _clear_server_credentials()
+
+
+def test_set_server_key_replaces_the_previous_server_key():
+    _clear_server_credentials()
+    try:
+        _run_cli("set-server-key", "--provider", "grok", "--key-stdin", stdin="sk-first-1111\n")
+        result = _run_cli("set-server-key", "--provider", "claude", "--model", "claude-x",
+                          "--key-stdin", stdin="sk-second-2222\n")
+        assert result.returncode == 0, result.stderr
+
+        rows = _server_credential_rows()
+        assert len(rows) == 1, "伺服器預設永遠只保留一列"
+        assert rows[0].provider == "claude"
+        assert rows[0].model == "claude-x"
+    finally:
+        _clear_server_credentials()
+
+
+def test_set_server_key_rejects_unknown_provider():
+    _clear_server_credentials()
+    try:
+        result = _run_cli("set-server-key", "--provider", "notaprovider", "--key-stdin",
+                          stdin="sk-whatever-9999\n")
+        assert result.returncode != 0
+        assert "Traceback" not in result.stderr
+        assert _server_credential_rows() == []
+    finally:
+        _clear_server_credentials()
+
+
+def test_set_server_key_rejects_empty_key():
+    _clear_server_credentials()
+    try:
+        result = _run_cli("set-server-key", "--provider", "grok", "--key-stdin", stdin="\n")
+        assert result.returncode != 0
+        assert "Traceback" not in result.stderr
+        assert _server_credential_rows() == []
+    finally:
+        _clear_server_credentials()
+
+
+def test_set_server_key_local_provider_requires_base_url_and_model():
+    _clear_server_credentials()
+    try:
+        no_base_url = _run_cli("set-server-key", "--provider", "local", "--model", "llama3",
+                               "--key-stdin", stdin="\n")
+        assert no_base_url.returncode != 0
+        assert "Traceback" not in no_base_url.stderr
+
+        no_model = _run_cli("set-server-key", "--provider", "local",
+                            "--base-url", "http://localhost:11434/v1",
+                            "--key-stdin", stdin="\n")
+        assert no_model.returncode != 0
+        assert _server_credential_rows() == []
+
+        ok = _run_cli("set-server-key", "--provider", "local", "--model", "llama3",
+                      "--base-url", "http://localhost:11434/v1", "--key-stdin", stdin="\n")
+        assert ok.returncode == 0, ok.stderr
+        assert len(_server_credential_rows()) == 1
+    finally:
+        _clear_server_credentials()
+
+
+def test_set_server_key_does_not_accept_the_key_as_a_command_line_argument():
+    """金鑰不可以從 argv 進來 —— argv 會留在 shell history，也會被同一台
+    機器上的其他使用者從 ps 看到。只能走 getpass 提示或 --key-stdin。"""
+    _clear_server_credentials()
+    try:
+        for flag in ("--key", "--api-key", "--secret"):
+            result = _run_cli("set-server-key", "--provider", "grok", flag, "sk-leaked-0000")
+            assert result.returncode != 0, f"{flag} 竟然被接受了"
+            assert "Traceback" not in result.stderr
+        assert _server_credential_rows() == []
+    finally:
+        _clear_server_credentials()
+
+
+def test_show_server_key_prints_masked_status_only():
+    _clear_server_credentials()
+    try:
+        _run_cli("set-server-key", "--provider", "openai", "--model", "gpt-x",
+                 "--base-url", "https://api.openai.com/v1", "--key-stdin",
+                 stdin=SERVER_KEY_PLAINTEXT + "\n")
+
+        result = _run_cli("show-server-key")
+        assert result.returncode == 0, result.stderr
+        assert SERVER_KEY_PLAINTEXT not in result.stdout
+        assert SERVER_KEY_PLAINTEXT[:-4] not in result.stdout
+        assert SERVER_KEY_PLAINTEXT[-4:] in result.stdout   # 只露最後 4 碼
+        assert "openai" in result.stdout
+        assert "gpt-x" in result.stdout
+
+        row = _server_credential_row()
+        assert row.api_key_enc not in result.stdout          # 連密文都不印
+    finally:
+        _clear_server_credentials()
+
+
+def test_show_server_key_without_any_server_key_exits_cleanly():
+    _clear_server_credentials()
+    result = _run_cli("show-server-key")
+    assert result.returncode == 0, result.stderr
+    assert "Traceback" not in result.stderr
+    assert result.stdout.strip() != ""
