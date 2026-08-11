@@ -236,6 +236,8 @@ function initUserSelection() {
     const closeCreateUserBtn = document.getElementById('close-create-user-btn');
     const submitNewUserBtn = document.getElementById('submit-new-user');
     const newUsernameInput = document.getElementById('new-username');
+    const inviteCodeGroup = document.getElementById('invite-code-group');
+    const inviteCodeInput = document.getElementById('invite-code');
     const newPasswordInput = document.getElementById('new-password');
     const confirmPasswordInput = document.getElementById('confirm-password');
     const userListContainer = document.getElementById('user-list');
@@ -282,6 +284,21 @@ function initUserSelection() {
         return { valid: true };
     }
 
+    // 查詢後端是否要求邀請碼才顯示該欄位（v2.3 task 1.4）。查不到（後端未啟動
+    // 等情況）就維持欄位原本隱藏的狀態——這是 Electron 本機首次啟動流程的
+    // 保護線，寧可欄位沒顯示，也不要讓一個失敗的 fetch 擋住整個建立帳號流程。
+    async function refreshInviteRequirement() {
+        if (!inviteCodeGroup) return;
+        try {
+            const baseUrl = CONFIG.getApiBaseUrl();
+            const res = await fetch(`${baseUrl}/system/capabilities`);
+            const caps = await res.json();
+            inviteCodeGroup.style.display = caps.require_invite ? 'block' : 'none';
+        } catch (error) {
+            // 後端未啟動等情況：保留欄位目前的（隱藏）狀態
+        }
+    }
+
     // 顯示用戶選擇對話框
     if (userSelectBtn) {
         userSelectBtn.addEventListener('click', function() {
@@ -313,9 +330,11 @@ function initUserSelection() {
             if (createUserDialog) createUserDialog.style.display = 'block';
             // 清空輸入框
             if (newUsernameInput) newUsernameInput.value = '';
+            if (inviteCodeInput) inviteCodeInput.value = '';
             if (newPasswordInput) newPasswordInput.value = '';
             if (confirmPasswordInput) confirmPasswordInput.value = '';
             if (createPasswordError) createPasswordError.style.display = 'none';
+            refreshInviteRequirement();
             if (newUsernameInput) newUsernameInput.focus();
         });
     }
@@ -395,12 +414,20 @@ function initUserSelection() {
     if (submitNewUserBtn) {
         submitNewUserBtn.addEventListener('click', function() {
             const username = newUsernameInput ? newUsernameInput.value.trim() : '';
+            const inviteCode = inviteCodeInput ? inviteCodeInput.value.trim() : '';
             const password = newPasswordInput ? newPasswordInput.value : '';
             const confirmPassword = confirmPasswordInput ? confirmPasswordInput.value : '';
-            
+
             // 檢查用戶名
             if (!username) {
                 showCreatePasswordError(I18N.t('login.enterUsername'));
+                return;
+            }
+
+            // 欄位目前顯示中才要求填寫（後端 /system/capabilities 才是真正的門檻
+            // 來源，這裡只是即時提示，省一趟往返）
+            if (inviteCodeGroup && inviteCodeGroup.style.display !== 'none' && !inviteCode) {
+                showCreatePasswordError(I18N.t('create.inviteRequired'));
                 return;
             }
 
@@ -416,8 +443,8 @@ function initUserSelection() {
                 showCreatePasswordError(I18N.t('create.mismatch'));
                 return;
             }
-            
-            createNewUser(username, password);
+
+            createNewUser(username, password, inviteCode);
         });
     }
     
@@ -430,6 +457,9 @@ function initUserSelection() {
     
     if (newUsernameInput) {
         newUsernameInput.addEventListener('keypress', handleEnterKeyInCreateForm);
+    }
+    if (inviteCodeInput) {
+        inviteCodeInput.addEventListener('keypress', handleEnterKeyInCreateForm);
     }
     if (newPasswordInput) {
         newPasswordInput.addEventListener('keypress', handleEnterKeyInCreateForm);
@@ -565,17 +595,21 @@ function initUserSelection() {
     }
 
     // 創建新用戶：密碼隨請求送後端做強度檢查與 bcrypt 雜湊，本機不留任何密碼
-    function createNewUser(username, password) {
+    function createNewUser(username, password, inviteCode) {
         console.log(`創建新用戶: ${username}`);
 
         const baseUrl = CONFIG.getApiBaseUrl();
+        const payload = { username: username, password: password };
+        if (inviteCode) {
+            payload.invite_code = inviteCode;
+        }
 
         fetch(`${baseUrl}/users/create`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
             },
-            body: JSON.stringify({ username: username, password: password })
+            body: JSON.stringify(payload)
         })
         .then(async response => {
             const data = await response.json().catch(() => ({}));

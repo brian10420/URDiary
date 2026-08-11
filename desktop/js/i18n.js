@@ -50,6 +50,9 @@ const I18N = (function() {
             'login.failed': '登入失敗，請重試',
 
             'create.title': '創建新用戶',
+            'create.inviteCode': '邀請碼:',
+            'create.inviteCodePlaceholder': '請輸入邀請碼',
+            'create.inviteRequired': '請輸入邀請碼',
             'create.passwordPlaceholder': '至少8字元，含大小寫字母、數字與特殊符號',
             'create.confirmPassword': '確認密碼:',
             'create.confirmPlaceholder': '請再次輸入密碼',
@@ -273,6 +276,9 @@ const I18N = (function() {
             'login.failed': 'Sign-in failed, please try again',
 
             'create.title': 'Create New User',
+            'create.inviteCode': 'Invite code:',
+            'create.inviteCodePlaceholder': 'Enter invite code',
+            'create.inviteRequired': 'Please enter the invite code',
             'create.passwordPlaceholder': 'At least 8 characters, with upper & lower case, a number and a symbol',
             'create.confirmPassword': 'Confirm password:',
             'create.confirmPlaceholder': 'Re-enter password',
