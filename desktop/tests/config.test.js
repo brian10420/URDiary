@@ -51,6 +51,11 @@ describe('config', () => {
     });
 
     it('getApiBaseUrl()：預設值與 localStorage 覆蓋後的值', () => {
+        // 模擬 file: 協議（Electron 環境）以測試預設值
+        const originalLocation = window.location;
+        delete window.location;
+        window.location = { protocol: 'file:', origin: 'file://' };
+
         reloadConfig();
         expect(CONFIG.getApiBaseUrl()).toBe('http://localhost:8001');
 
@@ -59,5 +64,105 @@ describe('config', () => {
         }));
         reloadConfig();
         expect(CONFIG.getApiBaseUrl()).toBe('http://example.com:1234');
+
+        // 恢復原始 window.location
+        window.location = originalLocation;
+    });
+
+    it('BASE_URL_OVERRIDE 預設值為 undefined（允許 localStorage 合併）', () => {
+        reloadConfig();
+        expect(CONFIG.API.BASE_URL_OVERRIDE).toBeUndefined();
+    });
+
+    it('getApiBaseUrl()：http: 協議 → 返回 window.location.origin', () => {
+        // 模擬 http: 協議的 window.location
+        const originalLocation = window.location;
+        delete window.location;
+        window.location = { protocol: 'http:', origin: 'http://example.com:3000' };
+
+        reloadConfig();
+        expect(CONFIG.getApiBaseUrl()).toBe('http://example.com:3000');
+
+        // 恢復原始 window.location
+        window.location = originalLocation;
+    });
+
+    it('getApiBaseUrl()：https: 協議 → 返回 window.location.origin', () => {
+        // 模擬 https: 協議的 window.location
+        const originalLocation = window.location;
+        delete window.location;
+        window.location = { protocol: 'https:', origin: 'https://secure.example.com' };
+
+        reloadConfig();
+        expect(CONFIG.getApiBaseUrl()).toBe('https://secure.example.com');
+
+        // 恢復原始 window.location
+        window.location = originalLocation;
+    });
+
+    it('getApiBaseUrl()：file: 協議（Electron）→ 使用 config.API.BASE_URL 或預設值', () => {
+        // 模擬 file: 協議的 window.location（Electron 環境）
+        const originalLocation = window.location;
+        delete window.location;
+        window.location = { protocol: 'file:', origin: 'file://' };
+
+        reloadConfig();
+        // 應使用預設的 http://localhost:8001
+        expect(CONFIG.getApiBaseUrl()).toBe('http://localhost:8001');
+
+        // 恢復原始 window.location
+        window.location = originalLocation;
+    });
+
+    it('getApiBaseUrl()：file: 協議 + localStorage BASE_URL → 使用 localStorage 值', () => {
+        localStorage.setItem('urDiary_config_v3', JSON.stringify({
+            API: { BASE_URL: 'http://192.168.1.100:8001' }
+        }));
+
+        // 模擬 file: 協議的 window.location（Electron 環境）
+        const originalLocation = window.location;
+        delete window.location;
+        window.location = { protocol: 'file:', origin: 'file://' };
+
+        reloadConfig();
+        expect(CONFIG.getApiBaseUrl()).toBe('http://192.168.1.100:8001');
+
+        // 恢復原始 window.location
+        window.location = originalLocation;
+    });
+
+    it('getApiBaseUrl()：BASE_URL_OVERRIDE 勝過 http: 協議的 origin', () => {
+        localStorage.setItem('urDiary_config_v3', JSON.stringify({
+            API: { BASE_URL_OVERRIDE: 'http://custom-override.com:5000' }
+        }));
+
+        // 模擬 http: 協議的 window.location
+        const originalLocation = window.location;
+        delete window.location;
+        window.location = { protocol: 'http:', origin: 'http://example.com:3000' };
+
+        reloadConfig();
+        // 應優先使用 BASE_URL_OVERRIDE
+        expect(CONFIG.getApiBaseUrl()).toBe('http://custom-override.com:5000');
+
+        // 恢復原始 window.location
+        window.location = originalLocation;
+    });
+
+    it('getApiBaseUrl()：BASE_URL_OVERRIDE 勝過 file: 協議的預設值', () => {
+        localStorage.setItem('urDiary_config_v3', JSON.stringify({
+            API: { BASE_URL_OVERRIDE: 'http://override.local:8001' }
+        }));
+
+        // 模擬 file: 協議的 window.location（Electron 環境）
+        const originalLocation = window.location;
+        delete window.location;
+        window.location = { protocol: 'file:', origin: 'file://' };
+
+        reloadConfig();
+        expect(CONFIG.getApiBaseUrl()).toBe('http://override.local:8001');
+
+        // 恢復原始 window.location
+        window.location = originalLocation;
     });
 });

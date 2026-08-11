@@ -8,6 +8,7 @@ const CONFIG = (function() {
         // API配置
         API: {
             BASE_URL: 'http://localhost:8001',
+            BASE_URL_OVERRIDE: undefined,  // 用戶可設置以覆蓋自動導出的origin（需透過 updateConfig 更新 localStorage）
             TIMEOUT: 30000,  // 默認超時時間（毫秒）
             AUTO_RETRY: true, // 自動重試失敗的請求
             MAX_RETRIES: 2  // 最大重試次數
@@ -116,10 +117,16 @@ const CONFIG = (function() {
         return config;
     }
 
-    // 取得 API 基礎 URL（config.API.BASE_URL 讀不到時的唯一後備值來源；
-    // 呼叫端一律用這個函式取代各自重複的字面量後備寫法）
+    // 取得 API 基礎 URL（根據執行環境自動導出 origin，或使用明確的覆蓋設置）
+    // 優先順序：
+    // 1. 若有明確覆蓋設置（BASE_URL_OVERRIDE），使用它
+    // 2. 若運行在 HTTP(S) 上（瀏覽器 / 後端serving），使用該 origin
+    // 3. 若運行在 file:// 上（Electron），使用 config.API.BASE_URL 或預設值
     function getApiBaseUrl() {
-        return (config.API && config.API.BASE_URL) ? config.API.BASE_URL : 'http://localhost:8001';
+        if (config.API && config.API.BASE_URL_OVERRIDE) return config.API.BASE_URL_OVERRIDE;   // explicit user setting wins
+        const proto = (typeof window !== 'undefined' && window.location) ? window.location.protocol : '';
+        if (proto === 'http:' || proto === 'https:') return window.location.origin;            // served over HTTP(S) => same-origin
+        return (config.API && config.API.BASE_URL) ? config.API.BASE_URL : 'http://localhost:8001';  // file:// (Electron)
     }
 
     // 導出配置API
