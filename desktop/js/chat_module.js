@@ -166,7 +166,7 @@ const ChatModule = (function() {
             // 檢查CONFIG是否存在
             if (typeof CONFIG === 'undefined') {
                 console.warn('CONFIG未定義，使用默認設置');
-                userAvatar = 'assets/default-avatar.png';
+                userAvatar = 'assets/default-avatar.jpg';
                 return;
             }
             
@@ -179,7 +179,7 @@ const ChatModule = (function() {
                 console.log('從存儲中讀取用戶頭像');
             } else {
                 // 默認頭像路徑
-                userAvatar = CONFIG.USER?.DEFAULT_AVATAR || 'assets/default-avatar.png';
+                userAvatar = CONFIG.USER?.DEFAULT_AVATAR || 'assets/default-avatar.jpg';
                 console.log('使用默認用戶頭像');
                 
                 // 保存到localStorage
@@ -191,7 +191,7 @@ const ChatModule = (function() {
             }
         } catch (error) {
             console.error('載入用戶頭像時出錯:', error);
-            userAvatar = 'assets/default-avatar.png';
+            userAvatar = 'assets/default-avatar.jpg';
         }
         
         // 創建一個Image對象測試圖像是否能加載
@@ -201,7 +201,7 @@ const ChatModule = (function() {
         };
         img.onerror = function() {
             console.warn('用戶頭像加載失敗，使用默認頭像');
-            userAvatar = 'assets/default-avatar.png';
+            userAvatar = 'assets/default-avatar.jpg';
             localStorage.setItem(CONFIG.STORAGE.USER_AVATAR, userAvatar);
         };
         img.src = userAvatar;

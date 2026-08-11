@@ -1,0 +1,46 @@
+/*
+ * Self-hosted Noto Sans TC subset (v2.3 task 2.2 — replaces the Google Fonts
+ * CDN link that used to sit in index.html:7).
+ *
+ * Source: the "Noto Sans CJK TC" face extracted from Google's Noto Sans CJK
+ * TrueType Collection (SIL Open Font License 1.1 — see LICENSE.txt in this
+ * directory), subset with fonttools/pyftsubset down to the characters that
+ * actually appear in this app's UI (index.html + js/*.js, both locales) plus
+ * the full ASCII printable range. Diary/chat content the user types is
+ * free-form and can contain any character; anything outside this subset
+ * simply falls through to the next font in --font-family's stack (standard
+ * per-character CSS font fallback), so this stays safe while keeping the
+ * shipped weight small.
+ *
+ * Weights: only 400/500/700 are vendored because that's what css/*.css
+ * actually requests (grep font-weight) — the Google Fonts URL this replaces
+ * asked for 300 too, but nothing in the app uses it, so it's dropped.
+ * font-weight: 600 requests (nav/calendar labels) don't get their own file:
+ * per the CSS Fonts Level 4 matching algorithm, a desired weight > 500
+ * resolves to the nearest registered weight *above* it first, i.e. 700 —
+ * a normal, spec-defined fallback, not a bug.
+ */
+
+@font-face {
+    font-family: 'Noto Sans TC';
+    font-style: normal;
+    font-weight: 400;
+    font-display: swap;
+    src: url('noto-sans-tc-400.woff2') format('woff2');
+}
+
+@font-face {
+    font-family: 'Noto Sans TC';
+    font-style: normal;
+    font-weight: 500;
+    font-display: swap;
+    src: url('noto-sans-tc-500.woff2') format('woff2');
+}
+
+@font-face {
+    font-family: 'Noto Sans TC';
+    font-style: normal;
+    font-weight: 700;
+    font-display: swap;
+    src: url('noto-sans-tc-700.woff2') format('woff2');
+}

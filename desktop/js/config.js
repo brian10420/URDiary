@@ -37,7 +37,7 @@ const CONFIG = (function() {
         },
         // 默認用戶配置
         USER: {
-            DEFAULT_AVATAR: 'assets/default-avatar.png'
+            DEFAULT_AVATAR: 'assets/default-avatar.jpg'
         },
         // 應用程序設置
         APP: {

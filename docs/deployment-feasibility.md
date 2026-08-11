@@ -169,7 +169,7 @@ Electron 打包本身是成熟工具鏈（現有的 `electron-packager` 相依�
 
 - 現況：`electron-packager ^17.1.2` 在 `devDependencies` 裡，但 `scripts` 只有 `start` / `start:win` / `test`，**沒有任何地方引用它**（`desktop/package.json:6-10, 17`）。等於裝了沒用。
 - 建議改用 `electron-builder`：一份設定同時產出 Linux（AppImage/deb）、Windows（NSIS 安裝檔）、macOS（dmg），自動更新的生態也比較完整。
-- 圖示：目前 `desktop/assets/` 只有 `icon.jpg` 和 `default-avatar.png`（而且是同一個檔的兩份副本，各 79KB）。正式打包需要 macOS 的 `.icns` 與 Windows 的 `.ico` 多尺寸版本，這是美工工作不是工程工作。
+- 圖示：目前 `desktop/assets/` 只有 `icon.jpg` 和 `default-avatar.jpg`（而且是同一個檔的兩份副本，各 79KB）。正式打包需要 macOS 的 `.icns` 與 Windows 的 `.ico` 多尺寸版本，這是美工工作不是工程工作。
 
 ### 後端隨附策略（真正的難題）
 
@@ -318,7 +318,7 @@ Electron 打包本身是成熟工具鏈（現有的 `electron-packager` 相依�
 | `desktop/main.js:175, 248, 260, 269` | 全部 4 個 IPC handler |
 | `desktop/main.js:220-245` | `safeStorage` 加密的 `provider-keys.enc` |
 | `desktop/package.json:6-10, 17` | scripts 未引用 `electron-packager` |
-| `desktop/assets/` | 只有 `icon.jpg` 與 `default-avatar.png` |
+| `desktop/assets/` | 只有 `icon.jpg` 與 `default-avatar.jpg` |
 | 全 repo grep | 找不到 PWA manifest 或 service worker；renderer 的 Node API 呼叫全部有防護判斷 |
 
 ### 專案定位
