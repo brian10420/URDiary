@@ -90,6 +90,42 @@ describe('ApiService.refreshToken 的 single-flight', () => {
         expect(JSON.parse(fetchMock.mock.calls[1][1].body).refresh_token).toBe('refresh-token-2');
     });
 
+    it('401 時儲存的仍是送出去那一張 → 照常清掉（需要重新登入）', async () => {
+        await SecureStore.setAuthRefreshToken('refresh-token-A');
+        localStorage.setItem('auth_token', 'access-token-A');
+        localStorage.setItem('token_expiry', new Date(Date.now() + 60000).toISOString());
+
+        window.fetch = vi.fn(async () => ({ ok: false, status: 401 }));
+
+        expect(await ApiService.refreshToken()).toBe(false);
+
+        expect(SecureStore.getAuthRefreshToken()).toBe('');
+        expect(localStorage.getItem('auth_token')).toBeNull();
+        expect(localStorage.getItem('token_expiry')).toBeNull();
+    });
+
+    it('401 時儲存的已被別的分頁換成新令牌 → 保留贏家的令牌，不清', async () => {
+        // single-flight 只擋得住同一個 JS 環境；兩個分頁各有自己的旗標卻
+        // 共用同一份儲存。輸的那個若照清不誤，會把贏家剛存好的工作階段
+        // 一起弄丟，兩邊一起被踢回登入畫面。
+        await SecureStore.setAuthRefreshToken('refresh-token-A');
+
+        // 模擬「另一個分頁在我們的請求還在路上時贏得輪替」：換上新的一對令牌
+        window.fetch = vi.fn(async () => {
+            await SecureStore.setAuthRefreshToken('refresh-token-B');
+            localStorage.setItem('auth_token', 'access-token-B');
+            localStorage.setItem('token_expiry', new Date(Date.now() + 60000).toISOString());
+            return { ok: false, status: 401 };
+        });
+
+        expect(await ApiService.refreshToken()).toBe(false);
+
+        // 贏家的刷新令牌與訪問令牌都必須原封不動
+        expect(SecureStore.getAuthRefreshToken()).toBe('refresh-token-B');
+        expect(localStorage.getItem('auth_token')).toBe('access-token-B');
+        expect(localStorage.getItem('token_expiry')).not.toBeNull();
+    });
+
     it('刷新失敗時旗標也要清掉，不會卡住後續刷新', async () => {
         const failing = vi.fn(async () => { throw new Error('network down'); });
         window.fetch = failing;

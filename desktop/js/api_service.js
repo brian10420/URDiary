@@ -184,11 +184,21 @@ const ApiService = (function() {
             if (!response.ok) {
                 console.warn(`刷新令牌失敗: ${response.status}`);
 
-                // 401 = 令牌已失效／已被撤銷。務必連刷新令牌一起清掉，
-                // 再送一次會被後端判定為重用而撤光所有裝置。
+                // 401 = 我們送出去的那張令牌已失效／已被撤銷。務必連刷新令牌
+                // 一起清掉，再送一次會被後端判定為重用而撤光所有裝置。
+                //
+                // 但只有在「儲存的仍是我們送出去的那一張」時才清。single-flight
+                // 只擋得住同一個 JS 環境裡的併發；另一個分頁／視窗有自己的旗標
+                // 卻共用同一份儲存，它可能在我們這個請求還在路上時就贏得輪替並
+                // 存進新令牌 —— 這時清掉等於把贏家的工作階段一起弄丟，兩邊都被
+                // 踢回登入畫面。輸的一方安靜退場就好，令牌歸贏家。
                 if (response.status === 401) {
-                    console.warn('刷新令牌已失效，需要重新登入');
-                    clearAuthToken();
+                    if (getRefreshToken() === storedRefreshToken) {
+                        console.warn('刷新令牌已失效，需要重新登入');
+                        clearAuthToken();
+                    } else {
+                        console.warn('刷新令牌已被其他分頁換新，保留較新的令牌');
+                    }
                 }
 
                 return false;
