@@ -288,9 +288,16 @@ const ApiService = (function() {
 
             // 需要 LLM 的端點：附上請求範圍的供應商設定 (X-LLM-* 標頭)。
             // 金鑰從 SecureStore 記憶體快取取得（safeStorage 解密），不經 localStorage。
-            // 未存金鑰且非本地供應商時不附標頭 → 後端走 .env Grok 後備（或回明確錯誤）。
+            // 未存金鑰且非本地供應商時不附標頭 → 後端依序走「使用者存在伺服器的
+            // 憑證 → 伺服器預設 → .env Grok 後備」（見 api/deps.get_llm_config）。
+            //
+            // 沒有安全儲存的環境（手機瀏覽器 / PWA）整段跳過：那裡的金鑰本來就
+            // 存在伺服器上，硬送標頭只會讓後端改用「這台手機的 localStorage 偏好」
+            // ——例如 local 供應商的 http://localhost:11434 在手機上指的是手機自己，
+            // 不是跑後端的那台機器，送出去只會壞掉。
             const LLM_ENDPOINT_PATTERNS = ['/chat/', '/generate', '/interaction-notes/update', '/analytics/emotion/'];
-            if (LLM_ENDPOINT_PATTERNS.some(p => endpoint.includes(p))) {
+            const hasSecureStore = (typeof SecureStore !== 'undefined') && SecureStore.isAvailable();
+            if (hasSecureStore && LLM_ENDPOINT_PATTERNS.some(p => endpoint.includes(p))) {
                 try {
                     if (typeof SecureStore !== 'undefined' && SecureStore.ready) {
                         await SecureStore.ready; // 首次載入後為已解決的 promise
@@ -1114,6 +1121,32 @@ const ApiService = (function() {
         return await fetchAPI(`/users/sessions/${encodeURIComponent(sessionId)}`, { method: 'DELETE' });
     }
 
+    // ---- 存在伺服器上的 LLM 金鑰（手機瀏覽器路徑；v2.3 task 1.6）----
+    // 桌面版走 SecureStore + X-LLM-* 標頭，不會用到這三個。
+    // 回應永遠只有遮罩後的最後 4 碼，拿不回明文金鑰。
+
+    /**
+     * 目前生效的 LLM 設定與來源（user / server / env / null）
+     */
+    async function getLlmCredential() {
+        return await fetchAPI('/users/me/llm');
+    }
+
+    /**
+     * 儲存自己的 LLM 金鑰（加密存在伺服器上，取代既有那組）
+     * @param {Object} payload - { provider, api_key, base_url?, model? }
+     */
+    async function saveLlmCredential(payload) {
+        return await fetchAPI('/users/me/llm', { method: 'PUT', body: payload });
+    }
+
+    /**
+     * 刪除自己存在伺服器上的 LLM 金鑰（之後回退到伺服器預設）
+     */
+    async function deleteLlmCredential() {
+        return await fetchAPI('/users/me/llm', { method: 'DELETE' });
+    }
+
     // 導出API
     return {
         init,
@@ -1136,6 +1169,9 @@ const ApiService = (function() {
         refreshToken: refreshToken,
         getSessions: getSessions,
         revokeSession: revokeSession,
+        getLlmCredential: getLlmCredential,
+        saveLlmCredential: saveLlmCredential,
+        deleteLlmCredential: deleteLlmCredential,
         // 「還握有可用的憑證」：訪問令牌未過期，或還有刷新令牌可以換一張。
         // 不能再用 60 分鐘當門檻 —— 訪問令牌只有 30 分鐘，那樣永遠是 false。
         isAuthenticated: () => (!!accessToken && !isTokenExpiringSoon(0)) || !!getRefreshToken(),

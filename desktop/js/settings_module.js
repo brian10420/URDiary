@@ -1,9 +1,14 @@
 /**
  * LLM 設定模塊 - 供應商切換、模型自訂、API Key 管理
  *
- * 非機密偏好（目前供應商、各家自訂模型、本地 Base URL）存 localStorage；
- * API Key 一律經 SecureStore 走 Electron safeStorage 加密存本機，
- * 呼叫時由 fetchAPI 以 X-LLM-* 標頭送往本機後端，不寫伺服器。
+ * 非機密偏好（目前供應商、各家自訂模型、本地 Base URL）存 localStorage。
+ * API Key 依環境走兩條路（v2.3 task 1.6），由 SecureStore.isAvailable() 分流：
+ *
+ * - **Electron 桌面版**：經 SecureStore 走 safeStorage 加密存本機，呼叫時由
+ *   fetchAPI 以 X-LLM-* 標頭送往後端，不寫伺服器。行為與改版前完全相同。
+ * - **手機瀏覽器 / PWA**：沒有 safeStorage 可用（SecureStore.setKey 會拋錯），
+ *   改用 GET/PUT/DELETE /users/me/llm 把金鑰加密存在後端。金鑰只會往上送、
+ *   永遠拿不回明文（狀態只有遮罩後的最後 4 碼），也**絕不寫進 localStorage**。
  */
 const SettingsModule = (function() {
     const ACTIVE_PROVIDER_KEY = 'urDiary_active_provider';
@@ -16,7 +21,20 @@ const SettingsModule = (function() {
         modelInput, apiKeyInput, keyStatus, clearKeyBtn,
         baseUrlRow, baseUrlInput, saveBtn, settingsError,
         semanticCheckbox, semanticStatus, languageSelect,
-        sessionsList, logoutBtn;
+        sessionsList, logoutBtn, keyNote;
+
+    // 伺服器端金鑰狀態（僅瀏覽器模式使用）：
+    // null = 還沒查 / 查失敗，物件 = GET /users/me/llm 的回應（只含遮罩）
+    let serverLlmStatus = null;
+    let serverLlmStatusFailed = false;
+
+    /**
+     * 這台裝置能不能用本機安全儲存放金鑰。
+     * false（手機瀏覽器）時整個金鑰區塊改走伺服器端儲存。
+     */
+    function usesLocalKeyStore() {
+        return (typeof SecureStore !== 'undefined') && SecureStore.isAvailable();
+    }
 
     function getProviders() {
         return (typeof CONFIG !== 'undefined' && CONFIG.PROVIDERS) ? CONFIG.PROVIDERS : {};
@@ -131,6 +149,84 @@ const SettingsModule = (function() {
         }
     }
 
+    // ---- 伺服器端金鑰狀態（僅瀏覽器模式）----
+
+    function hasOwnServerKey() {
+        return !!(serverLlmStatus && serverLlmStatus.user_credential);
+    }
+
+    /**
+     * 金鑰欄位下方那行狀態文字（瀏覽器模式）。
+     *
+     * 「有沒有自己的金鑰」與「現在實際在用哪一組」是兩件事：沒有自己的金鑰
+     * 但伺服器有預設金鑰時，使用者其實已經可以正常聊天了——如實說明是誰的
+     * 金鑰在生效，才不會讓人以為東西壞掉而反覆重填。
+     */
+    function serverKeyStatusText(def) {
+        if (serverLlmStatusFailed) {
+            return I18N.t('settings.keyStatusFailed');
+        }
+        if (hasOwnServerKey()) {
+            return I18N.t('settings.keyStoredServer', {
+                provider: serverLlmStatus.user_credential.provider,
+                masked: serverLlmStatus.user_credential.key_masked || ''
+            });
+        }
+        if (serverLlmStatus && (serverLlmStatus.source === 'server' || serverLlmStatus.source === 'env')) {
+            return I18N.t('settings.keyServerDefault', { provider: serverLlmStatus.provider || '' });
+        }
+        return def && def.NEEDS_BASE_URL ? I18N.t('settings.keyLocalHint') : I18N.t('settings.keyNone');
+    }
+
+    /** 查詢伺服器上的金鑰狀態（只會拿到遮罩，永遠拿不到明文） */
+    async function refreshServerLlmStatus() {
+        serverLlmStatus = null;
+        serverLlmStatusFailed = false;
+        try {
+            serverLlmStatus = await ApiService.getLlmCredential();
+            // 面板顯示的供應商/模型以伺服器上那組為準——瀏覽器不送 X-LLM-*
+            // 標頭，localStorage 裡的偏好在這個環境不會影響任何請求，拿它
+            // 當顯示值只會誤導。
+            const credential = serverLlmStatus && serverLlmStatus.user_credential;
+            if (credential && providerSelect && getProviders()[credential.provider]) {
+                providerSelect.value = credential.provider;
+                if (credential.model) {
+                    saveModelOverride(credential.provider, credential.model);
+                }
+                if (credential.base_url) {
+                    localStorage.setItem(LOCAL_BASE_URL_KEY, credential.base_url);
+                }
+            }
+        } catch (error) {
+            console.warn('查詢伺服器金鑰狀態失敗:', error);
+            serverLlmStatusFailed = true;
+        }
+        renderFields();
+    }
+
+    /** 瀏覽器模式的儲存路徑：把金鑰（與同一組設定）送到伺服器加密保存 */
+    async function saveServerLlmCredential(provider, def, apiKey, model, baseUrl) {
+        const payload = { provider: provider, api_key: apiKey };
+        if (model) payload.model = model;
+        if (def.NEEDS_BASE_URL && baseUrl) payload.base_url = baseUrl;
+
+        serverLlmStatus = await ApiService.saveLlmCredential(payload);
+        serverLlmStatusFailed = false;
+    }
+
+    /**
+     * 沒填金鑰、但把 AI 設定改掉了 —— 伺服器上存的是「一整組」設定，
+     * 而金鑰拿不回來，所以無法只換其中一個欄位。與其安靜地不生效，
+     * 不如直接說「請重新輸入金鑰」。
+     */
+    function serverLlmSettingsChangedWithoutKey(provider, model, baseUrl) {
+        const credential = serverLlmStatus && serverLlmStatus.user_credential;
+        if (!credential) return false;
+        return provider !== credential.provider ||
+            model !== (credential.model || '') ||
+            baseUrl !== (credential.base_url || '');
+    }
+
     // 依當前下拉選的供應商刷新表單各欄位
     function renderFields() {
         const providers = getProviders();
@@ -153,13 +249,20 @@ const SettingsModule = (function() {
 
         if (apiKeyInput) {
             apiKeyInput.value = '';
-            const hasKey = (typeof SecureStore !== 'undefined') && SecureStore.hasKey(provider);
+            const hasKey = usesLocalKeyStore() ? SecureStore.hasKey(provider) : hasOwnServerKey();
             apiKeyInput.placeholder = hasKey ? I18N.t('settings.apiKeyStoredPlaceholder') : I18N.t('settings.apiKeyPlaceholder');
             if (keyStatus) {
-                keyStatus.textContent = hasKey ? I18N.t('settings.keyStored') :
-                    (def.NEEDS_BASE_URL ? I18N.t('settings.keyLocalHint') : I18N.t('settings.keyNone'));
+                keyStatus.textContent = usesLocalKeyStore() ?
+                    (hasKey ? I18N.t('settings.keyStored') :
+                        (def.NEEDS_BASE_URL ? I18N.t('settings.keyLocalHint') : I18N.t('settings.keyNone'))) :
+                    serverKeyStatusText(def);
                 keyStatus.style.color = hasKey ? 'green' : '';
             }
+        }
+
+        // 瀏覽器模式：金鑰存在伺服器，說明文字要換成對應的那句（不是系統金鑰鏈）
+        if (keyNote && !usesLocalKeyStore()) {
+            keyNote.textContent = I18N.t('settings.keyNoteServer');
         }
 
         if (baseUrlRow) {
@@ -278,6 +381,10 @@ const SettingsModule = (function() {
         refreshSemanticStatus();
         refreshSessions();
         renderFields();
+        // 瀏覽器模式：金鑰在伺服器上，開啟面板時才去查（會再 renderFields 一次）
+        if (!usesLocalKeyStore()) {
+            refreshServerLlmStatus();
+        }
         settingsDialog.style.display = 'block';
         settingsDialog.style.zIndex = '1000';
     }
@@ -305,12 +412,24 @@ const SettingsModule = (function() {
             return;
         }
 
+        // 瀏覽器模式：伺服器上存的是一整組設定，而金鑰拿不回來，
+        // 所以改了供應商/模型/端點就必須連金鑰一起重新送一次
+        if (!usesLocalKeyStore() && !apiKey &&
+                serverLlmSettingsChangedWithoutKey(provider, model, baseUrl)) {
+            showError(I18N.t('settings.serverKeyReenter'));
+            return;
+        }
+
         try {
             saveBtn.disabled = true;
 
             // 金鑰：有輸入才更新（留空 = 沿用既有）；寫入失敗如實顯示
             if (apiKey) {
-                await SecureStore.setKey(provider, apiKey);
+                if (usesLocalKeyStore()) {
+                    await SecureStore.setKey(provider, apiKey);
+                } else {
+                    await saveServerLlmCredential(provider, def, apiKey, model, baseUrl);
+                }
                 if (apiKeyInput) apiKeyInput.value = '';
             }
 
@@ -352,9 +471,16 @@ const SettingsModule = (function() {
     async function clearKey() {
         const provider = providerSelect ? providerSelect.value : 'grok';
         try {
-            await SecureStore.deleteKey(provider);
+            if (usesLocalKeyStore()) {
+                await SecureStore.deleteKey(provider);
+                renderFields();
+            } else {
+                // 只刪自己那組；刪完之後可能回退到伺服器預設，狀態要重查
+                serverLlmStatus = await ApiService.deleteLlmCredential();
+                serverLlmStatusFailed = false;
+                renderFields();
+            }
             toast(I18N.t('settings.keyDeleted', { provider: provider }));
-            renderFields();
         } catch (error) {
             console.error('刪除金鑰失敗:', error);
             showError(error.message || I18N.t('settings.clearKeyFailed'));
@@ -372,6 +498,7 @@ const SettingsModule = (function() {
         apiKeyInput = document.getElementById('settings-api-key');
         keyStatus = document.getElementById('settings-key-status');
         clearKeyBtn = document.getElementById('settings-clear-key');
+        keyNote = document.getElementById('settings-key-note');
         baseUrlRow = document.getElementById('settings-base-url-row');
         baseUrlInput = document.getElementById('settings-base-url');
         saveBtn = document.getElementById('settings-save');

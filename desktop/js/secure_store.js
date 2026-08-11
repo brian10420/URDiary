@@ -75,6 +75,18 @@ const SecureStore = (function() {
         return loaded;
     }
 
+    /**
+     * 這個環境有沒有 Electron 的安全儲存可用。
+     *
+     * 手機瀏覽器／PWA 沒有（setKey 會直接拋錯），所以那裡的 LLM 金鑰改走
+     * 「加密存在伺服器」那條路（設定面板的 PUT/DELETE /users/me/llm，
+     * 見 settings_module.js）。呼叫端一律用這個判斷，不要各自去猜
+     * window.require 在不在——那個特徵檢查只該存在於這個檔案裡。
+     */
+    function isAvailable() {
+        return !!ipcRenderer;
+    }
+
     // ---- 認證刷新令牌 ----
     // 與供應商金鑰共用同一個加密檔，但用「保留鍵」區隔：CONFIG.PROVIDERS
     // 的 id 都是小寫單字（grok/claude/…），不可能撞到雙底線開頭的名字，
@@ -114,7 +126,7 @@ const SecureStore = (function() {
     const ready = load();
 
     return {
-        load, ready, setKey, deleteKey, getKey, hasKey, isLoaded,
+        load, ready, setKey, deleteKey, getKey, hasKey, isLoaded, isAvailable,
         setAuthRefreshToken, getAuthRefreshToken, clearAuthRefreshToken
     };
 })();

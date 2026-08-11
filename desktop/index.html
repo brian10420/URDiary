@@ -177,7 +177,9 @@
                             <small id="settings-key-status"></small>
                             <button id="settings-clear-key" class="btn" style="padding: 2px 8px; font-size: 12px;" data-i18n="settings.clearKey">刪除金鑰</button>
                         </div>
-                        <small style="display: block; margin-top: 4px; color: #888;" data-i18n="settings.keyNote">
+                        <!-- 非 Electron（手機瀏覽器）時，settings_module 會把這行換成
+                             「金鑰加密存在伺服器」的版本（settings.keyNoteServer） -->
+                        <small id="settings-key-note" style="display: block; margin-top: 4px; color: #888;" data-i18n="settings.keyNote">
                             金鑰以系統金鑰鏈 (safeStorage) 加密存於本機，僅隨請求送往本機後端，不會上傳伺服器。
                         </small>
                     </div>
