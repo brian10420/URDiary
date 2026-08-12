@@ -140,6 +140,26 @@ def test_create_user_accepts_invite_code_with_future_expiry(client, monkeypatch)
 
 # --- 過期 / 撤銷 / 用盡：統一回同一句話 (無 per-cause oracle) -------------------
 
+def test_create_user_rejects_invite_code_expiring_exactly_now(client, monkeypatch):
+    """expires_at 邊界：crud.invite_code_is_usable 用 `expires_at <=
+    datetime.utcnow()` 判過期、crud.claim_invite_code_use 的 CAS 用
+    `expires_at > now` 才算可用——兩處都要求「嚴格晚於現在」，卡在「現在」
+    這一刻本身就該視為已過期，不是還有效的最後一刻。
+
+    不必模擬時間：把 expires_at 設成造碼當下的 utcnow()，等到底下這個
+    HTTP 請求真正送達、伺服器再呼叫一次 utcnow() 比較時，真實時鐘必然已經
+    往前走了 (即使只有幾微秒)，足以穩定重現「等於或早於現在都算過期」。
+    """
+    monkeypatch.setattr(config, "REQUIRE_INVITE", True)
+    plaintext, _ = _mint_invite(expires_at=datetime.utcnow())
+
+    resp = client.post("/users/create", json={
+        "username": _username(), "password": TEST_PASSWORD, "invite_code": plaintext,
+    })
+    assert resp.status_code == 400
+    assert resp.json()["code"] == "E2004"
+
+
 def test_create_user_rejects_expired_invite_code(client, monkeypatch):
     monkeypatch.setattr(config, "REQUIRE_INVITE", True)
     plaintext, _ = _mint_invite(expires_at=datetime.utcnow() - timedelta(days=1))

@@ -2,7 +2,7 @@
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const CONFIG_PATH = path.join(__dirname, '..', 'js', 'config.js');
@@ -15,8 +15,22 @@ function reloadConfig() {
 }
 
 describe('config', () => {
+    // task 3.3 稽核（task 1.2 遺留的小缺口）：下面多個測試直接改寫
+    // window.location（jsdom 允許 delete 後重新賦值）。原本每個測試自己在
+    // 結尾手動還原成 originalLocation；但如果中間的 expect() 先拋出例外，
+    // 還原那一行永遠不會執行到，被 mock 過的 window.location 就會直接漏給
+    // 同一個檔案裡後面的測試，讓後面本來無關的測試莫名其妙一起變紅、難以
+    // 排查。afterEach 保證不論這次測試成功或失敗都會還原，是比「測試本體
+    // 最後一行手動還原」更可靠的防線——個別測試原本的手動還原繼續保留，
+    // 兩者疊加、互不衝突，只是多一層保險。
+    const originalLocation = window.location;
+
     beforeEach(() => {
         localStorage.clear();
+    });
+
+    afterEach(() => {
+        window.location = originalLocation;
     });
 
     it('預設值：API.BASE_URL / AUTH / APP 等', () => {
@@ -164,5 +178,60 @@ describe('config', () => {
 
         // 恢復原始 window.location
         window.location = originalLocation;
+    });
+
+    // --- task 3.3 稽核：getApiBaseUrl() 邊界情況（task 1.2 遺留的缺口）------
+
+    it('getApiBaseUrl()：BASE_URL_OVERRIDE 為空字串時視為未設定，落回協定判斷', () => {
+        // 空字串是 falsy，`if (config.API && config.API.BASE_URL_OVERRIDE)`
+        // 判斷不會通過——這裡確認真的落回下一層 (http: 協議 → origin)，
+        // 而不是把空字串本身當成一個「合法但空白」的覆蓋值原樣回傳。
+        localStorage.setItem('urDiary_config_v3', JSON.stringify({
+            API: { BASE_URL_OVERRIDE: '' }
+        }));
+
+        window.location = { protocol: 'http:', origin: 'http://example.com:3000' };
+
+        reloadConfig();
+        expect(CONFIG.getApiBaseUrl()).toBe('http://example.com:3000');
+    });
+
+    it('getApiBaseUrl()：非 http/https/file 協定（如 chrome-extension:）→ 落回 config 預設值', () => {
+        // getApiBaseUrl 只認 'http:'/'https:' 兩種協定才用 origin；其餘一律
+        // (含 file: 之外真的會遇到的協定，例如瀏覽器擴充功能環境) 落回
+        // config.API.BASE_URL，與 file: 走同一個分支——proto 變數在這個
+        // 分支下就是空字串，不是 'file:' 本身，源碼本來就沒有特別檢查
+        // 'file:'，只檢查「是不是 http(s)」。
+        window.location = { protocol: 'chrome-extension:', origin: 'chrome-extension://abcdefghijklmnop' };
+
+        reloadConfig();
+        expect(CONFIG.getApiBaseUrl()).toBe('http://localhost:8001');
+    });
+
+    it('getApiBaseUrl()：非瀏覽器環境（typeof window === "undefined"）→ 落回 config 預設值', () => {
+        // 先在正常環境載入一次，拿到真正的 getApiBaseUrl 函式參照——它是
+        // 每次呼叫才重新讀取自由變數 window 的 closure（見 config.js 原始碼：
+        // `typeof window !== 'undefined' && window.location`），不是在載入
+        // 當下就把 window 綁死，所以載入完成之後才把全域 window 暫時抽掉，
+        // 一樣能測到這個 guard 的另一側分支。
+        //
+        // 用 vi.stubGlobal 而不是 `delete window`：jsdom 的 window 就是這個
+        // realm 的 globalThis 本身，把它整個刪掉會連 document 等測試環境
+        // 依賴的東西一起弄壞；vi.stubGlobal('window', undefined) 只是暫時
+        // 把「自由變數 window 解析到的值」換成 undefined，函式呼叫結束、
+        // finally 裡 unstubAllGlobals() 一還原，jsdom 環境就完全恢復原狀。
+        reloadConfig();
+        const getApiBaseUrl = CONFIG.getApiBaseUrl;
+
+        vi.stubGlobal('window', undefined);
+        try {
+            expect(typeof window).toBe('undefined');
+            expect(getApiBaseUrl()).toBe('http://localhost:8001');
+        } finally {
+            vi.unstubAllGlobals();
+        }
+
+        // 環境確實復原：window 又能正常使用
+        expect(typeof window).toBe('object');
     });
 });

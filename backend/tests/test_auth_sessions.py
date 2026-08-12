@@ -123,6 +123,28 @@ def test_valid_access_token_cannot_be_used_as_refresh_token(client):
     assert resp.status_code == 401, f"訪問令牌被當成刷新令牌接受了: {resp.text}"
 
 
+def test_access_token_as_refresh_attempt_does_not_disturb_the_real_session(client):
+    """access-token-as-refresh 這個方向不只要被拒 (上一個測試鎖定狀態碼)，
+    被拒的嘗試本身也不能有任何副作用：不能悄悄輪替、更不能撤銷任何工作
+    階段列。這裡直接驗證結果 (真正的刷新令牌事後仍然完好可用)，而不是
+    去猜是哪一道守門機制擋下了它——task-3.3-report.md 的教學紀錄一節有
+    完整說明：這個方向其實有兩道獨立防線 (JWT `type` 宣告 + access token
+    自己的 `jti` 天生不會對到任何 AuthSession.refresh_jti)，就算其中一道
+    未來被誤改壞，另一道通常仍會擋下請求本身；但只斷言狀態碼看不出「有沒有
+    動到 AuthSession 表」，這個測試補的正是這一段——不論是哪道防線擋下了
+    它，都必須是乾淨的拒絕，不能有任何看不見的副作用。"""
+    sess = _register_and_login(client)
+
+    rejected = client.post("/users/token/refresh", json={"refresh_token": sess["access"]})
+    assert rejected.status_code == 401
+    assert "refresh_token" not in rejected.json(), "被拒絕的請求不該回傳任何新令牌"
+
+    still_works = client.post("/users/token/refresh", json={"refresh_token": sess["refresh"]})
+    assert still_works.status_code == 200, (
+        "access-token-as-refresh 的失敗嘗試意外動到了真正的工作階段"
+    )
+
+
 def test_expired_refresh_token_is_rejected(client):
     """JWT 本身過期的刷新令牌一律拒絕。"""
     from utils.security import create_refresh_token

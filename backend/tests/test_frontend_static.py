@@ -7,6 +7,7 @@ catch-all 會蓋掉這些 API 路由。這裡的「no-shadow」測試組直接�
 即使前端服務已啟用 (本測試環境下 desktop/ 存在，SERVE_FRONTEND 預設開)，
 每一個代表性的 API 路徑仍然要打進真正的 API，而不是被靜態掛載攔截。
 """
+import pytest
 
 
 # --- GET / 、靜態子樹：實際檔案內容比對 -------------------------------------
@@ -230,3 +231,69 @@ def test_calendar_route_not_shadowed(client):
 
     assert resp.status_code == 401
     assert resp.json()["code"] == "HTTP_401"
+
+
+# --- no-shadow（task 3.3 稽核缺口）：task-1.1-brief.md 列舉、上面卻還沒有
+# --- 任何測試明確命中的其餘根路徑 ---------------------------------------------
+#
+# task-1.1-brief.md 的完整清單是：/generate、/enhanced-generate、/diaries/*、
+# /diary/*、/analytics/*、/interaction-notes/*，加上 /health、
+# /system/capabilities、/docs、/redoc、/openapi.json、/users/*、/chat/*、
+# /calendar/*。上面已經各自有命名測試涵蓋 /health /docs /openapi.json
+# /diaries/1 /users/1 /chat/ /calendar/events；這裡資料驅動補齊剩下的部分。
+# /diary/{id}（單數）容易被忽略——它與 /diaries/{user_id}（複數）是完全
+# 不同的路由函式 (diary.py 的 get_diary vs get_user_diaries)，「複數測過了」
+# 不代表「單數也測過」。
+#
+# 這幾個路徑在 test_diary_api.py／test_rate_limit.py 裡另外也有帶認證的
+# 200 功能測試，但那些驗的是「CRUD 邏輯對不對」；這裡驗的是完全不同的性質
+# ——「有沒有被靜態掛載攔截」，用未帶認證、以 401 JSON 為判準，與本檔案其餘
+# no-shadow 測試同一套邏輯，因此不算重複。用真的插入一個 rogue catch-all
+# StaticFiles 掛載到 "/" 驗證過這組斷言的靈敏度：插入後這五個路徑全部變成
+# 404/405（不再是 401 JSON），/system/capabilities 與 /redoc 也雙雙變成
+# 404——證明這裡的斷言在 shadow 真的發生時會確實變紅 (task-3.3-report.md
+# 的「安全關鍵測試的證明」一節有完整記錄)。
+_REMAINING_PROTECTED_ROOT_PATHS = [
+    ("POST", "/generate", {}),
+    ("POST", "/enhanced-generate", {}),
+    ("GET", "/diary/1", None),
+    ("GET", "/analytics/emotion/1", None),
+    ("GET", "/interaction-notes/1", None),
+]
+
+
+@pytest.mark.parametrize("method,path,body", _REMAINING_PROTECTED_ROOT_PATHS)
+def test_remaining_protected_root_paths_not_shadowed(client, method, path, body):
+    """未帶認證時，這些路徑都必須打進真正的 API 回 401 JSON (走 FastAPI
+    OAuth2PasswordBearer 自己的 auto_error，回應 code 固定是 "HTTP_401")，
+    不是靜態掛載攔截後的 200 text/html 或 StaticFiles 自己的 404。"""
+    resp = client.request(method, path, json=body)
+
+    assert resp.status_code == 401, f"{method} {path}: {resp.status_code} {resp.text}"
+    assert resp.headers["content-type"].startswith("application/json")
+    assert resp.json()["code"] == "HTTP_401"
+
+
+def test_system_capabilities_route_not_shadowed(client):
+    """免認證的公開端點：仍要回真正的能力旗標 JSON，不是 index.html 外殼
+    (若被 catch-all 遮蔽，帶查詢工具的瀏覽器仍會拿到 200，但內容完全不對，
+    單看狀態碼看不出來——必須直接檢查回應內容/形狀)。"""
+    resp = client.get("/system/capabilities")
+
+    assert resp.status_code == 200
+    assert resp.headers["content-type"].startswith("application/json")
+    body = resp.json()
+    assert "require_invite" in body
+    assert "app_version" in body
+
+
+def test_redoc_route_not_shadowed(client):
+    """/redoc 是 FastAPI 內建文件頁 (公開、未自架)：內容要是真正的 ReDoc
+    頁面，不是被靜態掛載攔截後回傳的 index.html 外殼——兩者都是 200
+    text/html，只看狀態碼分辨不出來，必須直接比對內容關鍵字。"""
+    resp = client.get("/redoc")
+
+    assert resp.status_code == 200
+    assert "text/html" in resp.headers["content-type"]
+    assert "redoc" in resp.text.lower()
+    assert "URDiary - 您的情緒日記助手" not in resp.text
