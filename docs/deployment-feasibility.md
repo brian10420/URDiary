@@ -341,3 +341,37 @@ Electron 打包本身是成熟工具鏈（現有的 `electron-packager` 相依�
 - **多了一個金鑰方案 (d)**：`.env` 後備金鑰是現成機制（`llm.py:22`），零工作量且隱私最好，初期盤點漏了這條。
 - **多發現一項**：`TOKEN_EXPIRE_MINUTES` 定義了也寫進文件，但全專案無人讀取，有效期實際是兩處硬編碼。
 - 本分支已修好、不再是缺口的項目：API 位址單點收斂、IPC 縮到 4 個 handler、token 黑名單（原本恆為 False）已移除、`diary.css` 的孤兒行動樣式已刪、`main.js` 的圖示引用已修正。
+
+---
+
+## 八、v2.3 落地了什麼（2026-08-12 補充）
+
+> 以上七節與附錄是 `feature/v2.2-quality-and-calendar`（HEAD `1bd14b3`）當下的評估，內容維持原樣不動。這一節是 `feature/v2.3-mobile-pwa` 開發完成後的**事後對照**：把「當初評估的缺口」對到「現在實際落地的實作」，濃縮寫，不是逐項重寫評估。完整的操作指南另見 [`deployment-mobile.md`](deployment-mobile.md)。
+
+**結論先講：第二節「目標一：手機開連結」列的三層缺口——第一層（host/CORS/靜態檔）、第二層（API 位址推導、CDN 依賴）、第三層（金鑰放哪裡）——連同第三、四節列出的響應式整理與必解安全問題，在 v2.3 全部處理掉了，而且比原評估建議的方案更完整（例如金鑰選了 (a) 後端金鑰庫而不只是 (d) 共用後備金鑰，同時把 README 隱私承諾誠實改寫，兩者同步落地，不是分兩次做）。**
+
+| 評估報告的項目 | v2.3 的實作 | 對照 |
+|---|---|---|
+| 手機拿不到前端網頁（第二節第一層） | 後端同源提供 `desktop/` 靜態檔，`/`、`/manifest.webmanifest`、`/sw.js`、`/favicon.ico` 走明確路由，`/js`、`/css`、`/assets` 走 `StaticFiles` 掛載，一律排在 API 路由之後避免蓋掉 | `backend/app/main.py:180-215`、`config.py:107-127`（`SERVE_FRONTEND` 偵測 `desktop/` 是否存在，未顯式設定時自動開啟） |
+| CSP 允許 `unsafe-inline`（第四節「可以排程處理」） | 新增 `SecurityHeadersMiddleware`：CSP、`X-Content-Type-Options: nosniff`、`Referrer-Policy: same-origin`，HTTPS 情境下再加 HSTS；註冊順序刻意排在 CORS 之外層，連 429 回應都會帶到 | `backend/app/middleware/security_headers.py:75-83`、`main.py:99-105` |
+| 沒有 token 撤銷機制、`TOKEN_EXPIRE_MINUTES` 是死設定（第四節「可以排程處理」） | 全面改版：access/refresh 雙令牌，refresh 每次使用都輪替並落地 `auth_sessions`、可從設定面板即時撤銷、重放偵測到就整組工作階段撤銷；新增 `/users/logout`；有效期改讀 `URDIARY_ACCESS_TOKEN_MINUTES`（預設 30 分鐘）/`URDIARY_REFRESH_TOKEN_DAYS`（預設 30 天），不再是死設定 | `backend/app/api/routes/user.py:221-420`（login/refresh/logout）、`config.py:84-85` |
+| LLM 金鑰在瀏覽器沒地方存（第二節第三層，原評估的方案 (d)） | 選了更完整的方案：新增邀請碼閘門（`URDIARY_REQUIRE_INVITE`）+ 後端加密金鑰庫，個人與伺服器預設金鑰並存（`user_id` 為 NULL 的那一列即伺服器預設），以 `SECRET_KEY` 導出金鑰加密存放；**同步誠實改寫 README 隱私段落**（原評估點名 `README.md:165/176` 的「系統金鑰鏈」、「只送往本機後端」措辭若走方案 (a) 會需要改寫——v2.3 已經把桌面版／手機版分開描述，兩者皆屬實） | `backend/scripts/urdiary_admin.py`、`config.py:130-137`（`REQUIRE_INVITE`）、`README.md` 的「Where is my data?」表格與「Privacy」段落 |
+| 區網明文傳輸 LLM 金鑰（第四節「必須先解」） | 不再需要區網明文假設：對外路徑改成 Tailscale `serve`/`funnel`（皆為有效 HTTPS）或 Cloudflare Tunnel，`X-LLM-Api-Key` 標頭不再走無 TLS 的區網 | `backend/scripts/install-service.sh`（`urdiary-tunnel.service`） |
+| 響應式整理（第三節，估 M） | 單欄行動版面 + 底部分頁列（`.tab-bar`）、觸控尺寸調整、`mobile.css` 收在 `max-width: 768px` 之後，鍵盤彈出時的 `visualViewport` 位移邏輯已實作（**尚未在實體裝置驗證**，見下方「刻意延後」） | `desktop/index.html:416`、`desktop/css/mobile.css` |
+| PWA manifest + 加到主畫面（第七節路線圖，v2.3 項目） | 完整落地：`manifest.webmanifest`、多尺寸圖示（含 maskable）、Service Worker 快取 App 殼層（含自帶的 Noto Sans TC 字型與 Font Awesome 子集，不再依賴 Google Fonts/cdnjs）、離線時導覽退回快取的 `/`、更新採「使用者按下才切換」而不是背景默默替換 | `desktop/manifest.webmanifest`、`desktop/sw.js`、`desktop/js/sw_logic.js` |
+| 字型與圖示改成自帶（第三節缺口，第七節路線圖項目） | 同上——`assets/vendor/fonts/`、`assets/vendor/fontawesome/` 皆自帶，CDN 依賴清零 | `desktop/sw.js` 的 `SHELL_ASSETS` 清單 |
+| 一輪安全姿態整理（第四節） | 新增邀請碼註冊閘門、速率限制（登入/建立帳號/refresh/LLM/全域五種桶）、`URDIARY_TRUSTED_PROXY` 顯式旗標（避免誤信未受信任來源的 `X-Forwarded-For`） | `backend/app/middleware/rate_limit.py:63-83`、`config.py:137-157` |
+| 「文件裡要有明確警語」（第四節「必須先解」的處理方式 2） | 見 `deployment-mobile.md` 第一節「安全閘門」——公開前必須確認的三個環境變數，以及對應的 systemd 部署自動帶上這些設定 | `deployment-mobile.md` |
+
+以下是評估報告沒有特別列出、但屬於同一批 v2.3 工程範圍、值得記一筆的部分：
+
+- **測試護城河**：後端 165 → 398、前端 64 → 269，新增 Playwright 端對端測試（`desktop/e2e/`，iPhone 14 + Pixel 7 兩種視窗設定各跑 8 個流程，16 個全綠），搭配一個以旗標開關（`URDIARY_ALLOW_STUB_LLM`）閘死的假 LLM 供應商，讓端對端流程不需要真實 API 金鑰也能決定性地跑完整個「聊天→產生日記→日曆 CRUD」流程（`backend/app/providers/stub_provider.py`、`factory.py:42`）。另外針對第四節安全姿態的邊界情況（供應商鏈路 shadow 路由、跨用戶存取、邀請碼邊界值等）補了一輪測試（`backend/tests/test_security_headers.py`、`test_stub_provider.py`、`test_auth_sessions.py`、`test_invite_codes.py`）。
+- **離線容忍度**：前端對網路中斷/伺服器無回應有一致的處理——連線狀態橫幅（`desktop/js/ui_manager.js` 的 `applyConnectivityAction`）、失敗訊息不會消失且能重送、日記列表在真的連不上時顯示「來自快取」標籤而不是假裝資料是新的（`desktop/tests/diary_cache_indicator.test.js`）。
+- **systemd 監督 + Tailscale tunnel**：`backend/scripts/install-service.sh` 把後端裝成受 `systemctl --user` 監督的服務、`loginctl enable-linger` 讓它撐過登出與重開機，同時起一條 `tailscale serve`（預設）或 `tailscale funnel` 的 HTTPS 通道。完整操作說明見 `deployment-mobile.md` 第四節，這裡不重複。
+
+### 刻意延後（不是忘記，是排定到之後的版本）
+
+- **httpOnly cookie 取代 `localStorage` 存 refresh token**：v2.3 的 `/security-review` 已經評估過（無 XSS 注入點、CSP 擋掉 inline/外部腳本，目前風險判定為 Low），但架構性修正排進 v2.4，不在這一版動。
+- **Capacitor 包殼上架**：第六節評估的路線本身沒變，v2.3 做的響應式整理與金鑰方案剛好是它的前置工作，但實際包殼還沒開始。
+- **CI**：這個 repo 目前沒有 `.github/workflows`（或任何其他 CI 設定）——四套測試都還是「本機手動跑」，尚未接自動化。
+- **實體裝置驗證**：v2.3 的 PWA 安裝就緒度、Service Worker、離線快取、CSP 相容性都在桌面瀏覽器上用真實 Chrome 驗證過；窄螢幕版面用 Chrome DevTools 裝置模擬（390px）驗證過；Playwright 端對端測試用 iPhone 14／Pixel 7 的模擬視窗設定跑過 16/16。**這些都不等於在實體手機上驗證過**——加到主畫面的實際手勢、鍵盤彈出時是否真的不擋住輸入欄、App 在背景/前景切換時的提醒觸發行為，都還需要 owner 在真正的 iPhone 與 Android 裝置上各走一次。詳見 `deployment-mobile.md` 最後一節的誠實聲明。

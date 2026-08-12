@@ -102,19 +102,35 @@ Sharing your instance with family? Set one server-side key so they need no setup
 .venv/bin/python backend/scripts/urdiary_admin.py show-server-key                  # masked status only
 ```
 
+### Installing on your phone (PWA)
+
+URDiary is an installable Progressive Web App: once your backend is reachable over HTTPS, open the URL in Safari (iOS) or Chrome (Android) and add it to your home screen. It launches full-screen, the app shell keeps working offline, and it prompts you in-app when a new version is ready (it never swaps versions out from under you mid-session).
+
+Reaching it from a phone in the first place — a secure tunnel, invite codes, sharing a link with family, a safety gate you must follow before opening it to the whole internet — is a deliberate setup process. See [`docs/deployment-mobile.md`](docs/deployment-mobile.md) for the full guide.
+
 ## Running tests
 
-Both suites run fully offline: no LLM API key required, and neither touches your real `data/` folder (the backend tests use an isolated temporary database).
+The backend, frontend, and end-to-end suites are fully isolated (temporary databases / data directories) and never touch your real `data/` folder. The smoke test is different: it's a handful of live checks against a **running** backend, so pointed at your normal dev instance (the default) it creates one throwaway account (`smoke_<timestamp>`) there — delete it afterward if you want zero footprint, or point `URDIARY_API` at a separately-started instance with its own `URDIARY_DATA_DIR` instead.
 
 ```bash
-# Backend (from the backend/ directory; installs pytest the first time):
+# Backend — 398 tests (from the backend/ directory; installs pytest the first time):
 cd backend
 ../.venv/bin/python -m pip install -r app/requirements-dev.txt   # or: uv pip install -p ../.venv -r app/requirements-dev.txt
 ../.venv/bin/python -m pytest -q          # Windows: ..\.venv\Scripts\python -m pytest -q
 
-# Frontend:
+# Frontend — 269 tests:
 cd desktop
 npm test
+
+# End-to-end (mobile emulation: iPhone 14 + Pixel 7 viewports) — 16 tests.
+# Spins up its own isolated backend on a separate port with a temp data
+# directory and a stub LLM provider, so it needs no real API key either.
+cd desktop
+npx playwright install chromium   # first time only
+npx playwright test
+
+# Smoke test — 15 checks against a running backend (start one first: ./start-backend.sh):
+backend/tests/smoke_test.sh
 ```
 
 ## Privacy
@@ -133,7 +149,8 @@ Please note: this project provides emotional companionship, **not** medical or p
 
 ## Learn more
 
-[`docs/deployment-feasibility.md`](docs/deployment-feasibility.md) — an honest look at what it would take to reach URDiary from a phone or ship it as a packaged desktop installer: what already works, what's a config change, and what's a real engineering decision. Written as an assessment, not a promise — nothing in it is implemented yet.
+- [`docs/deployment-mobile.md`](docs/deployment-mobile.md) — the how-to for actually reaching URDiary from a phone: Tailscale tunnel setup, the safety gate you must clear before opening it to the internet, minting invites, installing the PWA on iOS/Android, and taking it offline again.
+- [`docs/deployment-feasibility.md`](docs/deployment-feasibility.md) — the original assessment of what it would take to reach URDiary from a phone or ship it as a packaged desktop installer, plus a note on what has since shipped in v2.3.
 
 ## License
 
@@ -220,19 +237,35 @@ npm start
 .venv/bin/python backend/scripts/urdiary_admin.py show-server-key                  # 只顯示遮罩後的狀態
 ```
 
+### 安裝到手機（PWA）
+
+URDiary 是一個可安裝的漸進式網頁應用（PWA）：只要後端能透過 HTTPS 連到，在 iOS 用 Safari、在 Android 用 Chrome 打開網址，加到主畫面即可全螢幕啟動，App 殼層可離線使用，有新版本時也會在 App 內提示（絕不會在你操作到一半時把版本悄悄換掉）。
+
+要讓手機連得到後端——安全通道、邀請碼、把連結分享給家人，以及對外開放前必須先確認的安全閘門——是需要照著步驟走的設定流程，完整教學見 [`docs/deployment-mobile.md`](docs/deployment-mobile.md)。
+
 ## 執行測試
 
-兩套測試都完全離線：不需要 LLM API 金鑰，也不會動到你真實的 `data/` 資料夾（後端測試會用獨立的暫存資料庫）。
+後端、前端、端對端這三套測試都完全隔離（暫存資料庫／資料目錄），不會動到你真實的 `data/` 資料夾。煙霧測試不一樣：它是對著一個**正在執行**的後端打幾個 API 請求做檢查，如果指向你平常開發用的那個實例（預設行為），會在裡面留下一個用完即丟的帳號（`smoke_<timestamp>`）——想要完全不留痕跡的話，用完手動刪掉，或改把 `URDIARY_API` 指向另外啟動、有自己 `URDIARY_DATA_DIR` 的獨立實例。
 
 ```bash
-# 後端（在 backend/ 目錄下執行；第一次要先裝 pytest）：
+# 後端 —— 398 個測試（在 backend/ 目錄下執行；第一次要先裝 pytest）：
 cd backend
 ../.venv/bin/python -m pip install -r app/requirements-dev.txt   # 或：uv pip install -p ../.venv -r app/requirements-dev.txt
 ../.venv/bin/python -m pytest -q          # Windows: ..\.venv\Scripts\python -m pytest -q
 
-# 前端：
+# 前端 —— 269 個測試：
 cd desktop
 npm test
+
+# 端對端（手機模擬：iPhone 14 + Pixel 7 視窗尺寸）—— 16 個測試。
+# 會自己在另一個埠號起一個完全隔離的後端、用暫存資料目錄與假的 LLM
+# 供應商，所以也不需要真的 API 金鑰。
+cd desktop
+npx playwright install chromium   # 第一次執行才需要
+npx playwright test
+
+# 煙霧測試 —— 15 項檢查，對著一個正在執行的後端（先跑 ./start-backend.sh）：
+backend/tests/smoke_test.sh
 ```
 
 ## 隱私
@@ -249,7 +282,8 @@ URDiary 提供的是情緒陪伴，**不是**醫療或心理治療。如果你�
 
 ## 延伸閱讀
 
-[`docs/deployment-feasibility.md`](docs/deployment-feasibility.md)——手機連線與桌面安裝檔的可行性評估：什麼已經可行、什麼只是設定、什麼需要真正的產品決策，都誠實列出來。這是一份評估報告，不是承諾——目前都還沒有實作。
+- [`docs/deployment-mobile.md`](docs/deployment-mobile.md)——真正把 URDiary 分享到手機的操作指南：Tailscale tunnel 設定、對外開放前必須先確認的安全閘門、發邀請碼、在 iOS/Android 安裝 PWA，以及事後如何收回對外連線。
+- [`docs/deployment-feasibility.md`](docs/deployment-feasibility.md)——手機連線與桌面安裝檔的原始可行性評估，文末附上 v2.3 實際落地了哪些項目的對照。
 
 ## 授權
 
