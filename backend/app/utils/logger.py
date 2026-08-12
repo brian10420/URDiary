@@ -72,8 +72,14 @@ def create_logger(name, log_file=None, use_rotating=True):
 
     # 清除現有處理器，避免重複 (--reload / 測試重複呼叫 create_logger()
     # 時的防護：logging.getLogger(name) 對同名一律回傳同一個物件，沒有
-    # 這段會讓 handler 隨每次呼叫累加)
+    # 這段會讓 handler 隨每次呼叫累加)。先逐一 close() 再 clear()：
+    # list.clear() 只是把 handler 物件從 list 移除，不會關閉底層檔案
+    # ——FileHandler/RotatingFileHandler 的檔案描述符不會因此自動釋放，
+    # 沒有先 close() 就 clear() 會讓每次重複呼叫都洩漏一個 fd
+    # (code review 抓到)。
     if logger.handlers:
+        for handler in logger.handlers:
+            handler.close()
         logger.handlers.clear()
 
     # 創建控制台處理器

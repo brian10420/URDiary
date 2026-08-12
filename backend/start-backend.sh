@@ -10,7 +10,7 @@ set -euo pipefail
 cd "$(dirname "$0")"
 
 # ---------------------------------------------------------------------------
-# 讀取 backend/.env，讓 API_PORT / ENV 對「這個腳本」也生效
+# 讀取 backend/.env，讓 API_PORT / ENV / URDIARY_HOST 對「這個腳本」也生效
 # ---------------------------------------------------------------------------
 # config.py 自己也會用 python-dotenv 讀一次 backend/.env，但那已經是
 # uvicorn 行程「啟動之後」的事：--host/--port/--reload 這幾個旗標是這個
@@ -19,13 +19,22 @@ cd "$(dirname "$0")"
 # 內部邏輯，不影響 uvicorn 實際綁定的 port)。
 #
 # 優先序 (高到低)：呼叫端已匯出的 shell 環境變數 > backend/.env 內的值 >
-# 本腳本內建的預設值。做法：source 前先記下呼叫端是否「已經」設定過這兩個
+# 本腳本內建的預設值。做法：source 前先記下呼叫端是否「已經」設定過這三個
 # 變數 (用 ${VAR+x}，因為空字串也算「有設定」，不能用 ${VAR:-} 判斷)，
 # source 之後若呼叫端本來就設定過，就把原始值還原——避免 .env 蓋掉使用者
 # 刻意匯出的環境變數 (例如 `API_PORT=9001 ./start-backend.sh`，或
 # systemd unit 用 Environment= 明確指定的值)。
+#
+# URDIARY_HOST 一定要跟 ENV/API_PORT 用同一套 guard，即使 backend/.env.example
+# 今天沒有這一行：它是這三個裡「安全等級最高」的一個——host 決定了服務綁在
+# 哪個網路介面。如果之後有人為了本機方便在 backend/.env 加一行
+# URDIARY_HOST=（或任何值），沒有這個 guard 的話 `source .env` 會悄悄蓋掉
+# systemd unit 的 Environment=URDIARY_HOST=127.0.0.1，而這正是這個 guard
+# 原本要防止的 0.0.0.0 曝險同一類問題——寧可現在多三行，也不要等真的有人
+# 加了那行 .env 才發現優先序被打破。
 _had_ENV="${ENV+x}"; _prior_ENV="${ENV-}"
 _had_API_PORT="${API_PORT+x}"; _prior_API_PORT="${API_PORT-}"
+_had_URDIARY_HOST="${URDIARY_HOST+x}"; _prior_URDIARY_HOST="${URDIARY_HOST-}"
 
 if [ -f .env ]; then
   set -a
@@ -36,6 +45,7 @@ fi
 
 [ -n "$_had_ENV" ] && ENV="$_prior_ENV"
 [ -n "$_had_API_PORT" ] && API_PORT="$_prior_API_PORT"
+[ -n "$_had_URDIARY_HOST" ] && URDIARY_HOST="$_prior_URDIARY_HOST"
 
 # 虛擬環境位於專案根目錄 .venv (與既有開發環境一致)
 VENV_DIR="$(cd .. && pwd)/.venv"

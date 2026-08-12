@@ -14,6 +14,12 @@ utils/logger.py 模組頂部註解)。這裡鎖定兩個屬性：
 handler」——這是保護 --reload / 測試重複建構 app 時的既有防護
 (`logger.handlers.clear()`)，修 bug 時不能連帶弄壞它。
 
+第五個測試 (code review Minor 2) 鎖定：`logger.handlers.clear()` 只是把
+handler 從 list 移除，不會關閉底層檔案——沒有先 `close()` 就 `clear()`，
+每次重複呼叫 `create_logger()` (同一個 logger 名稱) 都會洩漏一個檔案
+描述符。用 `FileHandler.close()` 會把 `.stream` 設回 `None` 這件事當作
+「真的關閉了」的證據。
+
 第四個測試鎖定另一條獨立的重複寫入路徑：Python logging 預設會把子 logger
 的記錄往上傳給父 logger 的 handler 再處理一次 (`propagate=True`)。
 production 的四個 logger 名稱 (app / app.api / app.error /
@@ -88,3 +94,16 @@ def test_child_logger_does_not_duplicate_records_into_parent_logger_file(tmp_pat
 
     child_content = (tmp_path / "child.log").read_text(encoding="utf-8")
     assert "only the child should see this" in child_content
+
+
+def test_repeated_create_logger_calls_close_old_file_handler(tmp_path, monkeypatch):
+    """重複呼叫 create_logger() 不能洩漏檔案描述符：舊 handler 必須先被
+    close() 才能從 list 移除 (見模組 docstring 第五點)。"""
+    monkeypatch.setattr(logger_module, "LOG_DIR", tmp_path)
+
+    logger_first = logger_module.create_logger("test_fd_leak", "fd_leak.log")
+    old_file_handler = next(h for h in logger_first.handlers if isinstance(h, logging.FileHandler))
+
+    logger_module.create_logger("test_fd_leak", "fd_leak.log")
+
+    assert old_file_handler.stream is None

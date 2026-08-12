@@ -91,9 +91,12 @@ except Exception as e:
     raise
 ```
 
-日誌檔寫在 `backend/app/logs/`（與啟動時的工作目錄無關），依大小與每日
-午夜雙重輪轉，保留最近 7 份；`main.py` 每日排程呼叫 `cleanup_old_logs()`
-清除超過 14 天的舊檔。
+日誌檔寫在 `backend/app/logs/`（與啟動時的工作目錄無關），依檔案大小
+輪轉——每個 log target 只掛一個 `RotatingFileHandler`，單檔上限 10MB，
+保留最近 3 份備份（見 `utils/logger.py` 的 `MAX_LOG_SIZE`／
+`MAX_LOG_BACKUPS`；v2.3 task 3.1 之前曾同時掛大小與每日午夜雙重輪轉，
+導致每筆記錄被寫兩次，已移除）。`main.py` 每日排程呼叫
+`cleanup_old_logs()` 清除超過 14 天的舊檔。
 
 ## 5. 除錯與追蹤
 
