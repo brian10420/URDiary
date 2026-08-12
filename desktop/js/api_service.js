@@ -435,9 +435,19 @@ const ApiService = (function() {
     async function fetchAPI(endpoint, options = {}) {
         // 確保API服務已初始化
         ensureInitialized();
-    
+
         const startTime = Date.now();
-        
+
+        // 與 doRefreshToken 401 分支同一套 compare-and-clear 保護（理由見該函式
+        // 內的註解）：記下這個情境「送出這次請求時」以為有效的刷新令牌。下面
+        // 這次請求若收到 401、正要清除認證時，要先確認儲存的刷新令牌是否仍是
+        // 這一張——不是的話，代表另一個分頁／視窗已經搶先完成輪替並存入新
+        // 令牌對，這裡清除只會把贏家剛存好的工作階段一起弄丟。doRefreshToken
+        // 401 分支關的是「刷新請求本身」的這個洞，這裡補的是 fetchAPI 原本
+        // 發起的請求 401 時、先前還沒關過的另一半（clearAuthToken 之前在這裡
+        // 是無條件呼叫）。
+        const refreshTokenAtRequestStart = getRefreshToken();
+
         try {
             // 檢查網絡連接
             if (!navigator.onLine) {
@@ -648,10 +658,17 @@ const ApiService = (function() {
                 } catch (e) {
                     console.warn('無法獲取認證錯誤詳情');
                 }
-                
-                // 清除令牌
-                clearAuthToken();
-                
+
+                // 清除令牌——但只在儲存的刷新令牌仍是這次請求送出時那一張才清。
+                // 理由與 doRefreshToken 401 分支相同：另一個分頁／視窗可能已經
+                // 贏得輪替、存入新令牌對，這裡若照清不誤，會把贏家的工作階段
+                // 一起清掉，兩邊都被踢回登入畫面。
+                if (getRefreshToken() === refreshTokenAtRequestStart) {
+                    clearAuthToken();
+                } else {
+                    console.warn('刷新令牌已被其他分頁換新，保留較新的令牌');
+                }
+
                 // 使用指定的錯誤碼
                 throw new Error('JWT_AUTH_ERROR');
             }

@@ -137,3 +137,62 @@ describe('ApiService.refreshToken 的 single-flight', () => {
         expect(succeeding).toHaveBeenCalledTimes(1);
     });
 });
+
+/**
+ * fetchAPI 自己的 401 處理——不是上面 doRefreshToken 那次「刷新請求本身」的
+ * 401，而是任何一般 API 請求（例如 /diaries/1）用既有 Authorization 標頭
+ * 打過去、被伺服器判定令牌無效時觸發的分支。
+ *
+ * 這裡過去無條件 clearAuthToken()，沒有 doRefreshToken 401 分支那套
+ * compare-and-clear 保護。多分頁情境：分頁 B 贏得輪替、存入新令牌對，
+ * 分頁 A 用舊 access token 發出的原始請求這時才收到 401，若照清不誤，
+ * 會把分頁 B 剛存好的工作階段一起清掉，兩邊一起被踢回登入畫面。
+ */
+describe('ApiService.fetchAPI 自己的 401 處理（不是 doRefreshToken 那次刷新請求的 401）', () => {
+    beforeEach(async () => {
+        localStorage.clear();
+
+        // 先用一次成功的刷新，讓 accessToken 有值、tokenExpiry 夠新——避免
+        // 下面的 fetchAPI 呼叫在送出原始請求前，自己又多觸發一次主動刷新，
+        // 干擾「原始請求本身 401」這個測試情境要驗的東西。
+        await SecureStore.setAuthRefreshToken('refresh-token-seed');
+        window.fetch = vi.fn(async () => okResponse('refresh-token-current'));
+        expect(await ApiService.refreshToken()).toBe(true);
+    });
+
+    it('401 時儲存的刷新令牌仍是送出請求當下那一張 → 照常清掉（需要重新登入）', async () => {
+        window.fetch = vi.fn(async () => ({
+            ok: false,
+            status: 401,
+            json: async () => ({ detail: 'invalid token' })
+        }));
+
+        await expect(ApiService.fetchAPI('/diaries/1', { method: 'GET' })).rejects.toThrow();
+
+        expect(SecureStore.getAuthRefreshToken()).toBe('');
+        expect(localStorage.getItem('auth_token')).toBeNull();
+        expect(localStorage.getItem('token_expiry')).toBeNull();
+    });
+
+    it('401 時儲存的刷新令牌已被別的分頁／視窗換成新令牌 → 保留贏家的令牌，不清', async () => {
+        // 模擬「另一個分頁在我們這次原始請求還在路上時贏得輪替」：fetch 被
+        // 呼叫的當下，先把 storage 換成贏家的新令牌對，再回這個分頁的 401。
+        window.fetch = vi.fn(async () => {
+            await SecureStore.setAuthRefreshToken('refresh-token-B');
+            localStorage.setItem('auth_token', 'access-token-B');
+            localStorage.setItem('token_expiry', new Date(Date.now() + 60000).toISOString());
+            return {
+                ok: false,
+                status: 401,
+                json: async () => ({ detail: 'invalid token' })
+            };
+        });
+
+        await expect(ApiService.fetchAPI('/diaries/1', { method: 'GET' })).rejects.toThrow();
+
+        // 贏家的刷新令牌與訪問令牌都必須原封不動
+        expect(SecureStore.getAuthRefreshToken()).toBe('refresh-token-B');
+        expect(localStorage.getItem('auth_token')).toBe('access-token-B');
+        expect(localStorage.getItem('token_expiry')).not.toBeNull();
+    });
+});

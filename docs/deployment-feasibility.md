@@ -359,7 +359,7 @@ Electron 打包本身是成熟工具鏈（現有的 `electron-packager` 相依�
 | 區網明文傳輸 LLM 金鑰（第四節「必須先解」） | 不再需要區網明文假設：對外路徑改成 Tailscale `serve`/`funnel`（皆為有效 HTTPS）或 Cloudflare Tunnel，`X-LLM-Api-Key` 標頭不再走無 TLS 的區網 | `backend/scripts/install-service.sh`（`urdiary-tunnel.service`） |
 | 響應式整理（第三節，估 M） | 單欄行動版面 + 底部分頁列（`.tab-bar`）、觸控尺寸調整、`mobile.css` 收在 `max-width: 768px` 之後，鍵盤彈出時的 `visualViewport` 位移邏輯已實作（**尚未在實體裝置驗證**，見下方「刻意延後」） | `desktop/index.html:416`、`desktop/css/mobile.css` |
 | PWA manifest + 加到主畫面（第七節路線圖，v2.3 項目） | 完整落地：`manifest.webmanifest`、多尺寸圖示（含 maskable）、Service Worker 快取 App 殼層（含自帶的 Noto Sans TC 字型與 Font Awesome 子集，不再依賴 Google Fonts/cdnjs）、離線時導覽退回快取的 `/`、更新採「使用者按下才切換」而不是背景默默替換 | `desktop/manifest.webmanifest`、`desktop/sw.js`、`desktop/js/sw_logic.js` |
-| 字型與圖示改成自帶（第三節缺口，第七節路線圖項目） | 同上——`assets/vendor/fonts/`、`assets/vendor/fontawesome/` 皆自帶，CDN 依賴清零 | `desktop/sw.js` 的 `SHELL_ASSETS` 清單 |
+| 字型與圖示改成自帶（第二節缺口，第七節路線圖項目） | 同上——`assets/vendor/fonts/`、`assets/vendor/fontawesome/` 皆自帶，CDN 依賴清零 | `desktop/sw.js` 的 `SHELL_ASSETS` 清單 |
 | 一輪安全姿態整理（第四節） | 新增邀請碼註冊閘門、速率限制（登入/建立帳號/refresh/LLM/全域五種桶）、`URDIARY_TRUSTED_PROXY` 顯式旗標（避免誤信未受信任來源的 `X-Forwarded-For`） | `backend/app/middleware/rate_limit.py:63-83`、`config.py:137-157` |
 | 「文件裡要有明確警語」（第四節「必須先解」的處理方式 2） | 見 `deployment-mobile.md` 第一節「安全閘門」——公開前必須確認的三個環境變數，以及對應的 systemd 部署自動帶上這些設定 | `deployment-mobile.md` |
 
