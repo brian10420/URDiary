@@ -194,6 +194,17 @@ Test/
 desktop/node_modules/
 node_modules/
 
+# --------------------------------------
+# 🎭 Playwright（desktop/e2e，v2.3 task 3.2）
+# 下載的瀏覽器二進位檔預設裝在 ~/.cache/ms-playwright（repo 外），這裡只需要
+# 忽略「跑測試時在 repo 內產生」的報告與暫存產物——HTML 報告/追蹤檔可能含
+# 螢幕截圖、DOM 快照等執行期資料，不該進版本控制。
+# --------------------------------------
+desktop/e2e/playwright-report/
+desktop/e2e/test-results/
+desktop/blob-report/
+desktop/playwright/.cache/
+
 
 # --------------------------------------
 # 🚫 確保不提交 .env 檔案

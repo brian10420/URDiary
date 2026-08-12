@@ -6,13 +6,15 @@
   "scripts": {
     "start": "electron . --no-sandbox",
     "start:win": "chcp 65001 && electron .",
-    "test": "vitest run"
+    "test": "vitest run",
+    "test:e2e": "playwright test"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "type": "commonjs",
   "devDependencies": {
+    "@playwright/test": "^1.61.0",
     "electron": "^35.0.0",
     "electron-packager": "^17.1.2",
     "jsdom": "^25.0.0",
