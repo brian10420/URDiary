@@ -8,9 +8,13 @@
  * 見 backend/app/providers/stub_provider.py) 讓整條對話→日記管線不需要
  * 真實 API Key 也能決定性地跑完。
  *
- * globalSetup 會在啟動 webServer 前再驗一次資料目錄的安全性
- * （global-setup.js），globalTeardown 在整個執行結束後清掉暫存目錄
- * （global-teardown.js）。
+ * 資料目錄的安全性驗證發生在 e2e-env.js 被 require 的當下（module load，
+ * 同步拋出）——**不是**在 globalSetup（下面的 global-setup.js）裡：
+ * Playwright 的任務順序會先跑 webServer plugin 的 setup()（spawn uvicorn、
+ * 等 /health 回 200），才輪到自訂的 globalSetup 檔案，晚了就已經來不及
+ * 擋下不安全的路徑（詳見 e2e-env.js 檔頭引用的原始碼與行號）。
+ * global-setup.js 現在只做事後複查 + 印出路徑，供人工檢視；globalTeardown
+ * 在整個執行結束後清掉暫存目錄（global-teardown.js）。
  */
 'use strict';
 
