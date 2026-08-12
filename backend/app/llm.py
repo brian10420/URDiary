@@ -8,13 +8,30 @@
 from typing import Dict, List, Optional
 
 from providers.base import LLMConfig, LLMError
-from providers.factory import build_provider, PROVIDER_DEFAULT_MODELS
+from providers.factory import build_provider, PROVIDER_DEFAULT_MODELS, stub_llm_allowed
 from config import XAI_API_KEY, FALLBACK_GROK_MODEL
 
 
 def default_config() -> LLMConfig:
-    """後備設定：前端未帶 LLM 標頭時，用 .env 的 Grok 金鑰。"""
+    """後備設定：前端未帶 LLM 標頭時，用 .env 的 Grok 金鑰。
+
+    v2.3 task 3.2 例外（Playwright 手機 E2E 專用）：只有在「沒有 XAI_API_KEY
+    可用」且 URDIARY_ALLOW_STUB_LLM=1 時，才會落到 env-gated 的 stub 供應商
+    （見 providers/factory.py 的 stub_llm_allowed() 與 providers/
+    stub_provider.py）。stub 的優先權嚴格低於既有的 .env Grok 後備——旗標
+    開著、但真的有 XAI_API_KEY 時，行為與改動前完全相同；旗標關閉時
+    （預設值）這個分支必定跳過，直接維持原本的錯誤。
+
+    這是刻意選擇的「作為最後手段的預設值」設計，而不是讓前端顯式送
+    X-LLM-Provider: stub 標頭：手機瀏覽器 / PWA 沒有 Electron 的安全儲存
+    (SecureStore.isAvailable() 為 false)，api_service.js 在那個環境下整段
+    跳過 X-LLM-* 標頭（見該檔案的說明），Playwright E2E 走的正是這條路徑
+    ——讓 stub 在「其他都沒有」時自動生效，E2E 不需要另外改前端或碰
+    KNOWN_PROVIDERS/憑證儲存。
+    """
     if not XAI_API_KEY:
+        if stub_llm_allowed():
+            return LLMConfig(provider="stub", model="stub-e2e")
         raise LLMError(
             "未提供 LLM 供應商設定。請在前端「設定」面板選擇供應商並填入 API Key"
             "（或於 backend/.env 設定 XAI_API_KEY 作為 Grok 後備）。"
