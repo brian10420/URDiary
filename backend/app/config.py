@@ -9,6 +9,11 @@ load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 # 環境設定
 ENV = os.getenv("ENV", "development")
 
+# 應用程式版本號：單一事實來源 (v2.3 task 3.1)。main.py 建立 FastAPI(...)
+# 時的 version= 參數、/health 與 /system/capabilities 回報的版本都讀這裡，
+# 不要在別處另外寫死版本字串——之後升版只需要改這一行。
+APP_VERSION = "2.3.0"
+
 # -----------------------
 # 本地資料目錄 (SQLite 資料庫 + 自動生成的金鑰)
 # -----------------------

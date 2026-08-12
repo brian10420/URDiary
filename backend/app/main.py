@@ -2,20 +2,27 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
-from database import engine
+from sqlalchemy import text
+from database import engine, db_session
 from database.models import Base
 from api.routes import api_router
 from middleware.error_handler import error_handler
 from middleware.exception_handlers import register_exception_handlers
 from middleware.security_headers import SecurityHeadersMiddleware
 from middleware.rate_limit import RateLimitMiddleware
-from config import CORS_ALLOWED_ORIGINS, ENV, SERVE_FRONTEND, FRONTEND_DIR
+from config import CORS_ALLOWED_ORIGINS, ENV, SERVE_FRONTEND, FRONTEND_DIR, APP_VERSION
 from utils.logger import cleanup_old_logs, app_logger
 from memory_manager import purge_expired_chat_messages
 import atexit
 import threading
 import time
 import schedule
+
+# 行程啟動時間戳記 (monotonic：只用於算經過秒數，不受系統時鐘校時/校正
+# 影響)。刻意在 import 階段、任何 startup 事件之前就記錄——/health 的
+# uptime_seconds 就是「現在」與這個時間點的差，越早記錄越貼近「行程真正
+# 開始執行」的那一刻。
+_PROCESS_START_MONOTONIC = time.monotonic()
 
 # -----------------------
 # 日志管理
@@ -52,7 +59,7 @@ atexit.register(on_exit)
 app = FastAPI(
     title="AI Diary API",
     description="AI日記應用後端API",
-    version="1.0.0",
+    version=APP_VERSION,
     docs_url="/docs" if ENV != "production" else None,
     redoc_url="/redoc" if ENV != "production" else None
 )
@@ -101,14 +108,47 @@ app.add_middleware(SecurityHeadersMiddleware)
 app.include_router(api_router)
 
 
+def _check_db_ok() -> bool:
+    """健康檢查專用的資料庫探測：開自己的短命 session，做一次最便宜的
+    `SELECT 1`，馬上關閉——絕不把這個 session 交給呼叫端持有更久。
+
+    IRON RULE (global-constraints)：DB session 不能跨越不該跨越的工作
+    範圍；這整個函式從開到關只做這一件事，符合鐵律。真的失敗 (資料庫檔案
+    被移走/鎖死/毀損) 就回 False，不讓例外往外傳——探針的目的正是要在
+    資料庫壞掉時仍然回得了話。
+    """
+    try:
+        with db_session() as db:
+            db.execute(text("SELECT 1"))
+        return True
+    except Exception:
+        return False
+
+
 @app.get("/health", tags=["health"], summary="健康檢查")
 def health_check():
     """容器健康檢查端點。
 
     不能用 /docs 當健康檢查：ENV=production 時 docs_url=None，
     /docs 會回 404 而讓容器永遠處於 unhealthy。
+
+    v2.3 task 3.1 擴充：version/db_ok/uptime_seconds 讓 tunnel/systemd
+    監督時有實質內容可以探——單純「行程有沒有回應」不足以分辨「後端活著
+    但資料庫掛了」這種狀態。
+
+    設計決策：**db_ok=False 時仍然回 200**(不是 503)。這個端點的第一份
+    工作是回答「FastAPI 行程本身還活著嗎」，這件事在資料庫壞掉時依然
+    成立；回非 200 反而會讓監督者誤判成「整個行程需要重啟」，但重啟行程
+    並不能修好一個壞掉的資料庫檔案。db_ok 這個欄位本身就是留給探測者
+    另外判斷「資料庫層」用的，不需要靠 HTTP 狀態碼硬編碼這個語意。
     """
-    return {"status": "ok", "env": ENV}
+    return {
+        "status": "ok",
+        "env": ENV,
+        "version": APP_VERSION,
+        "db_ok": _check_db_ok(),
+        "uptime_seconds": int(time.monotonic() - _PROCESS_START_MONOTONIC),
+    }
 
 
 @app.get("/system/capabilities", tags=["health"], summary="系統能力查詢")
