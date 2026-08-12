@@ -659,18 +659,31 @@ const ApiService = (function() {
                     console.warn('無法獲取認證錯誤詳情');
                 }
 
-                // 清除令牌——但只在儲存的刷新令牌仍是這次請求送出時那一張才清。
-                // 理由與 doRefreshToken 401 分支相同：另一個分頁／視窗可能已經
-                // 贏得輪替、存入新令牌對，這裡若照清不誤，會把贏家的工作階段
-                // 一起清掉，兩邊都被踢回登入畫面。
+                // 只有「儲存的刷新令牌仍是這次請求送出時那一張」才代表這個
+                // 分頁的登入狀態真的死了。理由與 doRefreshToken 401 分支相同：
+                // 不同代表另一個分頁／視窗已經贏得輪替、存入新令牌對——這個
+                // 分頁其實仍握有有效的登入狀態，只是這次請求用的是已經作廢
+                // 的舊 access token 而已，不該被強制登出（那會把贏家剛存好
+                // 的工作階段一起弄丟，兩邊都被踢回登入畫面）。
                 if (getRefreshToken() === refreshTokenAtRequestStart) {
+                    // 令牌真的死了：清掉，並用 JWT_AUTH_ERROR 觸發下面 catch
+                    // 區塊的強制登出流程（顯示 toast、發送
+                    // urdiary:auth-expired、帶使用者回登入畫面——正確反應，
+                    // 因為已經沒有有效的工作階段了）。
                     clearAuthToken();
-                } else {
-                    console.warn('刷新令牌已被其他分頁換新，保留較新的令牌');
+                    throw new Error('JWT_AUTH_ERROR');
                 }
 
-                // 使用指定的錯誤碼
-                throw new Error('JWT_AUTH_ERROR');
+                // 令牌沒清：不能再丟 JWT_AUTH_ERROR，那個錯誤碼在下面一定會
+                // 觸發強制登出（見 catch 區塊的 case 'JWT_AUTH_ERROR'）——但
+                // 儲存裡明明是別的分頁／視窗剛存好的有效令牌，把使用者踢回
+                // 登入畫面是誤判，也違背這個保護原本的目的。改如實丟一般
+                // API 錯誤（沿用「401 但沒有 accessToken」時本來就會走的同一
+                // 條路徑），不會觸發 toast／urdiary:auth-expired／登入畫面，
+                // 讓呼叫端照既有方式顯示這次請求失敗；下一次請求會自然讀到
+                // 儲存裡最新的令牌、主動刷新後恢復正常。
+                console.warn('刷新令牌已被其他分頁換新，保留較新的令牌，不觸發強制登出');
+                throw new Error(`API_ERROR:${response.status}`);
             }
             
             // 檢查是否為403禁止訪問錯誤（可能是權限問題）
@@ -849,11 +862,17 @@ const ApiService = (function() {
                     break;
 
                 case 'JWT_AUTH_ERROR':
+                    // 走到這裡代表這個分頁的登入狀態真的死了，令牌已在上方
+                    // fetchAPI 的 401 分支清除（見該分支的 compare-and-clear
+                    // 保護）。若是另一個分頁／視窗贏得輪替、這個分頁的令牌
+                    // 其實還活著，401 分支改丟 API_ERROR，不會帶著
+                    // JWT_AUTH_ERROR 走到這裡，也就不會被下面的強制登出流程
+                    // 誤傷。
                     friendlyMessage = I18N.t('errors.authFailed');
                     if (typeof UIManager !== 'undefined' && UIManager.showToast) {
                         UIManager.showToast(I18N.t('errors.authFailed'));
                     }
-                    // 令牌已在上方清除，通知主流程開啟登入對話框
+                    // 通知主流程開啟登入對話框
                     try {
                         window.dispatchEvent(new CustomEvent('urdiary:auth-expired', { detail: { endpoint } }));
                     } catch (dispatchError) {

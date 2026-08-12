@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { describe, it, expect, beforeAll, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeAll, beforeEach, afterEach, vi } from 'vitest';
 import { loadCoreScripts, loadScript } from './helpers/load.js';
 
 /**
@@ -149,8 +149,18 @@ describe('ApiService.refreshToken 的 single-flight', () => {
  * 會把分頁 B 剛存好的工作階段一起清掉，兩邊一起被踢回登入畫面。
  */
 describe('ApiService.fetchAPI 自己的 401 處理（不是 doRefreshToken 那次刷新請求的 401）', () => {
+    // main.js 靠 window.dispatchEvent(new CustomEvent('urdiary:auth-expired'))
+    // 觸發強制登出 UI（重置行事曆、蓋上登入畫面，見 main.js:64-89）。這裡的
+    // compare-and-clear 保護只解決了「storage 有沒有被清掉」的一半——如果
+    // skip-clear 分支仍照樣丟 JWT_AUTH_ERROR，下面 catch 區塊的
+    // case 'JWT_AUTH_ERROR' 還是會無條件發這個事件，把輸家的分頁強制踢回
+    // 登入畫面，即使它剛剛才確認過自己其實還握有贏家寫入的有效令牌。所以
+    // 兩個測試都要多驗一件事：這個事件到底有沒有被發出去。
+    let dispatchSpy;
+
     beforeEach(async () => {
         localStorage.clear();
+        dispatchSpy = vi.spyOn(window, 'dispatchEvent');
 
         // 先用一次成功的刷新，讓 accessToken 有值、tokenExpiry 夠新——避免
         // 下面的 fetchAPI 呼叫在送出原始請求前，自己又多觸發一次主動刷新，
@@ -158,9 +168,21 @@ describe('ApiService.fetchAPI 自己的 401 處理（不是 doRefreshToken 那�
         await SecureStore.setAuthRefreshToken('refresh-token-seed');
         window.fetch = vi.fn(async () => okResponse('refresh-token-current'));
         expect(await ApiService.refreshToken()).toBe(true);
+
+        // priming 這次成功刷新不會發任何事件，但測量從這裡歸零，不依賴這個
+        // 假設一直成立。
+        dispatchSpy.mockClear();
     });
 
-    it('401 時儲存的刷新令牌仍是送出請求當下那一張 → 照常清掉（需要重新登入）', async () => {
+    afterEach(() => {
+        dispatchSpy.mockRestore();
+    });
+
+    function authExpiredDispatched() {
+        return dispatchSpy.mock.calls.some(call => call[0] && call[0].type === 'urdiary:auth-expired');
+    }
+
+    it('401 時儲存的刷新令牌仍是送出請求當下那一張 → 照常清掉，並觸發強制登出事件（需要重新登入）', async () => {
         window.fetch = vi.fn(async () => ({
             ok: false,
             status: 401,
@@ -172,9 +194,12 @@ describe('ApiService.fetchAPI 自己的 401 處理（不是 doRefreshToken 那�
         expect(SecureStore.getAuthRefreshToken()).toBe('');
         expect(localStorage.getItem('auth_token')).toBeNull();
         expect(localStorage.getItem('token_expiry')).toBeNull();
+
+        // 令牌真的死了 → 必須發出強制登出事件，main.js 才會帶使用者回登入畫面
+        expect(authExpiredDispatched()).toBe(true);
     });
 
-    it('401 時儲存的刷新令牌已被別的分頁／視窗換成新令牌 → 保留贏家的令牌，不清', async () => {
+    it('401 時儲存的刷新令牌已被別的分頁／視窗換成新令牌 → 保留贏家的令牌，不清，也不觸發強制登出', async () => {
         // 模擬「另一個分頁在我們這次原始請求還在路上時贏得輪替」：fetch 被
         // 呼叫的當下，先把 storage 換成贏家的新令牌對，再回這個分頁的 401。
         window.fetch = vi.fn(async () => {
@@ -194,5 +219,9 @@ describe('ApiService.fetchAPI 自己的 401 處理（不是 doRefreshToken 那�
         expect(SecureStore.getAuthRefreshToken()).toBe('refresh-token-B');
         expect(localStorage.getItem('auth_token')).toBe('access-token-B');
         expect(localStorage.getItem('token_expiry')).not.toBeNull();
+
+        // 這個分頁其實還握有贏家剛存好的有效登入狀態，不該被強制登出——
+        // 否則就算 storage 保住了，使用者體驗上還是「被登出」，白做了一半。
+        expect(authExpiredDispatched()).toBe(false);
     });
 });
