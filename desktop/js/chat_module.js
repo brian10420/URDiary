@@ -585,7 +585,10 @@ const ChatModule = (function() {
             if (bubbleElement && bubbleElement.dataset) {
                 delete bubbleElement.dataset.pendingText;
             }
-            addSystemMessage(messageContent);
+            // isReply=true（R6 裁決）：這是唯一真正的「AI 聊天新回覆」，自動
+            // 朗讀只由這一個呼叫點觸發（見 addSystemMessage/appendChatMessage
+            // 上方註解）。
+            addSystemMessage(messageContent, true, true);
 
             maybeShowSlowModelHint(Date.now() - sendStartedAt);
 
@@ -766,7 +769,15 @@ const ChatModule = (function() {
     // 回傳建立的 DOM 節點（v2.3 task 2.3 新增）：sendMessage 需要拿到剛
     // 建立的使用者訊息氣泡，之後傳送失敗時才能把「傳送失敗＋重試」的標記
     // 掛在正確的氣泡上，而不是猜測它在 DOM 裡的位置。
-    function appendChatMessage(type, content, scroll) {
+    // isReply（v2.4 spec② R6 修復）：是否為「AI 聊天新回覆本身」——唯一為
+    // true 的呼叫端是 attemptSend 成功分支的 addSystemMessage(messageContent,
+    // true, true)。其餘 addSystemMessage 呼叫（問候語、供應商切換、慢速模型
+    // 提示、各種錯誤/失敗通知……）一律留預設 false。控制器裁決 R6：自動朗讀
+    // 的範圍是「新回覆」本身，不是任何即時出現的系統訊息——見 spec §4「設定
+    // 開『自動朗讀新回覆』則新回覆到達即播」與 §6 的省錢設計（預設手動播放）。
+    // 播放鍵不受這個旗標影響：所有 assistant 訊息一律有鍵（buildMessageHtml
+    // 的既有邏輯不變），isReply 只決定「要不要自動觸發」。
+    function appendChatMessage(type, content, scroll, isReply) {
         const messageElement = document.createElement('div');
         messageElement.className = type === 'user' ? 'chat-message user-message' : 'chat-message system-message';
         messageElement.innerHTML = buildMessageHtml(type, formatMessageContent(content));
@@ -794,11 +805,12 @@ const ChatModule = (function() {
                 });
             });
 
-            // 自動朗讀只套用在「新的即時訊息」（scroll 為 true）：
-            // loadChatHistory 還原今日歷史時，每則訊息都以 scroll=false 呼叫
-            // addSystemMessage/addUserMessage（見該處），藉此排除在外——否則
-            // 重新整理頁面會把今天全部的 AI 回覆一次疊在一起唸出來。
-            if (scroll && VoiceModule.isAutoRead()) {
+            // 自動朗讀只套用在「即時出現的 AI 新回覆」：isReply 排除問候語／
+            // 通知／錯誤訊息等其餘系統訊息（見上方函式註解、R6 裁決）；scroll
+            // 排除 loadChatHistory 還原今日歷史（見該處呼叫 addSystemMessage
+            // (msg.content, false)）——否則重新整理頁面會把今天全部的歷史
+            // 訊息一次疊在一起唸出來。兩個條件都要成立才觸發。
+            if (isReply && scroll && VoiceModule.isAutoRead()) {
                 VoiceModule.speak(mid, content).catch(function (error) {
                     console.warn('自動朗讀失敗:', error);
                 });
@@ -817,9 +829,11 @@ const ChatModule = (function() {
         return appendChatMessage('user', content, scroll);
     }
 
-    // 添加系統消息
-    function addSystemMessage(content, scroll = true) {
-        return appendChatMessage('system', content, scroll);
+    // 添加系統消息。isReply 只有 attemptSend 成功分支的「AI 聊天新回覆」呼叫
+    // 會傳 true（見該處），其餘呼叫端留預設 false（R6 裁決，詳見 appendChatMessage
+    // 上方註解）。
+    function addSystemMessage(content, scroll = true, isReply = false) {
+        return appendChatMessage('system', content, scroll, isReply);
     }
 
     // 添加"思考中"消息
