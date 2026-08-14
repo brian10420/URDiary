@@ -553,10 +553,15 @@ const ApiService = (function() {
                 // 繼續處理，不影響主流程
             }
             
-            // 使用AbortController設置超時 - 增加超時時間，特別是對於結束聊天請求
-            const isEndChatRequest = endpoint.includes('/chat/end/') || endpoint.includes('/diary/enhanced-generate');
-            // 為結束聊天請求設置更長的超時時間
-            const timeoutDuration = isEndChatRequest ?
+            // 使用AbortController設置超時 - LLM 生成類請求（聊天回覆、結束對話、
+            // 生成日記）統一放寬：後端要等 LLM 供應商生成，grok-4.6 等較大模型
+            // 常超過 30 秒（2026-08 驗收實測），30 秒斷線會把已在路上的回覆
+            // 白白丟掉，使用者按「重試」還會把訊息再送一次。
+            const isLongLlmRequest = endpoint.includes('/chat/end/') ||
+                endpoint.includes('/diary/enhanced-generate') ||
+                endpoint.includes('/chat/enhanced');
+            // 為 LLM 生成類請求設置更長的超時時間
+            const timeoutDuration = isLongLlmRequest ?
                 180000 : // 180秒（3分鐘）
                 (CONFIG && CONFIG.API && CONFIG.API.TIMEOUT ? CONFIG.API.TIMEOUT : 30000); // 默認30秒
 

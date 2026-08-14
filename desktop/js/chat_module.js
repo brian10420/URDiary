@@ -416,12 +416,48 @@ const ChatModule = (function() {
         await attemptSend(userInput, bubble);
     }
 
+    // 慢速模型提示（2026-08 驗收回饋）：grok-4.6 回覆常等超過 30 秒。等待
+    // 超過門檻時，若目前模型有已知的較快替代，用系統訊息推薦到設定切換。
+    // 一個工作階段最多提示一次（reset() 換帳號時歸零），模型沒有對應建議
+    // 就完全不提示，不對其他供應商嘮叨。
+    const SLOW_REPLY_HINT_MS = 30000;
+    const SLOW_MODEL_SUGGESTIONS = { 'grok-4.6': 'grok-4.3' };
+    let slowModelHintShown = false;
+
+    function maybeShowSlowModelHint(elapsedMs) {
+        if (slowModelHintShown || elapsedMs < SLOW_REPLY_HINT_MS) {
+            return null;
+        }
+        const active = (typeof SettingsModule !== 'undefined' &&
+            typeof SettingsModule.getActiveLLM === 'function') ?
+            SettingsModule.getActiveLLM() : null;
+        const suggestion = active && active.model ? SLOW_MODEL_SUGGESTIONS[active.model] : null;
+        if (!suggestion) {
+            return null;
+        }
+        slowModelHintShown = true;
+        const text = I18N.t('chat.slowModelHint', {
+            seconds: Math.round(elapsedMs / 1000),
+            model: active.model,
+            suggestion: suggestion
+        });
+        // 單元測試不跑 init()，容器不存在時只回傳文字不上畫面
+        if (chatMessagesContainer) {
+            addSystemMessage(text);
+        }
+        return text;
+    }
+
     // 實際嘗試發送一則訊息（新訊息與「點擊重試」共用同一份邏輯）。
     // userInput 一律是呼叫端明確傳入的原始文字，不是重新讀取輸入框目前的
     // 內容——重試時使用者可能已經在輸入框打了別的話，不該被這次重試誤送。
     async function attemptSend(userInput, bubbleElement) {
         isProcessing = true;
         userInputElement.disabled = true;
+
+        // 量測等待時間：成功與失敗（逾時 abort 也會走 catch）都要餵給
+        // maybeShowSlowModelHint 判斷是否推薦較快的模型
+        const sendStartedAt = Date.now();
 
         clearSendFailure(bubbleElement);
         markPending(bubbleElement);
@@ -490,6 +526,8 @@ const ChatModule = (function() {
             }
             addSystemMessage(messageContent);
 
+            maybeShowSlowModelHint(Date.now() - sendStartedAt);
+
             // 保存聊天歷史
             saveChatHistory();
         } catch (error) {
@@ -505,6 +543,9 @@ const ChatModule = (function() {
             // 添加一則系統錯誤訊息（訊息本身如實留在對話串裡，不會消失，
             // 也不需要使用者重新輸入——見 markSendFailed）。
             markSendFailed(bubbleElement, userInput);
+
+            // 等了很久才失敗（例如 180 秒逾時）同樣值得推薦較快的模型
+            maybeShowSlowModelHint(Date.now() - sendStartedAt);
 
             // ApiService 本身未就緒是更嚴重的整合問題，重試也無濟於事——
             // 額外提示使用者刷新頁面（既有的安全網訊息，行為不變）。
@@ -898,6 +939,9 @@ const ChatModule = (function() {
             userInputElement.value = '';
         }
         
+        // 換帳號後新的工作階段可以再提示一次慢速模型建議
+        slowModelHintShown = false;
+
         console.log('聊天模塊已重置');
     }
     
@@ -910,6 +954,7 @@ const ChatModule = (function() {
         endChat: endChat,
         // 純函式，僅為 vitest 單元測試曝光，行為不變
         diaryDayString: diaryDayString,
-        applyCompanionTitle: applyCompanionTitle
+        applyCompanionTitle: applyCompanionTitle,
+        maybeShowSlowModelHint: maybeShowSlowModelHint
     };
 })();

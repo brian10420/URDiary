@@ -229,6 +229,7 @@ const I18N = (function() {
             'chat.busy': '正在處理中，請稍後再試',
             'chat.sendFailed': '傳送失敗',
             'chat.retrySend': '重試',
+            'chat.slowModelHint': '（這則回覆等了 {seconds} 秒——目前的模型 {model} 回應比較慢。想快一點的話，可以到「設定 → AI 供應商」把模型改成 {suggestion}。）',
             'chat.diaryDone': '日記已生成，您可以在日記頁面查看。',
             'chat.diaryError': '生成日記時出錯: {error}',
 
@@ -482,6 +483,7 @@ const I18N = (function() {
             'chat.busy': 'Still processing — please wait a moment',
             'chat.sendFailed': 'Failed to send',
             'chat.retrySend': 'Retry',
+            'chat.slowModelHint': '(That reply took {seconds}s — the current model {model} is responding slowly. For faster replies, switch the model to {suggestion} in Settings → AI Provider.)',
             'chat.diaryDone': 'Your diary is ready — you can view it in the Diary tab.',
             'chat.diaryError': 'Error creating the diary: {error}',
 
