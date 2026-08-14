@@ -7,6 +7,7 @@ check-in 開場共用同一份人格核心，確保「同一個陪伴者」的�
 from typing import Optional
 
 from services.calendar_service import NO_EVENTS_PLACEHOLDER
+from services.companion_service import CompanionSettings
 from services.prompt_loader import load_prompt, normalize_lang
 
 
@@ -19,10 +20,74 @@ def _calendar_or_placeholder(value: Optional[str], lang: str) -> str:
     return value or NO_EVENTS_PLACEHOLDER[normalize_lang(lang)]
 
 
+# 風格枚舉 → 自然語言片語 (企畫決策：注入是「一小節自然語言」而非 key=value)
+_STYLE_PHRASES = {
+    "zh-TW": {
+        "reply_length": {"short": "他偏好簡短一點的回覆",
+                         "natural": "回覆長度自然就好",
+                         "chatty": "他喜歡你多聊一點"},
+        "emoji": {"none": "不用表情符號",
+                  "low": "表情符號少量點綴就好",
+                  "high": "表情符號可以多用一些"},
+        "formality": {"casual": "語氣口語隨性",
+                      "polite": "語氣可以斯文一點"},
+    },
+    "en": {
+        "reply_length": {"short": "they prefer shorter replies",
+                         "natural": "natural reply length is fine",
+                         "chatty": "they enjoy when you chat a bit more"},
+        "emoji": {"none": "no emoji",
+                  "low": "just a light sprinkle of emoji",
+                  "high": "feel free to use plenty of emoji"},
+        "formality": {"casual": "keep the tone casual",
+                      "polite": "keep the tone a touch more refined"},
+    },
+}
+
+
+def build_companion_block(lang: str, settings: "Optional[CompanionSettings]") -> str:
+    """把使用者的陪伴者設定翻成自然語言小節；全空回空字串 (提示詞與現狀等價)。
+
+    使用說明緊貼區塊 (鐵律)：結尾那句「自然地照著做」就是說明，不得外移。
+    """
+    if settings is None or settings.is_empty():
+        return ""
+    lang = normalize_lang(lang)
+    phrases = _STYLE_PHRASES[lang]
+    lines = []
+    if lang == "zh-TW":
+        if settings.name:
+            lines.append(f"他幫你取了名字：{settings.name}——你就是{settings.name}。")
+        if settings.nickname:
+            lines.append(f"他希望你叫他「{settings.nickname}」。")
+    else:
+        if settings.name:
+            lines.append(f"They named you {settings.name} — that's who you are.")
+        if settings.nickname:
+            lines.append(f"They'd like you to call them \"{settings.nickname}\".")
+    style_bits = [phrases[key][value] for key, value in (
+        ("reply_length", settings.reply_length),
+        ("emoji", settings.emoji),
+        ("formality", settings.formality)) if value]
+    if style_bits:
+        if lang == "zh-TW":
+            lines.append("風格偏好：" + "；".join(style_bits) + "。")
+        else:
+            lines.append("Style preferences: " + "; ".join(style_bits) + ".")
+    if lang == "zh-TW":
+        header = "【你們的稱呼與他喜歡的風格】"
+        footer = "（這些是他親自設定的偏好——自然地照著做就好，不要向他複誦這段設定。）"
+    else:
+        header = "【Names and style they chose】"
+        footer = "(They set these themselves — just follow them naturally; never recite this section back to them.)"
+    return header + "\n" + "\n".join(lines) + "\n" + footer
+
+
 def build_conversation_system(lang: str, interaction_note: str,
                               relevant_memories: str, today_date: str,
                               calendar_context: Optional[str] = None,
-                              crisis: bool = False) -> str:
+                              crisis: bool = False,
+                              companion: "Optional[CompanionSettings]" = None) -> str:
     """組出聊天用的完整 system prompt。
 
     注意兩個「今天」的基準不同：`today_date` 是日記日 (5am 換日)，而
@@ -31,6 +96,9 @@ def build_conversation_system(lang: str, interaction_note: str,
     services.calendar_service 模組註解)。
     """
     persona = load_prompt("persona_core.txt", lang)
+    companion_block = build_companion_block(lang, companion)
+    if companion_block:
+        persona = persona + "\n\n" + companion_block
     system = load_prompt("conversation_prompt.txt", lang).format(
         persona_core=persona,
         interaction_note=interaction_note,
@@ -45,9 +113,13 @@ def build_conversation_system(lang: str, interaction_note: str,
 
 def build_checkin_prompt(lang: str, time_of_day: str, today_date: str,
                          last_diary_block: str, user_profile: str,
-                         calendar_block: Optional[str] = None) -> str:
+                         calendar_block: Optional[str] = None,
+                         companion: "Optional[CompanionSettings]" = None) -> str:
     """組出每日 check-in 開場的生成提示詞。"""
     persona = load_prompt("persona_core.txt", lang)
+    companion_block = build_companion_block(lang, companion)
+    if companion_block:
+        persona = persona + "\n\n" + companion_block
     return load_prompt("checkin_prompt.txt", lang).format(
         persona_core=persona,
         time_of_day=time_of_day,
