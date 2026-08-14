@@ -92,3 +92,30 @@ class CalendarEventUpdate(BaseModel):
                 and self.recurrence_until < self.event_date):
             raise ValueError("recurrence_until must not be before event_date")
         return self
+
+
+# companion 客製化設定的合法值 (v2.4 spec ①)。三個列舉欄位額外接受 ""——
+# PUT 的「送空字串＝清空該欄」語意 (見 CompanionSettingsIn 說明) 對文字欄位
+# 與列舉欄位一致適用，若 Literal 不含 ""，空字串在 Pydantic 驗證階段就會被
+# 直接拒收 (422)，路由層那句 `value.strip() or None` 永遠等不到執行。
+_StyleReplyLength = Literal["short", "natural", "chatty", ""]
+_StyleEmoji = Literal["none", "low", "high", ""]
+_StyleFormality = Literal["casual", "polite", ""]
+
+_NO_CTRL_PATTERN = r"^[^\r\n\t\x00-\x1f\x7f]*$"
+
+
+class CompanionSettingsIn(BaseModel):
+    """PUT /users/me/companion 的請求 body：全部 Optional (partial update)。
+
+    exclude_unset 語意 (比照 CalendarEventUpdate)：欄位不出現＝維持原值；
+    出現且為空字串＝清空該欄 (寫 NULL)。名字欄拒收控制字元與換行——這段
+    文字會進 system prompt，乾淨輸入是唯一防線。
+    """
+    companion_name: Optional[str] = Field(default=None, max_length=20,
+                                          pattern=_NO_CTRL_PATTERN)
+    user_nickname: Optional[str] = Field(default=None, max_length=20,
+                                         pattern=_NO_CTRL_PATTERN)
+    style_reply_length: Optional[_StyleReplyLength] = None
+    style_emoji: Optional[_StyleEmoji] = None
+    style_formality: Optional[_StyleFormality] = None

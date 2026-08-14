@@ -9,6 +9,13 @@ MESSAGES = {
         "zh-TW": "AI 服務暫時無法使用: {error}",
         "en": "The AI service is temporarily unavailable: {error}",
     },
+
+    # --- 陪伴者客製化設定 (api/routes/user.py 的 /users/me/companion) ---
+    "companion_saved": {
+        "zh-TW": "陪伴者設定已儲存",
+        "en": "Companion settings saved",
+    },
+
     "diary_failed_retry": {
         "zh-TW": "日記生成失敗，對話記錄已保留，請稍後重試: {error}",
         "en": "Diary generation failed — your conversation is preserved, please try again later: {error}",

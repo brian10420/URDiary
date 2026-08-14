@@ -28,6 +28,7 @@ from datetime import datetime, timedelta
 import uuid
 
 from api.deps import get_db, get_current_user, get_current_token_data, get_language
+from api.schemas import CompanionSettingsIn
 from middleware import rate_limit
 from utils.api_exceptions import BadRequestError, NotFoundError, UnauthorizedError, ForbiddenError
 from utils.error_codes import ErrorCode
@@ -436,6 +437,50 @@ async def revoke_session(session_id: int,
 
     crud.revoke_auth_session_chain(db, session)
     return {"message": msg("session_revoked", lang)}
+
+
+# --- 陪伴者客製化設定 (v2.4 spec ①：companion_name/user_nickname/style_*) ---
+# 註冊順序同樣要在 /{user_id} 之前 (見上面 /sessions 的說明)。
+
+def _companion_payload(user) -> Dict[str, Any]:
+    return {
+        "companion_name": user.companion_name or None,
+        "user_nickname": user.user_nickname or None,
+        "style_reply_length": user.style_reply_length or None,
+        "style_emoji": user.style_emoji or None,
+        "style_formality": user.style_formality or None,
+    }
+
+
+@router.get("/me/companion", response_model=Dict[str, Any],
+            summary="查詢陪伴者客製化設定")
+def get_my_companion(current_user: User = Depends(get_current_user),
+                     db: Session = Depends(get_db)):
+    user = db.query(User).filter_by(id=current_user.id).first()
+    return _companion_payload(user)
+
+
+@router.put("/me/companion", response_model=Dict[str, Any],
+            summary="儲存陪伴者客製化設定",
+            description="部分更新：未出現的欄位維持原值；送空字串＝清空該欄")
+def put_my_companion(payload: CompanionSettingsIn,
+                     current_user: User = Depends(get_current_user),
+                     db: Session = Depends(get_db),
+                     lang: str = Depends(get_language)):
+    user = db.query(User).filter_by(id=current_user.id).first()
+    data = payload.model_dump(exclude_unset=True)
+    column_map = {
+        "companion_name": "companion_name", "user_nickname": "user_nickname",
+        "style_reply_length": "style_reply_length",
+        "style_emoji": "style_emoji", "style_formality": "style_formality"}
+    for field, column in column_map.items():
+        if field in data:
+            value = data[field]
+            if isinstance(value, str):
+                value = value.strip() or None  # 空字串＝清空
+            setattr(user, column, value)
+    db.commit()
+    return {"message": msg("companion_saved", lang), **_companion_payload(user)}
 
 
 # --- 個人 LLM 金鑰 (v2.3 task 1.6：手機瀏覽器沒有 safeStorage，金鑰改存伺服器) ---
