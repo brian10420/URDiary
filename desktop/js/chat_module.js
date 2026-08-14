@@ -7,6 +7,8 @@ const ChatModule = (function() {
     let userAvatar = null;
     let botAvatar = 'assets/icon.jpg';
     let isProcessing = false;
+    // 語音輸入（v2.4 spec②）：麥克風鍵是否正在錄音中
+    let recording = false;
 
     // DOM元素
     let chatContainer, chatMessagesContainer, userInputElement, 
@@ -64,7 +66,17 @@ const ChatModule = (function() {
         } else {
             console.warn('用戶輸入元素不存在');
         }
-        
+
+        // 語音輸入鍵（v2.4 spec②）：index.html 預設 display:none，只有瀏覽器
+        // 支援錄音（VoiceModule.isSupported()）才顯示並綁定。typeof 防禦寫法
+        // 與本檔案其餘可選依賴一致——部分單元測試不載入 voice_module.js，
+        // 也不在測試用 DOM 片段放 #mic-button，兩者都要能安靜跳過。
+        const micBtn = document.getElementById('mic-button');
+        if (micBtn && typeof VoiceModule !== 'undefined' && VoiceModule.isSupported()) {
+            micBtn.style.display = '';
+            micBtn.addEventListener('click', toggleMic);
+        }
+
         // 綁定結束聊天按鈕事件
         if (endChatBtnElement) {
             endChatBtnElement.addEventListener('click', endChat);
@@ -416,6 +428,55 @@ const ChatModule = (function() {
         await attemptSend(userInput, bubble);
     }
 
+    // 語音輸入接線（v2.4 spec②）：VoiceModule 負責錄音/轉寫/偏好，這裡只
+    // 負責把轉寫結果接進既有的輸入框/送出流程，不重複實作 VoiceModule 已有
+    // 的邏輯（見 binding constraint「聊天接線只讀不重複實作」）。
+
+    function userInputEl() { return document.getElementById('user-input'); }
+
+    // opts.mode/opts.send 供測試直接注入（見 tests/chat_voice.test.js）；
+    // 正常執行路徑落回 VoiceModule 目前的偏好與預設送出行為。
+    function handleTranscript(text, opts) {
+        const mode = (opts && opts.mode) || VoiceModule.getInputMode();
+        const send = (opts && opts.send) || ((t) => { userInputEl().value = t; sendMessage(); });
+        if (!text) return;
+        if (mode === 'fluent') { send(text); return; }
+        // confirm 模式：轉寫結果進輸入框，使用者自己按送出（不自動送出）
+        const input = userInputEl();
+        input.value = text;
+        input.focus();
+    }
+
+    // 麥克風鍵點擊：開始/停止錄音。錄音中再次點擊才會觸發停止＋轉寫，
+    // 期間鍵上加 .recording 供 CSS 顯示脈動效果（見 css/chat.css）。
+    async function toggleMic() {
+        const btn = document.getElementById('mic-button');
+        if (!recording) {
+            try {
+                await VoiceModule.startRecording();
+            } catch (e) {
+                addSystemMessage(I18N.t('voice.micDenied'));
+                return;
+            }
+            recording = true;
+            btn.classList.add('recording');
+        } else {
+            recording = false;
+            btn.classList.remove('recording');
+            // 轉寫請求在路上時鎖住按鈕，避免使用者連點觸發第二次
+            // stopRecording()（此時 mediaRecorder 已是 null，會直接 reject）。
+            btn.disabled = true;
+            try {
+                const { text } = await VoiceModule.stopRecording();
+                handleTranscript(text, {});
+            } catch (e) {
+                addSystemMessage((e && e.message) || I18N.t('voice.sttFailed'));
+            } finally {
+                btn.disabled = false;
+            }
+        }
+    }
+
     // 慢速模型提示（2026-08 驗收回饋）：grok-4.6 回覆常等超過 30 秒。等待
     // 超過門檻時，若目前模型有已知的較快替代，用系統訊息推薦到設定切換。
     // 一個工作階段最多提示一次（reset() 換帳號時歸零），模型沒有對應建議
@@ -673,13 +734,28 @@ const ChatModule = (function() {
             `;
     }
 
+    // TTS 播放鍵的 messageId（v2.4 spec②）：外部沒有指定（options.messageId）
+    // 時用遞增計數器現配一個。VoiceModule.speak 拿它當快取鍵，同一頁面工作
+    // 階段內每則訊息都要拿到不同的 id，否則會被誤判成「同一則訊息」而共用
+    // 到別則訊息已快取的錄音。
+    let ttsMessageCounter = 0;
+
     // 組出一則訊息的完整 HTML（頭像 + 內容氣泡，選擇性附時間戳）
+    //
+    // v2.4 spec②：kind 為 system 且未關閉時間戳（showTime）的訊息才附朗讀
+    // 鍵——唯一主動關閉 showTime 的是 addThinkingMessage 的「思考中」佔位
+    // 泡泡，那則訊息沒有實際文字內容可唸，也不會經過下面的 appendChatMessage
+    // （不會被綁上 click），刻意排除。
     function buildMessageHtml(kind, bubbleInnerHtml, options = {}) {
         const showTime = options.showTime !== false;
+        const isAssistantReply = kind === 'system' && showTime;
+        const ttsButtonHtml = isAssistantReply
+            ? `<button class="tts-play" data-mid="${options.messageId || ('tts-' + (++ttsMessageCounter))}" title="${I18N.t('voice.playTitle')}"><i class="fa fa-volume-up"></i></button>`
+            : '';
         return `
             <div class="message-avatar">${buildAvatarHtml(kind)}</div>
             <div class="message-content">
-                <div class="message-bubble">${bubbleInnerHtml}</div>
+                <div class="message-bubble">${bubbleInnerHtml}</div>${ttsButtonHtml}
                 ${showTime ? `<div class="message-time">${formatTime(new Date())}</div>` : ''}
             </div>
         `;
@@ -702,6 +778,32 @@ const ChatModule = (function() {
             content: content,
             timestamp: new Date().toISOString()
         });
+
+        // 朗讀鍵接線（v2.4 spec②）：buildMessageHtml 只為真正的 assistant 訊息
+        // 附上 .tts-play（思考中佔位泡泡不經過這裡，見該函式說明），這裡用
+        // 呼叫端傳入的 content（原始純文字）餵給 VoiceModule.speak——不重抽
+        // DOM 文字，DOM 裡存的是 formatMessageContent() 跳脫＋<br> 轉換後的
+        // HTML，不是原文。typeof 防禦：部分既有單元測試載入 chat_module.js
+        // 時不載入 voice_module.js（例如 tests/chat_retry.test.js）。
+        const ttsBtn = messageElement.querySelector('.tts-play');
+        if (ttsBtn && typeof VoiceModule !== 'undefined') {
+            const mid = ttsBtn.dataset.mid;
+            ttsBtn.addEventListener('click', function () {
+                VoiceModule.speak(mid, content).catch(function (error) {
+                    console.warn('朗讀失敗:', error);
+                });
+            });
+
+            // 自動朗讀只套用在「新的即時訊息」（scroll 為 true）：
+            // loadChatHistory 還原今日歷史時，每則訊息都以 scroll=false 呼叫
+            // addSystemMessage/addUserMessage（見該處），藉此排除在外——否則
+            // 重新整理頁面會把今天全部的 AI 回覆一次疊在一起唸出來。
+            if (scroll && VoiceModule.isAutoRead()) {
+                VoiceModule.speak(mid, content).catch(function (error) {
+                    console.warn('自動朗讀失敗:', error);
+                });
+            }
+        }
 
         if (scroll) {
             scrollToBottom();
@@ -942,6 +1044,14 @@ const ChatModule = (function() {
         // 換帳號後新的工作階段可以再提示一次慢速模型建議
         slowModelHintShown = false;
 
+        // 麥克風鍵不在 chatMessagesContainer 底下，上面的 innerHTML 清空不會
+        // 動到它——錄音狀態旗標另外歸零，避免殘留的 recording=true 讓下一次
+        // 點擊誤判成「正在錄音、要停止」（此時 VoiceModule 內部其實早已沒有
+        // 對應的 mediaRecorder）。
+        recording = false;
+        const micBtn = document.getElementById('mic-button');
+        if (micBtn) micBtn.classList.remove('recording');
+
         console.log('聊天模塊已重置');
     }
     
@@ -955,6 +1065,7 @@ const ChatModule = (function() {
         // 純函式，僅為 vitest 單元測試曝光，行為不變
         diaryDayString: diaryDayString,
         applyCompanionTitle: applyCompanionTitle,
-        maybeShowSlowModelHint: maybeShowSlowModelHint
+        maybeShowSlowModelHint: maybeShowSlowModelHint,
+        _test: { handleTranscript: handleTranscript }
     };
 })();

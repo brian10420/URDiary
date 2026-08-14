@@ -266,7 +266,12 @@ const I18N = (function() {
             'auth.revokeFailed': '撤銷失敗: {error}',
             'auth.logout': '登出這台裝置',
             'auth.logoutConfirm': '確定要登出嗎？下次需要重新輸入密碼。',
-            'auth.loggedOut': '已登出'
+            'auth.loggedOut': '已登出',
+
+            'voice.micTitle': '語音輸入',
+            'voice.micDenied': '無法取得麥克風權限——請到瀏覽器/系統設定允許',
+            'voice.sttFailed': '轉寫失敗，請再試一次',
+            'voice.playTitle': '朗讀這則回覆'
         },
 
         'en': {
@@ -520,7 +525,12 @@ const I18N = (function() {
             'auth.revokeFailed': 'Could not revoke: {error}',
             'auth.logout': 'Sign out this device',
             'auth.logoutConfirm': 'Sign out? You will need your password next time.',
-            'auth.loggedOut': 'Signed out'
+            'auth.loggedOut': 'Signed out',
+
+            'voice.micTitle': 'Voice input',
+            'voice.micDenied': 'Microphone permission denied — allow it in browser/system settings',
+            'voice.sttFailed': 'Transcription failed — please try again',
+            'voice.playTitle': 'Read this reply aloud'
         }
     };
 

@@ -180,6 +180,31 @@
     text-align: right;
 }
 
+/* 朗讀鍵（v2.4 spec②）：assistant 訊息氣泡下方，比照 base.css 的
+   .icon-btn 尺寸/圓形/透明背景（該 class 本身沒有套用在這顆按鈕上，
+   因為它需要另外掛 data-mid，這裡直接複製同一套視覺規則）。 */
+.tts-play {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2.5rem;
+    height: 2.5rem;
+    padding: 0;
+    border-radius: 50%;
+    background-color: transparent;
+    color: var(--text-color);
+    box-shadow: none;
+    margin-top: 2px;
+}
+
+.tts-play:hover {
+    background-color: rgba(0, 0, 0, 0.05);
+}
+
+[data-theme="dark"] .tts-play:hover {
+    background-color: rgba(255, 255, 255, 0.1);
+}
+
 /* 傳送中／傳送失敗（v2.3 task 2.3）：使用者訊息氣泡的離線容忍視覺狀態，
    見 js/chat_module.js 的 markPending/markSendFailed。 */
 .chat-message.pending .message-bubble {
@@ -276,6 +301,24 @@
 .chat-input-wrapper {
     display: flex;
     align-items: center;
+}
+
+/* 麥克風鍵（v2.4 spec②）：class="icon-btn" 已提供圓形/尺寸/透明背景，這裡
+   只補輸入列裡的間距（比照 #user-input 自己跟送出鈕之間的既有間距）與
+   錄音中的脈動提示。 */
+#mic-button {
+    margin-right: 10px;
+}
+
+#mic-button.recording i {
+    color: #e34948;
+    animation: mic-pulse 1s infinite;
+}
+
+@keyframes mic-pulse {
+    50% {
+        opacity: .4;
+    }
 }
 
 #user-input {

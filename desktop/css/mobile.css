@@ -113,6 +113,14 @@
         height: 44px;
     }
 
+    /* 輸入列三鍵（v2.4 spec② 新增麥克風鍵後：mic-button + textarea +
+       send-button）在 44px 觸控目標放大後留一點呼吸空間。.chat-input-wrapper
+       是 display:flex 且預設 flex-wrap:nowrap（未覆寫），三顆鍵/輸入框本來
+       就不會換行，這裡只補間距，不需要額外設 flex-wrap。 */
+    .chat-input-wrapper {
+        gap: 6px;
+    }
+
     .calendar-cell {
         min-height: 44px;
     }

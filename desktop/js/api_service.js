@@ -538,6 +538,13 @@ const ApiService = (function() {
                 }
             }
 
+            // 語音端點永遠用 xAI 金鑰（v2.4 spec ②）；僅桌面（有 secure store）帶標頭，
+            // PWA 走後端 DB 憑證/env 後備。
+            if (hasSecureStore && endpoint.startsWith('/voice/')) {
+                const grokKey = SecureStore.getKey('grok');
+                if (grokKey) fetchOptions.headers['X-Voice-Api-Key'] = grokKey;
+            }
+
             // 如果有body，將其轉換為JSON（FormData 原樣送出——JSON.stringify 一個
             // FormData 物件只會得到 "{}"，上傳內容整個消失）
             if (options.body) {
