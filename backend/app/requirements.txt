@@ -2,6 +2,7 @@ fastapi>=0.108.0
 uvicorn>=0.25.0
 python-dotenv>=1.0.0
 openai>=1.3.0
+httpx  # 原為 openai SDK 的轉依賴；services/voice_service 直呼 xAI STT/TTS 改為明列直接依賴
 anthropic>=0.40.0  # Claude 官方 SDK (providers/anthropic_provider)
 google-genai>=1.0.0  # Gemini 官方 SDK (providers/gemini_provider)
 sqlalchemy>=2.0.25  # 資料庫為 SQLite 單檔 (data/urdiary.db)，無需外部 DB
