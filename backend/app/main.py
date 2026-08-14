@@ -91,9 +91,13 @@ app.add_middleware(
     # X-LLM-*: 前端以標頭傳遞請求範圍的 LLM 供應商設定 (api/deps.get_llm_config)
     # X-Memory-Semantic: 語意記憶檢索開關 (api/deps.get_memory_prefs)
     # X-Language: 對話語言 (api/deps.get_language)
+    # X-Voice-Api-Key: 桌面使用者的 xAI 金鑰，供 /voice/stt、/voice/tts 代呼
+    # 語音服務時使用 (api/deps.get_voice_api_key, v2.4 spec②)。少了這一條，
+    # 跨來源 (cross-origin) 的 PWA 對 /voice/stt 送出的 preflight 會因為
+    # 這個自訂標頭不在允許清單裡而失敗，語音功能整個打不通。
     allow_headers=["Authorization", "Content-Type", "X-Client",
                    "X-LLM-Provider", "X-LLM-Model", "X-LLM-Api-Key", "X-LLM-Base-Url",
-                   "X-Memory-Semantic", "X-Language"],
+                   "X-Memory-Semantic", "X-Language", "X-Voice-Api-Key"],
 )
 
 # 添加安全標頭中間件 (v2.3)：刻意註冊在 CORS 之後，使其成為最外層——

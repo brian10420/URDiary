@@ -101,12 +101,17 @@ function createWindow() {
   // 主機的 <link>，這裡的外部主機例外因此一併移除——跟後端
   // middleware/security_headers.py 的嚴格 CSP 打齊，兩邊都不再容忍任何外部
   // 主機（'self' 已經涵蓋 file:// 底下同目錄的自架字型/圖示）。
+  //
+  // media-src 額外開放 blob:（v2.4 spec② 語音）：TTS 用 new Audio(
+  // URL.createObjectURL(blob)) 播放 /voice/tts 回傳的 mp3 bytes，沒有這條
+  // 例外會退回 default-src 'self'，blob: URL 播不出來；同樣跟後端那份 CSP
+  // 打齊，不放寬任何外部主機。
   mainWindow.webContents.session.webRequest.onHeadersReceived((details, callback) => {
     callback({
       responseHeaders: {
         ...details.responseHeaders,
         'Content-Security-Policy': [
-          "default-src 'self'; script-src 'self' 'unsafe-inline'; connect-src 'self' http://localhost:*; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; font-src 'self';"
+          "default-src 'self'; script-src 'self' 'unsafe-inline'; connect-src 'self' http://localhost:*; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; font-src 'self'; media-src 'self' blob:;"
         ]
       }
     });

@@ -45,6 +45,10 @@ def test_headers_present_on_api_json_response(client):
     csp = resp.headers.get("content-security-policy")
     assert "default-src 'self'" in csp
     assert "style-src 'self' 'unsafe-inline'" in csp
+    # v2.4 spec② 語音：TTS 用 blob: URL 播放，沒有這條例外會退回
+    # default-src 'self'，擋下播放（見 middleware/security_headers.py
+    # 該常數上方的說明）。
+    assert "media-src 'self' blob:" in csp
     assert "frame-ancestors 'none'" in csp
 
 

@@ -1000,6 +1000,17 @@ const ApiService = (function() {
         if (accessToken) {
             fetchOptions.headers['Authorization'] = `Bearer ${accessToken}`;
         }
+
+        // 語音端點永遠用 xAI 金鑰（v2.4 spec ②）；僅桌面（有 secure store）帶標頭，
+        // PWA 走後端 DB 憑證/env 後備。與 fetchAPI 的同名區塊邏輯一致——fetchRaw
+        // 是目前唯一呼叫 /voice/tts 的路徑，沒有這段的話桌面版金鑰只存在
+        // Electron secure store、從未送到後端，TTS 一律 400（fix wave item 2）。
+        const hasSecureStore = (typeof SecureStore !== 'undefined') && SecureStore.isAvailable();
+        if (hasSecureStore && endpoint.startsWith('/voice/')) {
+            const grokKey = SecureStore.getKey('grok');
+            if (grokKey) fetchOptions.headers['X-Voice-Api-Key'] = grokKey;
+        }
+
         if (options.body !== undefined) {
             fetchOptions.body = options.body;
         }

@@ -30,7 +30,28 @@ router = APIRouter(prefix="/voice", tags=["voice"])
 
 MAX_AUDIO_BYTES = 25 * 1024 * 1024
 MAX_TTS_CHARS = 2000
-_ALLOWED_AUDIO_PREFIXES = ("audio/", "video/mp4")  # iOS Safari 錄音容器是 video/mp4
+
+# 錄音上傳 MIME 白名單：精確比對（集合成員資格），不是前綴/子字串比對。
+# 涵蓋主流瀏覽器 MediaRecorder 常見輸出 (Chrome/Firefox audio/webm)、
+# 桌面/行動 Safari (audio/mp4、iOS 錄音容器 video/mp4)，以及其餘常見音訊
+# 格式。voice_stt() 比對前只取 ';' 前的基底型別 (見下方 base 正規化)，
+# 因此這個集合裡不放任何帶參數的字串（如 "audio/webm;codecs=opus"）。
+#
+# 安全考量 (v2.4 spec② fix wave item 1 — multipart part 標頭注入)：
+# services/voice_service.py 會把驗證通過的值原樣當成 httpx 呼叫 xAI 時
+# 該 part 的 Content-Type 轉傳；httpx 對這個值不跳脫、Starlette 的
+# multipart 解析器又能接受值裡帶裸 LF，所以 file.content_type 有可能是
+# 攻擊者精心構造、帶換行的字串 (例如 "audio/webm\nX-Injected: 1")。舊版
+# `.startswith(("audio/", "video/mp4"))` 前綴檢查一樣會放行這種字串
+# （它確實以 "audio/" 開頭），被原封不動送進對 xAI 的請求標頭裡——等於
+# 已認證使用者能在伺服器簽發、代表伺服器/使用者憑證的外送請求裡夾帶額外
+# MIME 標頭列。改成「集合裡的每個值都是不含任何空白/控制字元的靜態字串
+# 常量，且必須完全相等」後，任何帶換行或參數的字串都無法通過，徹底堵死
+# 這條注入路徑。
+_ALLOWED_AUDIO_TYPES = frozenset({
+    "audio/webm", "audio/mp4", "audio/ogg", "audio/mpeg",
+    "audio/wav", "audio/x-wav", "audio/aac", "video/mp4",
+})
 
 
 class TTSIn(BaseModel):
@@ -56,8 +77,12 @@ def voice_stt(file: UploadFile = File(...),
              api_key: str = Depends(get_voice_api_key),
              lang: str = Depends(get_language)):
     """接收錄音檔，代呼 xAI STT 後只回傳轉寫文字。"""
-    content_type = (file.content_type or "").lower()
-    if not content_type.startswith(_ALLOWED_AUDIO_PREFIXES):
+    # 只取 ';' 前的基底型別、去除首尾空白後小寫——MediaRecorder 常附加
+    # `;codecs=opus` 之類的參數，必須先剝掉才能跟白名單精確比對；這一步
+    # 產生的 base 也是後面唯一會轉傳給 voice_service 的值，file.content_type
+    # 這個原始（可能被使用者端惡意置換的）字串到此為止，不再往下游傳遞。
+    base = (file.content_type or "").split(";")[0].strip().lower()
+    if base not in _ALLOWED_AUDIO_TYPES:
         raise APIError(status_code=422, error_code=ErrorCode.INVALID_INPUT,
                        detail=msg("voice_bad_audio_type", lang))
 
@@ -70,7 +95,7 @@ def voice_stt(file: UploadFile = File(...),
 
     try:
         text = voice_service.speech_to_text(
-            audio, file.filename or "audio", content_type,
+            audio, file.filename or "audio", base,
             api_key=api_key, language=lang)
     except voice_service.VoiceServiceError as exc:
         raise _voice_http_error(exc, lang)

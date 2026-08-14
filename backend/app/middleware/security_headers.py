@@ -12,6 +12,11 @@ Font Awesome CDN，會被這個 CSP 擋下；Phase 2.2 已把字型/圖示改成
 下面這個常數本來就沒有任何外部主機的例外，未來若又要外接 CDN 字型/圖示，
 正確做法是比照 Phase 2.2 再次自架，而不是在這裡幫外部主機開白名單。
 
+media-src 額外開放 blob:（v2.4 spec② 語音）——TTS 是 `new Audio(
+URL.createObjectURL(blob))` 播放後端回傳的 mp3 bytes，這個 blob: URL
+沒有 media-src 例外的話會退回 default-src 'self'，擋下播放；同源網路
+來源不受影響，media-src 仍然沒有任何外部主機的例外。
+
 註冊順序見 main.py：刻意排在 CORSMiddleware 之後 (= 比 CORS 更外層)。
 CORS 對 preflight (OPTIONS) 請求會直接短路回應、不往內呼叫下一層，只有
 放在最外層才能保證「所有」回應 (含 preflight) 都會被加上安全標頭。
@@ -23,6 +28,7 @@ from starlette.responses import Response
 CONTENT_SECURITY_POLICY = (
     "default-src 'self'; "
     "style-src 'self' 'unsafe-inline'; "
+    "media-src 'self' blob:; "
     "frame-ancestors 'none'"
 )
 
