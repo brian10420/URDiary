@@ -74,8 +74,18 @@ const DiaryModule = (function() {
             }
         }
         
-        // 載入日記列表
-        loadDiaries();
+        // 載入日記列表——冷啟動未登入時跳過：main.js 在 DOMContentLoaded
+        // 無條件 init 本模組，比登入判斷（main.js 的 setTimeout 區塊）更早，
+        // 此時打 GET /diaries 只會吃 401 並把「載入失敗」錯誤窗疊在登入畫面
+        // 上。登入流程（main.js loginUser）會 reset()+init() 重新進來，屆時
+        // 再載入即可。
+        if (typeof ApiService !== 'undefined' &&
+            typeof ApiService.isAuthenticated === 'function' &&
+            !ApiService.isAuthenticated()) {
+            console.log('尚未登入，跳過啟動時的日記載入');
+        } else {
+            loadDiaries();
+        }
         
         // 綁定返回按鈕事件
         const backToListBtn = document.getElementById('back-to-list-btn');
