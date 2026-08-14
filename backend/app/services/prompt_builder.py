@@ -65,10 +65,15 @@ def build_companion_block(lang: str, settings: "Optional[CompanionSettings]") ->
             lines.append(f"They named you {settings.name} — that's who you are.")
         if settings.nickname:
             lines.append(f"They'd like you to call them \"{settings.nickname}\".")
-    style_bits = [phrases[key][value] for key, value in (
-        ("reply_length", settings.reply_length),
-        ("emoji", settings.emoji),
-        ("formality", settings.formality)) if value]
+    # .get() 而非 [] 索引：欄位若存進了枚舉外的值 (手改資料庫；API 層雖有驗證，
+    # 這層仍要自保)，靜靜跳過該欄位就好，不能讓聊天因為一個未知值整個中斷。
+    style_bits = []
+    for key, value in (("reply_length", settings.reply_length),
+                       ("emoji", settings.emoji),
+                       ("formality", settings.formality)):
+        phrase = phrases[key].get(value)
+        if phrase:
+            style_bits.append(phrase)
     if style_bits:
         if lang == "zh-TW":
             lines.append("風格偏好：" + "；".join(style_bits) + "。")

@@ -48,3 +48,10 @@ def test_en_block_localized():
     s = CompanionSettings(name="Sunny", reply_length="chatty")
     block = build_companion_block("en", s)
     assert "Sunny" in block and "chat" in block.lower()
+
+
+def test_out_of_enum_style_value_skipped_not_raised():
+    s = CompanionSettings(name="小澄", reply_length="explosive")
+    block = build_companion_block("zh-TW", s)
+    assert "小澄" in block
+    assert "回覆" not in block
