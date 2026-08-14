@@ -66,3 +66,24 @@ def test_timeout_mapped(monkeypatch):
     with pytest.raises(voice_service.VoiceServiceError) as exc:
         voice_service.text_to_speech("hi", api_key="k", voice_id=None)
     assert exc.value.status_code == 504
+
+
+def test_stt_non_json_200_mapped_not_leaked(monkeypatch):
+    """xAI 回 200 但 body 不是合法 JSON（或整個是空 body）：response.json()
+    會丟 ValueError（json.JSONDecodeError 是其子類別），不該讓這個例外原樣
+    往外逃成未映射的 500——一律映射成既有的 voice_upstream_failed。"""
+    from services import voice_service
+
+    def fake_post(url, api_key, **kwargs):
+        class R:
+            status_code = 200
+            content = b"not json"
+            def json(self): raise ValueError("Expecting value: line 1 column 1 (char 0)")
+        return R()
+
+    monkeypatch.setattr(voice_service, "_post", fake_post)
+    with pytest.raises(voice_service.VoiceServiceError) as exc:
+        voice_service.speech_to_text(b"x", "a.webm", "audio/webm",
+                                     api_key="k", language="zh-TW")
+    assert exc.value.status_code == 502
+    assert exc.value.message_key == "voice_upstream_failed"

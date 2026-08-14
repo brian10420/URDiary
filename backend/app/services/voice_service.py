@@ -68,7 +68,16 @@ def speech_to_text(audio: bytes, filename: str, content_type: str,
         files={"file": (filename, audio, content_type)},
         data={"language": (language or "zh-TW").split("-")[0]},
     )
-    text = (response.json() or {}).get("text", "")
+    try:
+        # xAI 回 200 不保證 body 是合法 JSON（也可能整個是空 body）；
+        # response.json() 在那種情況下會丟 ValueError
+        # (json.JSONDecodeError 是它的子類別)，不接住的話會原樣逃成
+        # 未映射的 500，而不是這一層該給的 VoiceServiceError。上游 body
+        # 不記、不轉傳，理由同 _call() 對非 200 狀態的處理。
+        body = response.json() or {}
+    except ValueError:
+        raise VoiceServiceError(502, "voice_upstream_failed")
+    text = body.get("text", "")
     if not text:
         raise VoiceServiceError(502, "voice_empty_transcript")
     return text

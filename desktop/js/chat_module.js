@@ -452,14 +452,23 @@ const ChatModule = (function() {
     async function toggleMic() {
         const btn = document.getElementById('mic-button');
         if (!recording) {
+            // 連點防護（比照下面 stop 分支既有的做法）：recording 要等
+            // startRecording() 的 await 回來才會變 true，在那之前（例如
+            // 麥克風權限彈窗還沒回應的當下）快速連點兩下一樣會走進這個
+            // if 分支。同步鎖住按鈕，讓這一層在最源頭就擋掉第二次進入，
+            // 不單依賴 VoiceModule 內部的同步鎖（見 voice_module.js
+            // startRecording() 的 starting 旗標——兩層防護對應同一個
+            // cross-task 的孤兒 MediaStream 問題，各自獨立生效）。
+            btn.disabled = true;
             try {
                 await VoiceModule.startRecording();
+                recording = true;
+                btn.classList.add('recording');
             } catch (e) {
                 addSystemMessage(I18N.t('voice.micDenied'));
-                return;
+            } finally {
+                btn.disabled = false;
             }
-            recording = true;
-            btn.classList.add('recording');
         } else {
             recording = false;
             btn.classList.remove('recording');
