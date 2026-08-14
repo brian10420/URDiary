@@ -66,3 +66,18 @@ def test_companion_settings_snapshot_after_put(client):
     client.put("/users/me/companion", headers=headers, json={"companion_name": "小澄"})
     from services.companion_service import get_companion_settings
     assert get_companion_settings(user_id).name == "小澄"
+
+
+def test_chat_system_prompt_contains_companion(client, mock_llm, llm_headers):
+    """路由層級：/chat/enhanced/ 真的把使用者設定的陪伴者名字帶進 system prompt。"""
+    headers, _ = _create_and_login(client, _unique_username())
+    client.put("/users/me/companion", headers=headers, json={"companion_name": "小澄"})
+    mock_llm.respond("好的！")
+
+    resp = client.post(
+        "/chat/enhanced/", json={"message": "嗨"}, headers={**headers, **llm_headers}
+    )
+
+    assert resp.status_code == 200
+    system_prompt = mock_llm.calls[-1]["messages"][0]["content"]
+    assert "小澄" in system_prompt

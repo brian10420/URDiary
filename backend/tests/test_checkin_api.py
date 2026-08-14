@@ -70,6 +70,23 @@ def test_checkin_prompt_contains_todays_calendar_event(
     assert "牙醫檢查" in prompt_text
 
 
+def test_checkin_prompt_contains_companion_name(
+    client, auth_header, mock_llm, llm_headers
+):
+    """陪伴者客製化名字要進得了 check-in 開場提示詞（與行事曆注入同一組測試手法）。"""
+    headers, _ = auth_header
+    client.put("/users/me/companion", headers=headers, json={"companion_name": "小澄"})
+
+    mock_llm.respond("早安，今天也慢慢來就好。")
+    resp = client.post("/chat/checkin/", headers={**headers, **llm_headers})
+
+    assert resp.status_code == 200
+    assert resp.json()["checkin"] is True
+
+    prompt_text = "\n".join(m["content"] for m in mock_llm.calls[-1]["messages"])
+    assert "小澄" in prompt_text
+
+
 def test_checkin_llm_failure_returns_checkin_false_not_5xx(
     client, other_auth_header, mock_llm, llm_headers
 ):

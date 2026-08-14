@@ -188,6 +188,10 @@ def enhanced_chat_with_context(chat_id: str, numeric_user_id: int, message: str,
     calendar_context = build_calendar_context(
         numeric_user_id, get_local_now().date(), lang)
 
+    # 陪伴者客製化設定 (自管短交易，讀完立刻關閉，LLM 呼叫前完成——同一鐵律)
+    from services.companion_service import get_companion_settings
+    companion = get_companion_settings(numeric_user_id)
+
     # 分層組裝系統提示詞 (人格核心 → 對話框架與記憶 → 危機模式附錄)
     system_prompt = build_conversation_system(
         lang=lang,
@@ -196,6 +200,7 @@ def enhanced_chat_with_context(chat_id: str, numeric_user_id: int, message: str,
         today_date=get_diary_date().strftime("%Y-%m-%d"),
         calendar_context=calendar_context,
         crisis=crisis,
+        companion=companion,
     )
 
     # 準備消息列表，用於API請求
@@ -355,6 +360,10 @@ def daily_checkin(chat_id: str, numeric_user_id: int, cfg: Optional[LLMConfig] =
     calendar_block = build_calendar_context(
         numeric_user_id, get_local_now().date(), lang)
 
+    # 陪伴者客製化設定 (自管短交易，讀完立刻關閉，LLM 呼叫前完成——同一鐵律)
+    from services.companion_service import get_companion_settings
+    companion = get_companion_settings(numeric_user_id)
+
     # LLM 階段 (不持有 DB 連線)。LLMError 往上拋，由路由層轉為 checkin:false。
     prompt = build_checkin_prompt(
         lang=lang,
@@ -363,6 +372,7 @@ def daily_checkin(chat_id: str, numeric_user_id: int, cfg: Optional[LLMConfig] =
         last_diary_block=last_diary_block,
         user_profile=user_profile,
         calendar_block=calendar_block,
+        companion=companion,
     )
     messages = [
         {"role": "system", "content": get_role("companion", lang)},
