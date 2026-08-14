@@ -41,6 +41,10 @@ MY_ID=$(python3 -c "import base64,json,sys;p='$TOKEN'.split('.')[1];p+='='*(-len
 check "讀自己的日記列表" "$(curl -sm 5 $BASE/diaries/$MY_ID -H "Authorization: Bearer $TOKEN")" '"diaries"'
 check "跨用戶讀取被拒" "$(curl -sm 5 -o /dev/null -w '%{http_code}' $BASE/diaries/999999 -H "Authorization: Bearer $TOKEN")" '403'
 
+echo "== 語音 (v2.4 spec②，無金鑰路徑) =="
+check "未登入語音轉文字被拒" "$(curl -sm 5 -o /dev/null -w '%{http_code}' -X POST $BASE/voice/stt -F 'file=@/dev/null;type=audio/webm')" '401'
+check "登入但無金鑰時語音合成給明確錯誤" "$(curl -sm 5 -o /dev/null -w '%{http_code}' -X POST $BASE/voice/tts -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' -d '{"text":"你好"}')" '400'
+
 echo
 echo "結果: $PASSED passed, $FAILED failed"
 [ "$FAILED" -eq 0 ]
