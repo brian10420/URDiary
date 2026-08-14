@@ -10,3 +10,11 @@ def test_get_companion_settings_defaults_empty(client):
     assert s.name is None and s.nickname is None
     assert s.reply_length is None and s.emoji is None and s.formality is None
     assert s.is_empty()
+
+
+def test_get_companion_settings_unknown_user_returns_empty(client):
+    """查無使用者 (user_id=-1) → 回傳 EMPTY_COMPANION，不拋錯。"""
+    from services.companion_service import get_companion_settings, EMPTY_COMPANION
+    s = get_companion_settings(-1)
+    assert s is EMPTY_COMPANION
+    assert s.is_empty()
