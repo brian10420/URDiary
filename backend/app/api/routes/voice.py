@@ -1,7 +1,13 @@
 """語音代理路由 (v2.4 spec ②)：POST /voice/stt、POST /voice/tts。
 
-音訊 bytes 只活在請求處理期間的記憶體，不落磁碟；上游錯誤一律經
-VoiceServiceError 映射為本地化訊息（原始 body 不轉傳）。
+應用層絕不主動寫入音訊到任何儲存（沒有 open/write/tempfile 之類的呼叫）；
+上游錯誤一律經 VoiceServiceError 映射為本地化訊息（原始 body 不轉傳）。
+
+「不落磁碟」的實際保證範圍：Starlette 的 multipart 解析器對 >1MB 的上傳
+部分（本路由接受到 25MB）會先經過一個匿名、已 unlink 的 OS 暫存檔——沒有
+路徑可尋、請求結束就釋放。這裡保證的是「不持久化、不留下可被發現的檔案」，
+不是字面上的「全程純 RAM」；這個範圍已滿足日記隱私的實際訴求，因此刻意
+不去改寫 multipart 解析層，也不換掉 UploadFile。
 
 路由刻意寫成同步 `def`（不是 `async def`）：services/voice_service.py 內部
 用 httpx 的同步用戶端直呼 xAI，逾時上限到 60 秒——若宣告成 async def
