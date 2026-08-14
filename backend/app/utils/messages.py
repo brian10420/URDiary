@@ -126,6 +126,37 @@ MESSAGES = {
         "zh-TW": "行事曆事件已刪除",
         "en": "Calendar event deleted",
     },
+
+    # --- 語音功能 (services/voice_service.py, api/routes/voice.py) ---
+    "voice_key_missing": {
+        "zh-TW": "語音功能需要 xAI (Grok) 的 API Key——請到設定填入，或改用桌面版既有的 Grok 金鑰",
+        "en": "Voice features need an xAI (Grok) API key — add one in Settings",
+    },
+    "voice_upstream_failed": {
+        "zh-TW": "語音服務暫時無法使用，請稍後再試",
+        "en": "The voice service is temporarily unavailable — please try again later",
+    },
+    "voice_timeout": {
+        "zh-TW": "語音服務回應逾時，請稍後再試",
+        "en": "The voice service timed out — please try again later",
+    },
+    "voice_empty_transcript": {
+        "zh-TW": "沒有聽清楚，請再說一次",
+        "en": "Couldn't catch that — please try again",
+    },
+    "voice_audio_too_large": {
+        "zh-TW": "音檔太大（上限 25MB／約 10 分鐘）",
+        "en": "Audio too large (max 25MB / ~10 minutes)",
+    },
+    "voice_bad_audio_type": {
+        "zh-TW": "不支援的音訊格式",
+        "en": "Unsupported audio format",
+    },
+    "voice_text_too_long": {
+        "zh-TW": "朗讀文字過長（上限 2000 字）",
+        "en": "Text too long to read aloud (max 2000 characters)",
+    },
+
     "field_not_clearable": {
         "zh-TW": "欄位 {fields} 不可清空為 null，若要維持原值請不要提供該欄位",
         "en": "Field(s) {fields} cannot be cleared to null — omit them to keep the existing value",

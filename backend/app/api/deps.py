@@ -149,3 +149,38 @@ async def get_llm_config(
 
     # 4. 回 None → llm.resolve_config 走 .env Grok 後備 (沒設就拋 LLMError → 503)
     return None
+
+
+async def get_voice_api_key(
+    x_voice_api_key: Optional[str] = Header(None, description="xAI 金鑰（桌面版由 secure_store 的 grok 金鑰帶上）"),
+    current_user: User = Depends(get_current_user),
+    lang: str = Depends(get_language),
+) -> str:
+    """語音專用金鑰解析——語音永遠打 xAI，與聊天供應商選擇無關。
+
+    四層（比照 get_llm_config 的層次設計，但只認 grok/xAI）：
+      1. X-Voice-Api-Key 標頭（Electron 桌面）
+      2. 資料庫憑證（使用者 → 伺服器預設），**僅當該列 provider == "grok"**
+         ——憑證表一人一列，存的是聊天供應商；選 Claude 聊天的人沒有可用的
+         grok 列，直接落到下一層，絕不拿別家金鑰打 xAI。
+      3. .env 的 XAI_API_KEY
+      4. 都沒有 → 400 voice_key_missing，前端引導到設定頁補 xAI 金鑰。
+
+    與 get_llm_config 同一條鐵律：不宣告 Depends(get_db)，資料庫由
+    credential service 短 session 自理。
+    """
+    header_key = (x_voice_api_key or "").strip()
+    if header_key:
+        return header_key
+
+    from services.llm_credential_service import resolve_stored_config
+    stored_config, _source = resolve_stored_config(current_user.id)
+    if stored_config is not None and stored_config.provider == "grok" and stored_config.api_key:
+        return stored_config.api_key
+
+    import config as app_config
+    if app_config.XAI_API_KEY:
+        return app_config.XAI_API_KEY
+
+    raise BadRequestError(error_code=ErrorCode.INVALID_INPUT,
+                          detail=msg("voice_key_missing", lang))
