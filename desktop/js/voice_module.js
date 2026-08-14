@@ -32,6 +32,16 @@ const VoiceModule = (function () {
     }
 
     async function startRecording() {
+        // 防止在錄音進行中被重複呼叫（例如錄音鍵被快速連按兩下、或未來
+        // 呼叫端的邏輯錯誤）：不擋住的話，這裡會再要一次麥克風、把
+        // mediaRecorder 覆寫掉，原本那個 MediaRecorder/MediaStream 就此
+        // 孤兒化——它的 track 只在自己的 onstop 裡 .stop()，而 onstop 永遠
+        // 不會觸發（沒有人會再拿到它的參考去呼叫 stopRecording）。結果是
+        // 麥克風在使用者看得到的指示燈上持續亮著、被整個工作階段佔用，
+        // 且公開 API 完全沒有辦法釋放它。
+        if (mediaRecorder) {
+            throw new Error('already-recording');
+        }
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
         chunks = [];
         const mimeType = pickMimeType();

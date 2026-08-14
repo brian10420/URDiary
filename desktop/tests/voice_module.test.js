@@ -44,4 +44,25 @@ describe('VoiceModule', () => {
         expect(fetches).toBe(1);
         expect(VoiceModule._test.cacheSize()).toBe(1);
     });
+
+    test('startRecording 錄音中被重複呼叫：第二次拒絕，且不再次取用麥克風（避免孤兒 MediaStream）', async () => {
+        let getUserMediaCalls = 0;
+        navigator.mediaDevices = {
+            getUserMedia: async () => {
+                getUserMediaCalls += 1;
+                return { getTracks: () => [] };
+            },
+        };
+        global.MediaRecorder = class {
+            static isTypeSupported() { return false; }
+            constructor(stream) { this.stream = stream; }
+            start() {}
+        };
+
+        await VoiceModule.startRecording();
+        expect(getUserMediaCalls).toBe(1);
+
+        await expect(VoiceModule.startRecording()).rejects.toThrow('already-recording');
+        expect(getUserMediaCalls).toBe(1);
+    });
 });
