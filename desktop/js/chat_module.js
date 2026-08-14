@@ -909,6 +909,7 @@ const ChatModule = (function() {
         clearHistory: clearChat,
         endChat: endChat,
         // 純函式，僅為 vitest 單元測試曝光，行為不變
-        diaryDayString: diaryDayString
+        diaryDayString: diaryDayString,
+        applyCompanionTitle: applyCompanionTitle
     };
 })();

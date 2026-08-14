@@ -37,6 +37,10 @@ const SETTINGS_DIALOG_HTML = `
         <div id="settings-base-url-row"><input id="settings-base-url"></div>
         <input id="settings-semantic-memory" type="checkbox">
         <small id="settings-semantic-status"></small>
+        <input id="companion-name"><input id="companion-nickname">
+        <select id="companion-reply-length"><option value="">--</option><option value="short">s</option></select>
+        <select id="companion-emoji"><option value="">--</option><option value="none">n</option></select>
+        <select id="companion-formality"><option value="">--</option><option value="polite">p</option></select>
         <div id="settings-error"></div>
         <button id="settings-save"></button>
         <div id="settings-sessions-list"></div>
@@ -349,5 +353,51 @@ describe('設定面板（瀏覽器模式）', () => {
 
         expect(document.getElementById('settings-dialog').style.display).toBe('block');
         expect(document.getElementById('settings-key-status').textContent.length).toBeGreaterThan(0);
+    });
+
+    /**
+     * code review 修復（最終審查裁定的必修項）：陪伴者 PUT 失敗時，不能讓
+     * 使用者看到「已儲存」的成功訊號、對話框也關閉了，陪伴者欄位卻靜默沒
+     * 存進去。這個檔案共用的 SETTINGS_DIALOG_HTML 裡 #settings-language
+     * 沒有任何 <option>，設值會被忽略、value 恆為空字串，因此 save() 讀到
+     * 的 newLang 恆不等於 I18N.getLang()、langChanged 恆為 true——不需要
+     * 另外手動觸發，這個 fixture 本來就會走到「語言變更」分支，剛好貼合
+     * 本測試要驗證的另一半（langChanged + companion 編輯：排定的 400ms
+     * 整頁重載不該搶在 companion PUT 之前被排上）。
+     */
+    it('陪伴者設定儲存失敗時：不顯示成功 toast、不關對話框、不會排定整頁重載', async () => {
+        window.fetch = vi.fn(async (url, options = {}) => {
+            const method = (options.method || 'GET').toUpperCase();
+            if (method === 'PUT' && String(url).includes('/users/me/companion')) {
+                return { ok: false, status: 500, json: async () => ({}) };
+            }
+            return { ok: true, status: 200, json: async () => ({}) };
+        });
+
+        const setTimeoutSpy = vi.spyOn(global, 'setTimeout');
+
+        SettingsModule.init();
+        SettingsModule.openDialog();
+        await flush();
+
+        document.getElementById('companion-name').value = '小澄';
+        document.getElementById('settings-save').click();
+        await flush();
+
+        const error = document.getElementById('settings-error');
+        expect(error.textContent.length).toBeGreaterThan(0);
+        expect(document.getElementById('settings-dialog').style.display).toBe('block');
+        expect(toastSpy).not.toHaveBeenCalled();
+
+        // 舊版錯誤行為：companion PUT 失敗前，成功路徑早已排了
+        // setTimeout(() => location.reload(), 400)——用「有沒有任何一次
+        // setTimeout 呼叫帶的延遲剛好是 400ms」直接檢查 reload 真的沒有被
+        // 排定過（400 在這個檔案裡是 reload 專屬的數字，不會跟 flush()
+        // 等處用到的其他延遲混淆）。setTimeout 本身沒有被 mock 掉實作，
+        // flush() 自己用到的 setTimeout(resolve, 0) 仍正常運作。
+        const scheduledReload = setTimeoutSpy.mock.calls.some(call => call[1] === 400);
+        expect(scheduledReload).toBe(false);
+
+        setTimeoutSpy.mockRestore();
     });
 });

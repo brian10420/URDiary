@@ -4,11 +4,14 @@
 → 危機模式附錄 (crisis_mode，僅敏感詞命中時)。
 check-in 開場共用同一份人格核心，確保「同一個陪伴者」的一致性。
 """
+import logging
 from typing import Optional
 
 from services.calendar_service import NO_EVENTS_PLACEHOLDER
 from services.companion_service import CompanionSettings
 from services.prompt_loader import load_prompt, normalize_lang
+
+logger = logging.getLogger(__name__)
 
 
 def _calendar_or_placeholder(value: Optional[str], lang: str) -> str:
@@ -66,12 +69,17 @@ def build_companion_block(lang: str, settings: "Optional[CompanionSettings]") ->
         if settings.nickname:
             lines.append(f"They'd like you to call them \"{settings.nickname}\".")
     # .get() 而非 [] 索引：欄位若存進了枚舉外的值 (手改資料庫；API 層雖有驗證，
-    # 這層仍要自保)，靜靜跳過該欄位就好，不能讓聊天因為一個未知值整個中斷。
+    # 這層仍要自保)，對使用者仍是靜靜跳過該欄位、不能讓聊天因為一個未知值
+    # 整個中斷；但這在後端視角是不該發生的資料狀態，記一筆 warning 供排查
+    # (code review 修復：原本連日誌都沒有，出問題時無從得知是哪個欄位、
+    # 哪個值)。
     style_bits = []
     for key, value in (("reply_length", settings.reply_length),
                        ("emoji", settings.emoji),
                        ("formality", settings.formality)):
         phrase = phrases[key].get(value)
+        if value and not phrase:
+            logger.warning(f"陪伴者風格欄位 {key} 收到枚舉外的值 {value!r}，已跳過 (不中斷聊天)")
         if phrase:
             style_bits.append(phrase)
     if style_bits:

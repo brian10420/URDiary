@@ -503,6 +503,30 @@ const SettingsModule = (function() {
             localStorage.setItem(ACTIVE_PROVIDER_KEY, provider);
             notifyChanged();
 
+            // 陪伴者客製化設定：與上面的 AI 供應商／金鑰是各自獨立的一組
+            // 設定，用同一顆按鈕一起送出。
+            //
+            // code review 修復（最終審查裁定的必修項）：這裡刻意 await 在
+            // 下面的成功回饋（toast/closeDialog/語言重載排程）之前，且與
+            // 上面共用同一個 try/catch——原本放在整個 function 尾端、自己
+            // 另包一組 try/catch 時，使用者會先看到「已儲存」的 toast、
+            // 對話框也關閉了，這裡才失敗；離線 Electron 情境下上面的 AI/
+            // 語言/金鑰幾乎全部只碰本機、幾乎必定「成功」，使用者因此會
+            // 誤以為全部都存好了，卻靜默漏掉剛剛輸入的陪伴者名字／風格，
+            // 且完全看不到任何錯誤（showError 寫進的是這時已經隱藏的
+            // #settings-error）。若剛好又改了語言，下面排定的 400ms 後
+            // location.reload() 還可能把還在飛的這個 PUT 攔腰打斷。
+            //
+            // 改成在這裡 await 到底（成功或丟出例外）才往下走：失敗時直接
+            // 讓下面既有的 catch 接手——不顯示成功 toast、不關對話框、不
+            // 排定 reload，錯誤訊息如實顯示在仍然開著的對話框裡，使用者
+            // 看得到也能重按一次儲存重試（saveBtn 沿用下面既有的 finally，
+            // 全部塵埃落定才重新啟用，這裡不需要另外處理）。
+            //
+            // saveCompanionSettings() 內部「是否曾成功載入過」(companionLoaded)
+            // 與部分欄位 payload 的邏輯完全不變，這裡只是搬動呼叫時機。
+            await saveCompanionSettings();
+
             // 語言變更：整頁重載以套用所有靜態與動態字串
             // （Electron 重載保留 localStorage 與 token，會自動回到登入狀態）
             const newLang = languageSelect ? languageSelect.value : I18N.getLang();
@@ -524,17 +548,6 @@ const SettingsModule = (function() {
             showError(error.message || I18N.t('settings.saveFailed'));
         } finally {
             if (saveBtn) saveBtn.disabled = false;
-        }
-
-        // 陪伴者客製化設定：與上面的 AI 供應商／金鑰是各自獨立的一組設定，
-        // 用同一顆按鈕一起送出。失敗時如實顯示錯誤（沿用既有 showError），
-        // 但不回頭影響上面已經完成的儲存/提示/關閉面板——那些已經是既成
-        // 事實，不該因為這裡失敗而被撤銷或不一致地卡住。
-        try {
-            await saveCompanionSettings();
-        } catch (error) {
-            console.error('儲存陪伴者設定失敗:', error);
-            showError(error.message || I18N.t('settings.saveFailed'));
         }
     }
 
