@@ -16,6 +16,12 @@ class User(Base):
     password_hash = Column(String(255), nullable=True)
     # 每日 check-in：最後一次 AI 主動問候的「日記日」(5am 換日，naive 台北牆上時間)
     last_checkin_date = Column(DateTime, nullable=True)
+    # 陪伴者客製化 (v2.4 spec ①)：五欄皆 nullable，空值語意見 companion_service
+    companion_name = Column(String(40), nullable=True)      # 使用者幫 AI 取的名字 (≤20 字)
+    user_nickname = Column(String(40), nullable=True)       # AI 對使用者的稱呼 (≤20 字)
+    style_reply_length = Column(String(10), nullable=True)  # short / natural / chatty
+    style_emoji = Column(String(10), nullable=True)         # none / low / high
+    style_formality = Column(String(10), nullable=True)     # casual / polite
     created_at = Column(DateTime, default=datetime.utcnow)
 
     diaries = relationship("Diary", back_populates="user")
