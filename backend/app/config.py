@@ -88,7 +88,7 @@ REFRESH_TOKEN_DAYS = int(os.getenv("URDIARY_REFRESH_TOKEN_DAYS", "30"))
 # XAI_API_KEY 降為「未帶標頭時」的可選 Grok 後備
 GROK_API_URL = os.getenv("GROK_API_URL", "https://api.x.ai/v1")
 XAI_API_KEY = os.getenv("XAI_API_KEY")
-FALLBACK_GROK_MODEL = os.getenv("FALLBACK_GROK_MODEL", "grok-4.3")
+FALLBACK_GROK_MODEL = os.getenv("FALLBACK_GROK_MODEL", "grok-4.6")
 
 # -----------------------
 # 時區與換日 (日記的「今天」以此為準；utils/time_utils.py 讀取)

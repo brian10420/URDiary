@@ -18,14 +18,14 @@ const CONFIG = (function() {
         // SUGGESTED_MODELS 供設定面板下拉建議（打錯 ID 會被供應商 404，例如
         // claude-sonnet-5 誤打成 claude-sonnet-5-0）
         PROVIDERS: {
-            grok:   { LABEL: 'Grok (xAI)',            DEFAULT_MODEL: 'grok-4.3',        NEEDS_BASE_URL: false,
-                      SUGGESTED_MODELS: ['grok-4.3'] },
-            openai: { LABEL: 'ChatGPT (OpenAI)',      DEFAULT_MODEL: 'gpt-5.5',         NEEDS_BASE_URL: false,
-                      SUGGESTED_MODELS: ['gpt-5.5', 'gpt-5.6'] },
-            claude: { LABEL: 'Claude (Anthropic)',    DEFAULT_MODEL: 'claude-opus-4-8', NEEDS_BASE_URL: false,
-                      SUGGESTED_MODELS: ['claude-opus-4-8', 'claude-sonnet-5', 'claude-haiku-4-5'] },
-            gemini: { LABEL: 'Gemini (Google)',       DEFAULT_MODEL: 'gemini-3-flash',  NEEDS_BASE_URL: false,
-                      SUGGESTED_MODELS: ['gemini-3-flash', 'gemini-2.5-flash'] },
+            grok:   { LABEL: 'Grok (xAI)',            DEFAULT_MODEL: 'grok-4.6',        NEEDS_BASE_URL: false,
+                      SUGGESTED_MODELS: ['grok-4.6', 'grok-4.3'] },
+            openai: { LABEL: 'ChatGPT (OpenAI)',      DEFAULT_MODEL: 'gpt-5.6',         NEEDS_BASE_URL: false,
+                      SUGGESTED_MODELS: ['gpt-5.6', 'gpt-5.5'] },
+            claude: { LABEL: 'Claude (Anthropic)',    DEFAULT_MODEL: 'claude-opus-5',   NEEDS_BASE_URL: false,
+                      SUGGESTED_MODELS: ['claude-opus-5', 'claude-sonnet-5', 'claude-haiku-4-5'] },
+            gemini: { LABEL: 'Gemini (Google)',       DEFAULT_MODEL: 'gemini-3.7-flash', NEEDS_BASE_URL: false,
+                      SUGGESTED_MODELS: ['gemini-3.7-flash', 'gemini-3-flash'] },
             local:  { LABEL: '本地自架 (OpenAI 相容)', DEFAULT_MODEL: '',                NEEDS_BASE_URL: true,
                       SUGGESTED_MODELS: [] }
         },

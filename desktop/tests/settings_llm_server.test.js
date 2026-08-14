@@ -61,7 +61,7 @@ const SERVER_DEFAULT_STATUS = {
     configured: true,
     source: 'server',
     provider: 'grok',
-    model: 'grok-4.3',
+    model: 'grok-4.6',
     base_url: null,
     key_masked: '****9999',
     user_credential: null
@@ -338,7 +338,7 @@ describe('設定面板（瀏覽器模式）', () => {
         await flush();
 
         expect(document.getElementById('settings-provider').value).toBe('grok');
-        expect(document.getElementById('settings-model').value).toBe('grok-4.3');
+        expect(document.getElementById('settings-model').value).toBe('grok-4.6');
     });
 
     it('查詢狀態失敗時如實顯示，不會整個面板掛掉', async () => {

@@ -18,10 +18,10 @@ KNOWN_PROVIDERS = ("claude", "openai", "grok", "gemini", "local")
 
 # 各供應商的預設模型（模型欄位在前端可自訂，這裡只是未填時的預設值）
 PROVIDER_DEFAULT_MODELS = {
-    "grok": "grok-4.3",
-    "openai": "gpt-5.5",
-    "claude": "claude-opus-4-8",
-    "gemini": "gemini-3-flash",
+    "grok": "grok-4.6",
+    "openai": "gpt-5.6",
+    "claude": "claude-opus-5",
+    "gemini": "gemini-3.7-flash",
     # local 不設預設：模型名稱取決於使用者自架的服務
 }
 
