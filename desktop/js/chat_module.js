@@ -86,9 +86,25 @@ const ChatModule = (function() {
         
         // 載入聊天歷史
         loadChatHistory();
-        
+
+        // 標題顯示陪伴者名字（若已設定；沒設定則維持預設標題）
+        applyCompanionTitle();
+
         console.log('聊天模塊初始化完成');
     }
+
+    // 聊天標題顯示陪伴者名字（Task 8）：SettingsModule 開啟設定面板/儲存
+    // 成功後才會有快取值，因此這裡的取值來源永遠是它的模組內快取，不直接
+    // 打 API——避免每次進聊天頁都多一次網路請求。找不到 .chat-title 節點
+    // 時安靜跳過（防禦性寫法，比照本檔案其餘 DOM 操作）。
+    function applyCompanionTitle() {
+        const el = document.querySelector('.chat-title');
+        if (!el) return;
+        const name = (typeof SettingsModule !== 'undefined' && SettingsModule.getCompanionName)
+            ? SettingsModule.getCompanionName() : null;
+        el.textContent = name || I18N.t('chat.title');
+    }
+    document.addEventListener('companion-settings-changed', applyCompanionTitle);
     
     // 是否已註冊設定變更監聽（init 會被重複呼叫，避免重複綁定）
     let llmChangeListenerBound = false;

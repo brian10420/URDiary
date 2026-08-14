@@ -432,6 +432,7 @@ const SettingsModule = (function() {
         }
         refreshSemanticStatus();
         refreshSessions();
+        refreshCompanionSettings();
         renderFields();
         // 瀏覽器模式：金鑰在伺服器上，開啟面板時才去查（會再 renderFields 一次，
         // 並把 llmSelectionAtOpen 更新成同步過伺服器狀態後的表單內容）。
@@ -524,6 +525,17 @@ const SettingsModule = (function() {
         } finally {
             if (saveBtn) saveBtn.disabled = false;
         }
+
+        // 陪伴者客製化設定：與上面的 AI 供應商／金鑰是各自獨立的一組設定，
+        // 用同一顆按鈕一起送出。失敗時如實顯示錯誤（沿用既有 showError），
+        // 但不回頭影響上面已經完成的儲存/提示/關閉面板——那些已經是既成
+        // 事實，不該因為這裡失敗而被撤銷或不一致地卡住。
+        try {
+            await saveCompanionSettings();
+        } catch (error) {
+            console.error('儲存陪伴者設定失敗:', error);
+            showError(error.message || I18N.t('settings.saveFailed'));
+        }
     }
 
     async function clearKey() {
@@ -543,6 +555,70 @@ const SettingsModule = (function() {
             console.error('刪除金鑰失敗:', error);
             showError(error.message || I18N.t('settings.clearKeyFailed'));
         }
+    }
+
+    // ---- 陪伴者設定（Task 8：AI 名字／稱呼／回覆風格）----
+    //
+    // 刻意不走其餘欄位那套「init() 時快取 DOM 參照」模式：這幾個函式直接
+    // document.getElementById 現查——buildCompanionPayload/applyCompanionData
+    // 兩個是 _test 匯出的純輔助，測試不會（也不需要）先呼叫 init()。
+    // 為了在元素還沒被渲染出來的頁面/測試 fixture（例如
+    // tests/settings_llm_server.test.js 的最小化對話框）安全地略過，兩者
+    // 都對「找不到元素」防禦——找不到就當空字串／不寫入，不丟例外。
+
+    let companionNameCache = null;
+
+    /** 陪伴者名字（模組內快取；GET/PUT 成功後更新）。chat_module 讀取用。 */
+    function getCompanionName() { return companionNameCache; }
+
+    function companionFieldValue(id) {
+        const el = document.getElementById(id);
+        return el ? el.value : '';
+    }
+
+    function buildCompanionPayload() {
+        return {
+            companion_name: companionFieldValue('companion-name').trim(),
+            user_nickname: companionFieldValue('companion-nickname').trim(),
+            style_reply_length: companionFieldValue('companion-reply-length'),
+            style_emoji: companionFieldValue('companion-emoji'),
+            style_formality: companionFieldValue('companion-formality'),
+        };
+    }
+
+    function setCompanionFieldValue(id, value) {
+        const el = document.getElementById(id);
+        if (el) el.value = value;
+    }
+
+    function applyCompanionData(data) {
+        setCompanionFieldValue('companion-name', data.companion_name || '');
+        setCompanionFieldValue('companion-nickname', data.user_nickname || '');
+        setCompanionFieldValue('companion-reply-length', data.style_reply_length || '');
+        setCompanionFieldValue('companion-emoji', data.style_emoji || '');
+        setCompanionFieldValue('companion-formality', data.style_formality || '');
+        companionNameCache = data.companion_name || null;
+    }
+
+    /** 開啟面板時查詢目前的陪伴者設定；未登入/離線時安靜跳過，卡片維持現值。 */
+    async function refreshCompanionSettings() {
+        try {
+            const data = await ApiService.fetchAPI('/users/me/companion', { method: 'GET' });
+            applyCompanionData(data);
+        } catch (e) { /* 未登入/離線時安靜跳過，卡片維持現值 */ }
+    }
+
+    /**
+     * 儲存陪伴者設定。PUT body 走 fetchAPI 既有慣例——傳一般物件，由
+     * fetchAPI 內部負責 JSON.stringify（不要在這裡先字串化一次，否則會
+     * 被雙重編碼，後端收到的會是一個字串而不是 JSON 物件）。
+     */
+    async function saveCompanionSettings() {
+        const data = await ApiService.fetchAPI('/users/me/companion', {
+            method: 'PUT', body: buildCompanionPayload() });
+        applyCompanionData(data);
+        document.dispatchEvent(new CustomEvent('companion-settings-changed',
+            { detail: { name: companionNameCache } }));
     }
 
     function init() {
@@ -599,7 +675,11 @@ const SettingsModule = (function() {
         getActiveLLM: getActiveLLM,
         setActiveProvider: setActiveProvider,
         isSemanticMemoryEnabled: isSemanticMemoryEnabled,
-        openDialog: openDialog
+        openDialog: openDialog,
+        getCompanionName: getCompanionName,
+        // 僅為 vitest 單元測試曝光，行為不變（本檔案目前唯一的 _test 匯出，
+        // 未見既有慣例——依任務說明新增）
+        _test: { buildCompanionPayload, applyCompanionData }
     };
 })();
 

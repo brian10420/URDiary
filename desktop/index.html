@@ -221,6 +221,44 @@
                             以語意相似度尋找相關的過往日記（例如「上班的事」能對到「工作」）。需先在後端安裝 fastembed。
                         </small>
                     </div>
+                    <hr style="margin: 14px 0;">
+                    <h4 data-i18n="companion.sectionTitle">陪伴者</h4>
+                    <div class="form-group">
+                        <label for="companion-name" data-i18n="companion.name">AI 的名字</label>
+                        <input type="text" id="companion-name" class="form-control" maxlength="20"
+                               data-i18n-placeholder="companion.namePlaceholder" placeholder="還沒取名（AI 會自稱「我」）">
+                    </div>
+                    <div class="form-group">
+                        <label for="companion-nickname" data-i18n="companion.nickname">希望 AI 怎麼稱呼你</label>
+                        <input type="text" id="companion-nickname" class="form-control" maxlength="20"
+                               data-i18n-placeholder="companion.nicknamePlaceholder" placeholder="留空＝自然以「你」相稱">
+                    </div>
+                    <div class="form-group">
+                        <label for="companion-reply-length" data-i18n="companion.replyLength">回覆長度</label>
+                        <select id="companion-reply-length" class="form-control">
+                            <option value="" data-i18n="companion.optDefault">預設（自然）</option>
+                            <option value="short" data-i18n="companion.lenShort">簡短</option>
+                            <option value="natural" data-i18n="companion.lenNatural">自然</option>
+                            <option value="chatty" data-i18n="companion.lenChatty">健談</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="companion-emoji" data-i18n="companion.emoji">表情符號</label>
+                        <select id="companion-emoji" class="form-control">
+                            <option value="" data-i18n="companion.optDefault">預設（少量）</option>
+                            <option value="none" data-i18n="companion.emojiNone">不用</option>
+                            <option value="low" data-i18n="companion.emojiLow">少量</option>
+                            <option value="high" data-i18n="companion.emojiHigh">多一點</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="companion-formality" data-i18n="companion.formality">語氣</label>
+                        <select id="companion-formality" class="form-control">
+                            <option value="" data-i18n="companion.optDefault">預設（口語）</option>
+                            <option value="casual" data-i18n="companion.formCasual">口語隨性</option>
+                            <option value="polite" data-i18n="companion.formPolite">斯文一點</option>
+                        </select>
+                    </div>
                     <div id="settings-error" class="error-message" style="display: none; color: red; margin-top: 5px;"></div>
                     <div class="form-actions">
                         <button id="settings-save" class="btn" data-i18n="settings.save">儲存並使用</button>
