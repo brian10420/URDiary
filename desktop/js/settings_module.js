@@ -568,6 +568,17 @@ const SettingsModule = (function() {
 
     let companionNameCache = null;
 
+    // 這個 session 有沒有成功「看過」伺服器上的陪伴者設定一次（GET 成功
+    // 套用過，或存檔成功後拿伺服器回應重新套用過）。false 代表卡片上的 5
+    // 個欄位現在顯示的空白不能信任為伺服器現況——很可能只是開面板當下
+    // GET 失敗（暫時性問題／認證過期），欄位還停在初始空白。這面旗標決定
+    // 儲存時要送「完整 5 欄位」（缺席即維持、空字串即清空的正常語意）還是
+    // 「只送有填的欄位」（見 buildCompanionPartialPayload），修的正是：
+    // GET 失敗 → 使用者其實只想改別的設定就按儲存 → 5 個空字串被當成明確
+    // 清空指令，把使用者先前存好的陪伴者名字／風格靜默洗掉、且不出現任何
+    // 錯誤訊息，使用者完全不會發現。
+    let companionLoaded = false;
+
     /** 陪伴者名字（模組內快取；GET/PUT 成功後更新）。chat_module 讀取用。 */
     function getCompanionName() { return companionNameCache; }
 
@@ -586,6 +597,25 @@ const SettingsModule = (function() {
         };
     }
 
+    /**
+     * 只含「有填」欄位的儲存 payload——後端 PUT 語意是「欄位缺席＝維持
+     * 原值，空字串＝明確清空」（這正是後端刻意保留這個語意的理由），拿掉
+     * 空字串欄位就等於「這幾個我沒意見，維持伺服器上原本的值」。
+     *
+     * 用於 companionLoaded === false 時：卡片這時顯示的空白不代表「使用者
+     * 要清空」，只是「這個 session 還沒成功讀到伺服器上的值」——兩者外觀
+     * 一樣（都是空欄位）但語意完全相反，不能沿用完整 5 欄位那份 payload
+     * （那會把「還沒讀到」的欄位當成「使用者要清空」，靜默洗掉舊資料）。
+     */
+    function buildCompanionPartialPayload() {
+        const full = buildCompanionPayload();
+        const partial = {};
+        Object.keys(full).forEach(key => {
+            if (full[key]) partial[key] = full[key];
+        });
+        return partial;
+    }
+
     function setCompanionFieldValue(id, value) {
         const el = document.getElementById(id);
         if (el) el.value = value;
@@ -600,11 +630,15 @@ const SettingsModule = (function() {
         companionNameCache = data.companion_name || null;
     }
 
-    /** 開啟面板時查詢目前的陪伴者設定；未登入/離線時安靜跳過，卡片維持現值。 */
+    /** 開啟面板時查詢目前的陪伴者設定；未登入/離線時安靜跳過，卡片維持現值。
+     *  失敗時 companionLoaded 刻意留在 false（見旗標宣告處的說明）—— 儲存
+     *  時會因此改走部分欄位 payload，不會拿這次沒讀到的空白覆蓋伺服器上
+     *  既有的設定。 */
     async function refreshCompanionSettings() {
         try {
             const data = await ApiService.fetchAPI('/users/me/companion', { method: 'GET' });
             applyCompanionData(data);
+            companionLoaded = true;
         } catch (e) { /* 未登入/離線時安靜跳過，卡片維持現值 */ }
     }
 
@@ -612,11 +646,22 @@ const SettingsModule = (function() {
      * 儲存陪伴者設定。PUT body 走 fetchAPI 既有慣例——傳一般物件，由
      * fetchAPI 內部負責 JSON.stringify（不要在這裡先字串化一次，否則會
      * 被雙重編碼，後端收到的會是一個字串而不是 JSON 物件）。
+     *
+     * companionLoaded 為 false 時（開面板當下的 GET 失敗過，或還沒發生
+     * 過），卡片上的空白欄位不能信任為「使用者要清空」——改送只含有填值
+     * 欄位的 partial payload（缺席＝維持原值，是後端特意保留給這個情境的
+     * 語意）；全部欄位皆空就整個跳過這次 PUT（沒有任何欄位需要異動，不必
+     * 發這次請求，更不能發一個會被解讀成「全部清空」的物件出去）。
      */
     async function saveCompanionSettings() {
+        const payload = companionLoaded ? buildCompanionPayload() : buildCompanionPartialPayload();
+        if (!companionLoaded && Object.keys(payload).length === 0) {
+            return;
+        }
         const data = await ApiService.fetchAPI('/users/me/companion', {
-            method: 'PUT', body: buildCompanionPayload() });
+            method: 'PUT', body: payload });
         applyCompanionData(data);
+        companionLoaded = true;
         document.dispatchEvent(new CustomEvent('companion-settings-changed',
             { detail: { name: companionNameCache } }));
     }
@@ -678,8 +723,16 @@ const SettingsModule = (function() {
         openDialog: openDialog,
         getCompanionName: getCompanionName,
         // 僅為 vitest 單元測試曝光，行為不變（本檔案目前唯一的 _test 匯出，
-        // 未見既有慣例——依任務說明新增）
-        _test: { buildCompanionPayload, applyCompanionData }
+        // 未見既有慣例——依任務說明新增）。buildCompanionPartialPayload 與
+        // saveCompanionSettings 是 code review 修復（controller 裁定的必修
+        // 項）新增：需要能直接驗證「companionLoaded 為 false 時只送有填
+        // 欄位、全空則整個跳過 PUT」這條防靜默清空的邏輯。
+        _test: {
+            buildCompanionPayload,
+            buildCompanionPartialPayload,
+            applyCompanionData,
+            saveCompanionSettings
+        }
     };
 })();
 
