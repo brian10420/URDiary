@@ -271,7 +271,14 @@ const I18N = (function() {
             'voice.micTitle': '語音輸入',
             'voice.micDenied': '無法取得麥克風權限——請到瀏覽器/系統設定允許',
             'voice.sttFailed': '轉寫失敗，請再試一次',
-            'voice.playTitle': '朗讀這則回覆'
+            'voice.playTitle': '朗讀這則回覆',
+            'voice.sectionTitle': '語音',
+            'voice.inputMode': '語音輸入模式',
+            'voice.modeConfirm': '確認後送出（轉寫先進輸入框）',
+            'voice.modeFluent': '流暢直送（轉寫完直接送出）',
+            'voice.autoread': '自動朗讀新回覆',
+            'voice.voiceId': '朗讀語音（進階，留空＝預設）',
+            'voice.keyNote': '語音功能使用 xAI (Grok) 金鑰——桌面版用已存的 Grok 金鑰；手機版需在伺服器端存 Grok 憑證。'
         },
 
         'en': {
@@ -530,7 +537,14 @@ const I18N = (function() {
             'voice.micTitle': 'Voice input',
             'voice.micDenied': 'Microphone permission denied — allow it in browser/system settings',
             'voice.sttFailed': 'Transcription failed — please try again',
-            'voice.playTitle': 'Read this reply aloud'
+            'voice.playTitle': 'Read this reply aloud',
+            'voice.sectionTitle': 'Voice',
+            'voice.inputMode': 'Voice input mode',
+            'voice.modeConfirm': 'Review before send',
+            'voice.modeFluent': 'Send immediately',
+            'voice.autoread': 'Auto-read new replies',
+            'voice.voiceId': 'Voice (advanced, empty = default)',
+            'voice.keyNote': 'Voice features use your xAI (Grok) key — desktop uses the stored Grok key; on mobile store a Grok credential server-side.'
         }
     };
 

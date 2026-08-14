@@ -433,6 +433,7 @@ const SettingsModule = (function() {
         refreshSemanticStatus();
         refreshSessions();
         refreshCompanionSettings();
+        loadVoicePrefs();
         renderFields();
         // 瀏覽器模式：金鑰在伺服器上，開啟面板時才去查（會再 renderFields 一次，
         // 並把 llmSelectionAtOpen 更新成同步過伺服器狀態後的表單內容）。
@@ -526,6 +527,11 @@ const SettingsModule = (function() {
             // saveCompanionSettings() 內部「是否曾成功載入過」(companionLoaded)
             // 與部分欄位 payload 的邏輯完全不變，這裡只是搬動呼叫時機。
             await saveCompanionSettings();
+
+            // 語音偏好：純本機 localStorage（經 VoiceModule 封裝），沒有網路
+            // I/O 也沒有失敗路徑，放在這裡（其餘欄位都存妥、companion 也
+            // await 完）當作這顆按鈕收尾前的最後一步即可。
+            saveVoicePrefs();
 
             // 語言變更：整頁重載以套用所有靜態與動態字串
             // （Electron 重載保留 localStorage 與 token，會自動回到登入狀態）
@@ -679,6 +685,32 @@ const SettingsModule = (function() {
             { detail: { name: companionNameCache } }));
     }
 
+    // ---- 語音偏好（Task 6：輸入模式／自動朗讀／朗讀語音）----
+    //
+    // 比照上面陪伴者設定卡片：直接 document.getElementById 現查，不走
+    // init() 時快取 DOM 參照那套模式，讓測試不必先呼叫 init() 就能直接
+    // 呼叫這兩個函式。三個偏好值全部經由 VoiceModule 封裝讀寫（Task 4），
+    // 這裡完全不碰 localStorage——三個 key 只能由 VoiceModule 存取，是
+    // 這個任務的硬性限制。
+
+    function loadVoicePrefs() {
+        const modeEl = document.getElementById('voice-input-mode');
+        const autoreadEl = document.getElementById('voice-autoread');
+        const voiceIdEl = document.getElementById('voice-id');
+        if (modeEl) modeEl.value = VoiceModule.getInputMode();
+        if (autoreadEl) autoreadEl.checked = VoiceModule.isAutoRead();
+        if (voiceIdEl) voiceIdEl.value = VoiceModule.getVoiceId();
+    }
+
+    function saveVoicePrefs() {
+        const modeEl = document.getElementById('voice-input-mode');
+        const autoreadEl = document.getElementById('voice-autoread');
+        const voiceIdEl = document.getElementById('voice-id');
+        if (modeEl) VoiceModule.setInputMode(modeEl.value);
+        if (autoreadEl) VoiceModule.setAutoRead(autoreadEl.checked);
+        if (voiceIdEl) VoiceModule.setVoiceId(voiceIdEl.value.trim());
+    }
+
     function init() {
         console.log('初始化 LLM 設定模塊');
 
@@ -739,12 +771,15 @@ const SettingsModule = (function() {
         // 未見既有慣例——依任務說明新增）。buildCompanionPartialPayload 與
         // saveCompanionSettings 是 code review 修復（controller 裁定的必修
         // 項）新增：需要能直接驗證「companionLoaded 為 false 時只送有填
-        // 欄位、全空則整個跳過 PUT」這條防靜默清空的邏輯。
+        // 欄位、全空則整個跳過 PUT」這條防靜默清空的邏輯。loadVoicePrefs/
+        // saveVoicePrefs 是 Task 6（語音設定卡片）新增。
         _test: {
             buildCompanionPayload,
             buildCompanionPartialPayload,
             applyCompanionData,
-            saveCompanionSettings
+            saveCompanionSettings,
+            loadVoicePrefs,
+            saveVoicePrefs
         }
     };
 })();
