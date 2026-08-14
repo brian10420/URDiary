@@ -475,14 +475,20 @@ const ApiService = (function() {
             
             // 構建完整URL
             const url = `${baseUrl}${endpoint}`;
-            
+
+            // v2.4 spec②：body 是 FormData 時（例如 voice_module.js 上傳錄音檔到
+            // /voice/stt）絕不能手動設 Content-Type——瀏覽器需要自己在送出前
+            // 附上 multipart/form-data 的 boundary 參數，一旦被下面固定的
+            // 'application/json' 蓋掉，後端連 multipart 都解析不了。
+            const isFormDataBody = (typeof FormData !== 'undefined') && options.body instanceof FormData;
+
             // 設置默認選項
             // X-Memory-Semantic / X-Language 為無條件基礎標頭（不放進被 hasKey
             // 閘住的 X-LLM-* 區塊）：即使走後端後備供應商，偏好也要生效
             const fetchOptions = {
                 method: options.method || 'GET',
                 headers: {
-                    'Content-Type': 'application/json',
+                    ...(isFormDataBody ? {} : { 'Content-Type': 'application/json' }),
                     'Accept': 'application/json',
                     'X-Client': 'URDiary-ElectronApp',
                     'X-Memory-Semantic': (localStorage.getItem('urDiary_semantic_memory') === '1') ? '1' : '0',
@@ -532,9 +538,10 @@ const ApiService = (function() {
                 }
             }
 
-            // 如果有body，將其轉換為JSON
+            // 如果有body，將其轉換為JSON（FormData 原樣送出——JSON.stringify 一個
+            // FormData 物件只會得到 "{}"，上傳內容整個消失）
             if (options.body) {
-                fetchOptions.body = JSON.stringify(options.body);
+                fetchOptions.body = isFormDataBody ? options.body : JSON.stringify(options.body);
             }
             
             console.log(`發送請求到: ${url}`, { method: fetchOptions.method });
@@ -936,7 +943,98 @@ const ApiService = (function() {
             throw apiFailure;
         }
     }
-    
+
+    /**
+     * fetchAPI 的「原始回應」變體：回傳 response.blob()，不解析 JSON。
+     * 供二進位內容端點使用（v2.4 spec② /voice/tts 回 audio/mpeg）。
+     *
+     * 與 fetchAPI 共用同一套 token/base-url/401 邏輯（直接呼叫同一個閉包裡的
+     * accessToken/getRefreshToken/isTokenExpiringSoon/refreshToken/
+     * clearAuthToken，不重新實作一遍）。刻意保留的差異：
+     *   - body 原樣送出，絕不 JSON.stringify——呼叫端若要送 JSON，自己先
+     *     JSON.stringify 並自帶 Content-Type 標頭（見 voice_module.js 的
+     *     speak()）；對已經是字串的 body 再 stringify 一次會變成雙重編碼，
+     *     後端收到的會是一個 JSON 字串常量而不是物件。
+     *   - 不含 fetchAPI 的 GET 自動重試迴圈：目前唯一呼叫端 /voice/tts 是
+     *     POST（非冪等，重試可能讓使用者被重複計費/生成兩次音檔），沒有
+     *     必要承接那一段複雜度。
+     *   - 不含 ErrorLogger/離線快取回退/友善錯誤訊息轉換等 fetchAPI 才有的
+     *     周邊功能——這些是 JSON 端點的既有慣例，Blob 端點目前用不到。
+     *
+     * @param {string} endpoint - API端點
+     * @param {Object} [options] - { method, headers, body }，body 不會被轉換
+     * @returns {Promise<Blob>}
+     */
+    async function fetchRaw(endpoint, options = {}) {
+        ensureInitialized();
+
+        if (!navigator.onLine) {
+            throw new Error('OFFLINE_MODE');
+        }
+
+        // 與 fetchAPI 401 分支相同的 compare-and-clear 保護（理由見該函式內
+        // 的註解）：記下送出這次請求時以為有效的刷新令牌。
+        const refreshTokenAtRequestStart = getRefreshToken();
+
+        const baseUrl = CONFIG.getApiBaseUrl();
+
+        if ((accessToken || getRefreshToken()) && isTokenExpiringSoon()) {
+            const refreshed = await refreshToken();
+            if (!refreshed) {
+                console.warn('令牌刷新失敗，將使用當前令牌繼續嘗試 (fetchRaw)');
+            }
+        }
+
+        const url = `${baseUrl}${endpoint}`;
+        const fetchOptions = {
+            method: options.method || 'GET',
+            headers: { ...options.headers }
+        };
+        if (accessToken) {
+            fetchOptions.headers['Authorization'] = `Bearer ${accessToken}`;
+        }
+        if (options.body !== undefined) {
+            fetchOptions.body = options.body;
+        }
+
+        const timeoutDuration = (CONFIG && CONFIG.API && CONFIG.API.TIMEOUT) ? CONFIG.API.TIMEOUT : 30000;
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => {
+            controller.abort(`請求超時 (${timeoutDuration}ms)`);
+        }, timeoutDuration);
+        fetchOptions.signal = controller.signal;
+
+        let response;
+        try {
+            response = await fetch(url, fetchOptions);
+        } finally {
+            clearTimeout(timeoutId);
+        }
+
+        if (response.status === 401 && accessToken) {
+            // 只有「儲存的刷新令牌仍是這次請求送出時那一張」才代表這個分頁的
+            // 登入狀態真的死了——理由與 fetchAPI 401 分支相同（另一分頁／
+            // 視窗可能已經贏得輪替、存入新令牌對，這裡清除會把它的工作階段
+            // 一起弄丟）。
+            if (getRefreshToken() === refreshTokenAtRequestStart) {
+                clearAuthToken();
+                try {
+                    window.dispatchEvent(new CustomEvent('urdiary:auth-expired', { detail: { endpoint } }));
+                } catch (dispatchError) {
+                    console.warn('無法發送認證失效事件 (fetchRaw):', dispatchError);
+                }
+                throw new Error('JWT_AUTH_ERROR');
+            }
+            throw new Error(`API_ERROR:${response.status}`);
+        }
+
+        if (!response.ok) {
+            throw new Error(`API_ERROR:${response.status}`);
+        }
+
+        return await response.blob();
+    }
+
     /**
      * 獲取本地存儲的數據作為備份
      * @param {string} endpoint - API端點
@@ -1432,6 +1530,7 @@ const ApiService = (function() {
         init,
         ensureInitialized,
         fetchAPI,
+        fetchRaw,
         sendChatMessage,
         checkIn: checkIn,
         endChat: endChat,
