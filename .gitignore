@@ -216,3 +216,6 @@ desktop/playwright/.cache/
 # 💾 本地資料（SQLite 資料庫、金鑰、使用者日記）
 # --------------------------------------
 /data/
+
+# Superpowers brainstorm/sdd 工作目錄
+.superpowers/
