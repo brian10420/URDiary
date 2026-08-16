@@ -934,7 +934,14 @@ const ChatModule = (function() {
             // 顯示日記已生成消息
             const diaryMessage = response.message || I18N.t('chat.diaryDone');
             addSystemMessage(diaryMessage);
-            
+
+            // v2.4 spec ③：存日記彩蛋。只綁這個操作事件；negative valence → 安靜略過。
+            if (typeof MascotModule !== 'undefined') {
+                const valence = (response.diary && typeof response.diary.valence === 'number')
+                    ? response.diary.valence : null;
+                MascotModule.showSaveEgg(MascotModule.eggKindFor(valence, new Date().getHours()));
+            }
+
             // 檢查配置是否自動切換到日記視圖
             if (CONFIG && CONFIG.APP.AUTO_SWITCH_TO_DIARY_AFTER_END) {
                 // 0.5秒後切換到日記頁面並刷新日記列表
