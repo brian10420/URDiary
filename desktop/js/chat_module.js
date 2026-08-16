@@ -360,8 +360,14 @@ const ChatModule = (function() {
             thinkingMessageId = null;
 
             if (result && result.checkin && result.message) {
-                // AI 的主動問候：進入畫面與本地歷史（後端也已存入正式對話歷史）
-                addSystemMessage(result.message);
+                // AI 的主動問候：進入畫面與本地歷史（後端也已存入正式對話歷史）。
+                // checkinHtml() 前綴（端茶吉祥物）只是渲染層的信任 HTML——見
+                // appendChatMessage 的 htmlPrefix 說明，result.message 本身仍
+                // 原文存入 chatHistory／餵給朗讀鍵，不會混進 SVG；isReply 維持
+                // 預設 false，不觸發自動朗讀（R6 裁決不變）。typeof 防禦同
+                // addThinkingMessage。
+                const checkinPrefix = (typeof MascotModule !== 'undefined') ? MascotModule.checkinHtml() : '';
+                addSystemMessage(result.message, true, false, checkinPrefix);
                 saveChatHistory();
             } else {
                 fallbackWelcome();
@@ -786,10 +792,17 @@ const ChatModule = (function() {
     // 開『自動朗讀新回覆』則新回覆到達即播」與 §6 的省錢設計（預設手動播放）。
     // 播放鍵不受這個旗標影響：所有 assistant 訊息一律有鍵（buildMessageHtml
     // 的既有邏輯不變），isReply 只決定「要不要自動觸發」。
-    function appendChatMessage(type, content, scroll, isReply) {
+    // htmlPrefix（v2.4 spec③，選用）：只給「我們自己模組產出的信任 HTML」
+    // 用的渲染前綴（目前唯一呼叫端是 check-in 問候的 MascotModule.checkinHtml()
+    // 端茶插圖）——只接在 formatMessageContent(content) 轉義＋<br>化後的結果
+    // 前面組成 bubble 的顯示 HTML，不進入下面 chatHistory.push 的 content、
+    // 也不會被傳給 VoiceModule.speak（見下方 ttsBtn 區塊仍是用原始 content
+    // 參數）。使用者/AI 文字本身仍然全程走 formatMessageContent 的 escape，
+    // 這個參數不能拿來塞未經信任的內容。
+    function appendChatMessage(type, content, scroll, isReply, htmlPrefix) {
         const messageElement = document.createElement('div');
         messageElement.className = type === 'user' ? 'chat-message user-message' : 'chat-message system-message';
-        messageElement.innerHTML = buildMessageHtml(type, formatMessageContent(content));
+        messageElement.innerHTML = buildMessageHtml(type, (htmlPrefix || '') + formatMessageContent(content));
 
         chatMessagesContainer.appendChild(messageElement);
 
@@ -841,26 +854,33 @@ const ChatModule = (function() {
     // 添加系統消息。isReply 只有 attemptSend 成功分支的「AI 聊天新回覆」呼叫
     // 會傳 true（見該處），其餘呼叫端留預設 false（R6 裁決，詳見 appendChatMessage
     // 上方註解）。
-    function addSystemMessage(content, scroll = true, isReply = false) {
-        return appendChatMessage('system', content, scroll, isReply);
+    function addSystemMessage(content, scroll = true, isReply = false, htmlPrefix) {
+        return appendChatMessage('system', content, scroll, isReply, htmlPrefix);
     }
 
     // 添加"思考中"消息
+    // v2.4 spec③：泡泡內文優先用 MascotModule.thinkingBubbleHtml()（搖擺吉祥物
+    // ＋三點動畫）。typeof 防禦比照下面 appendChatMessage 對 VoiceModule 的
+    // 處理慣例——部分既有單元測試載入 chat_module.js 時不載入 mascot.js
+    // （如 tests/chat_retry.test.js／chat_voice.test.js 直接跑 sendMessage()
+    // 會經過這裡），落回原本純點點動畫，行為不變。
     function addThinkingMessage() {
         // 創建唯一ID
         const messageId = 'thinking-message-' + Date.now();
+
+        const thinkingInnerHtml = (typeof MascotModule !== 'undefined')
+            ? MascotModule.thinkingBubbleHtml()
+            : `<div class="thinking-dots">
+                        <span></span>
+                        <span></span>
+                        <span></span>
+                    </div>`;
 
         // 創建消息元素
         const messageElement = document.createElement('div');
         messageElement.className = 'chat-message system-message thinking';
         messageElement.id = messageId;
-        messageElement.innerHTML = buildMessageHtml('system', `
-                    <div class="thinking-dots">
-                        <span></span>
-                        <span></span>
-                        <span></span>
-                    </div>
-                `, { showTime: false });
+        messageElement.innerHTML = buildMessageHtml('system', thinkingInnerHtml, { showTime: false });
 
         // 添加到聊天容器
         chatMessagesContainer.appendChild(messageElement);
