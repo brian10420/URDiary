@@ -24,6 +24,16 @@
 
 importScripts('/js/sw_logic.js');
 
+// Version-bump policy: any byte change to this file makes the browser treat
+// it as a new worker and re-run install()'s cache.addAll() below, so new
+// SHELL_ASSETS entries get precached automatically WITHOUT bumping this —
+// no action needed for additions. Bump CACHE_VERSION only when (a) a file
+// is REMOVED from SHELL_ASSETS (the old cache under this name would keep
+// serving it forever, since nothing ever deletes entries from a still-named
+// cache) or (b) an existing shell file's content must be forcibly refreshed
+// for everyone (cache-first below means a same-URL update otherwise sits
+// stale in the old cache until this name changes and the old cache gets
+// evicted by the activate handler's cleanup).
 const CACHE_VERSION = 'urdiary-shell-v1';
 
 // App shell: every file the running app actually loads. Keep this in sync

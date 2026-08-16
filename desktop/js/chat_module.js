@@ -891,11 +891,42 @@ const ChatModule = (function() {
         return messageId;
     }
 
+    // 添加「生成日記中」等待訊息（v2.4 final-fix：spec③ §3 使用位置 3——
+    // AI 生成日記等待）。比照 addThinkingMessage 的純 DOM 佔位模式：不進
+    // chatHistory、不呼叫 saveChatHistory，showTime:false（沒有實際文字
+    // 內容需要朗讀，也跟思考中泡泡一樣排除 .tts-play／不觸發自動朗讀）。
+    // 內文用 MascotModule.loadingHtml()——安靜的搖擺動畫本身，chat 區域
+    // 規定只能有這一種動畫，不像 thinkingBubbleHtml() 額外疊三點。呼叫端
+    // （endChat）已用 typeof MascotModule 防禦，這裡假設 MascotModule 存在。
+    // 沿用既有的 I18N「chat.generatingDiary」等待文字（原本顯示在全頁
+    // spinner 裡）——不新增字串，i18n 兩語配對不變。
+    function addDiaryGeneratingMessage() {
+        const messageId = 'diary-generating-message-' + Date.now();
+
+        const messageElement = document.createElement('div');
+        messageElement.className = 'chat-message system-message diary-generating';
+        messageElement.id = messageId;
+        messageElement.innerHTML = buildMessageHtml('system',
+            `<div class="mascot-loading">${MascotModule.loadingHtml()}` +
+            `<p class="mascot-loading-text">${I18N.t('chat.generatingDiary')}</p></div>`,
+            { showTime: false });
+
+        chatMessagesContainer.appendChild(messageElement);
+        scrollToBottom();
+
+        return messageId;
+    }
+
     // 結束聊天
     async function endChat() {
+        // 必須宣告在 try 之外（比照上面 sendMessage 的 thinkingMessageId）：
+        // 下面 finally 也要用它來對稱清除載入動畫，宣告在 try 內的話 finally
+        // 取用會拋 ReferenceError。
+        let diaryGeneratingMessageId = null;
+
         try {
             console.log('結束聊天，準備生成日記');
-            
+
             // 確保不在處理狀態
             if (isProcessing) {
                 console.warn('正在處理其他請求，請稍後再試');
@@ -906,21 +937,31 @@ const ChatModule = (function() {
                 }
                 return;
             }
-            
+
             // 設置處理狀態
             isProcessing = true;
-            
+
             // 禁用輸入和按鈕
             userInputElement.disabled = true;
             if (endChatBtnElement) endChatBtnElement.disabled = true;
-            
-            // 顯示載入狀態
+
+            // 顯示載入狀態：優先在聊天區域顯示吉祥物搖擺動畫（見
+            // addDiaryGeneratingMessage 註解）；MascotModule 未載入時（部分
+            // 既有單元測試只載入 chat_module.js，例如 tests/chat_retry.test.js
+            // ／chat_voice.test.js）落回原本的全頁 spinner，行為不變——guard
+            // 比照 addThinkingMessage／showSaveEgg 既有慣例。
+            // diaryGeneratingMessageId 記住走了哪條路，讓下面 finally 對稱
+            // 清除，成功／失敗兩條路徑都不會留下殘留元素。
             try {
-                UIManager.showLoadingSpinner(I18N.t('chat.generatingDiary'));
+                if (typeof MascotModule !== 'undefined') {
+                    diaryGeneratingMessageId = addDiaryGeneratingMessage();
+                } else {
+                    UIManager.showLoadingSpinner(I18N.t('chat.generatingDiary'));
+                }
             } catch (error) {
                 console.warn('無法顯示載入動畫:', error);
             }
-            
+
             // 調用API服務結束聊天（供應商/模型由 fetchAPI 統一附上）
             const response = await ApiService.endChat();
             
@@ -985,15 +1026,22 @@ const ChatModule = (function() {
             userInputElement.disabled = false;
             if (endChatBtnElement) endChatBtnElement.disabled = false;
             
-            // 關閉載入動畫
+            // 關閉載入動畫：對稱地依上面顯示時走的是哪條路徑收尾——不論
+            // 成功或失敗都會執行到這裡（finally），兩條路徑都不會留下
+            // 殘留元素／卡住的全頁 spinner。
             try {
-                UIManager.hideLoadingSpinner();
+                if (diaryGeneratingMessageId) {
+                    const generatingMessage = document.getElementById(diaryGeneratingMessageId);
+                    if (generatingMessage) generatingMessage.remove();
+                } else {
+                    UIManager.hideLoadingSpinner();
+                }
             } catch (error) {
                 console.warn('無法隱藏載入動畫:', error);
             }
         }
     }
-    
+
     // 清空聊天
     function clearChat() {
         // 確認對話框

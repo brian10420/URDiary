@@ -203,3 +203,79 @@ describe('mascot chat integration：存日記彩蛋的 DOM 接線', () => {
         expect(document.querySelector('.mascot-egg')).toBeTruthy();
     });
 });
+
+/**
+ * v2.4 final-fix wave（Finding A / R7）：AI 生成日記等待改用吉祥物搖擺動畫
+ * （MascotModule.loadingHtml()），塞進聊天區域的暫時性訊息（比照
+ * addThinkingMessage 的純 DOM 佔位模式），取代原本只在全頁 spinner 出現的
+ * 純文字等待畫面。
+ *
+ * 第一個測試用「永遠不 resolve 的 Promise」凍結在等待中途，驗證等待時
+ * 畫面上真的看得到搖擺吉祥物＋既有等待文字，不是只有函式可呼叫（比照
+ * 上面思考中泡泡測試的同一招）。後兩個測試驗證成功／失敗兩條路徑收尾後
+ * 都不留殘留元素（endChat 的 catch/finally 對稱清除）。
+ */
+describe('mascot chat integration：生成日記等待的 DOM 接線', () => {
+    beforeEach(() => {
+        loadCoreScripts(); // security_utils -> i18n -> config
+        loadScript('js/mascot.js');
+        loadScript('js/chat_module.js');
+
+        localStorage.clear(); // 不設 numericUserId：比照上面測試，讓 init() 略過 check-in
+        document.body.innerHTML = CHAT_HTML;
+        window.UIManager = { showToast: vi.fn(), showLoadingSpinner: vi.fn(), hideLoadingSpinner: vi.fn() };
+        ChatModule.reset();
+        ChatModule.init();
+    });
+
+    it('等待期間：聊天區域出現吉祥物搖擺動畫＋既有等待文字，且不落回全頁 spinner（MascotModule 路徑優先）', async () => {
+        window.ApiService = {
+            // 故意永遠不 resolve：等待畫面移除前有機會被這裡檢查到
+            endChat: vi.fn(() => new Promise(() => {}))
+        };
+
+        const endChatPromise = ChatModule.endChat();
+        await flush();
+
+        const waitBubble = document.querySelector('.chat-message.system-message.diary-generating .message-bubble');
+        expect(waitBubble).toBeTruthy();
+        expect(waitBubble.innerHTML).toContain('mascot-sway');
+        expect(waitBubble.innerHTML).toContain(I18N.t('chat.generatingDiary'));
+
+        // chat 區域只能有安靜的搖擺，不該疊上三點動畫（那是 thinkingBubbleHtml 的標記）
+        expect(waitBubble.innerHTML).not.toContain('mascot-dots');
+
+        // MascotModule 路徑優先：不該落回全頁 spinner
+        expect(window.UIManager.showLoadingSpinner).not.toHaveBeenCalled();
+
+        void endChatPromise; // 不需要 await 完成（mock 永遠不 resolve）
+    });
+
+    it('成功路徑：日記生成完成後，等待畫面從聊天區域移除，無殘留元素', async () => {
+        window.ApiService = {
+            endChat: vi.fn(() => Promise.resolve({
+                message: '對話已結束並生成摘要',
+                diary: { diary_id: 5, title: 't', summary: 's', content: 'c', valence: 0.8, arousal: 0.6 }
+            }))
+        };
+
+        await ChatModule.endChat();
+
+        expect(document.querySelector('.diary-generating')).toBeNull();
+        expect(document.querySelector('.mascot-loading')).toBeNull();
+    });
+
+    it('失敗路徑：API 報錯後，等待畫面同樣從聊天區域移除，不留殘留元素', async () => {
+        window.ApiService = {
+            endChat: vi.fn(() => Promise.reject(new Error('網路錯誤')))
+        };
+
+        await ChatModule.endChat();
+
+        expect(document.querySelector('.diary-generating')).toBeNull();
+        expect(document.querySelector('.mascot-loading')).toBeNull();
+        // 確認真的走了 catch 分支（既有錯誤訊息行為不變）
+        expect(document.querySelector('.chat-messages').textContent)
+            .toContain(I18N.t('chat.diaryError', { error: '網路錯誤' }));
+    });
+});

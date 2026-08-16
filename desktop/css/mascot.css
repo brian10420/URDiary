@@ -13,6 +13,11 @@
 .mascot-welcome { display: flex; justify-content: center; margin-bottom: 6px; }
 .mascot-checkin { display: inline-block; vertical-align: middle; margin-right: 6px; }
 
+/* AI 生成日記等待（final-fix：spec③ §3 位置 3）：聊天區域的暫時性訊息，
+   只用安靜搖擺（.mascot-sway，loadingHtml 本身已附），不額外加動畫。 */
+.mascot-loading { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+.mascot-loading-text { color: var(--text-secondary, #8a7a66); font-size: 14px; margin: 0; text-align: center; }
+
 .mascot-egg {
     position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
     pointer-events: none; z-index: 2000; opacity: 1; transition: opacity .5s ease;
