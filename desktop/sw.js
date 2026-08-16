@@ -63,6 +63,7 @@ const SHELL_ASSETS = [
     '/js/mascot.js',
     '/js/sw_logic.js',
     '/js/ui_manager.js',
+    '/js/voice_module.js',
     '/js/chat_module.js',
     '/js/diary_module.js',
     '/js/calendar_module.js',

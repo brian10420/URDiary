@@ -1,6 +1,9 @@
 // @vitest-environment jsdom
 import { describe, it, expect, beforeAll } from 'vitest';
 import { loadScript } from './helpers/load.js';
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
 
 describe('sw_logic: classifyRequestPath', () => {
     beforeAll(() => {
@@ -156,5 +159,67 @@ describe('sw_logic: createControllerChangeReloadArmer（code review 修復：見
         container.dispatchEvent(new Event('controllerchange'));
 
         expect(reloadCount).toBe(1);
+    });
+});
+
+describe('SHELL_ASSETS 同步檢查：index.html 載入的所有本地 CSS/JS 必須在 sw.js 的 SHELL_ASSETS 中', () => {
+    it('index.html 的每個 <link href="css/*.css"> 與 <script src="js/*.js"> 都在 sw.js 的 SHELL_ASSETS 清單裡', () => {
+        const __filename = fileURLToPath(import.meta.url);
+        const __dirname = path.dirname(__filename);
+
+        // 讀取 index.html
+        const indexPath = path.resolve(__dirname, '..', 'index.html');
+        const indexContent = fs.readFileSync(indexPath, 'utf-8');
+
+        // 讀取 sw.js
+        const swPath = path.resolve(__dirname, '..', 'sw.js');
+        const swContent = fs.readFileSync(swPath, 'utf-8');
+
+        // 從 index.html 提取本地 CSS 與 JS（只取 href="css/" 與 src="js/" 的相對路徑）
+        const cssRegex = /href="(css\/[^"]+)"/g;
+        const jsRegex = /src="(js\/[^"]+)"/g;
+
+        const cssFiles = [];
+        const jsFiles = [];
+
+        let match;
+        while ((match = cssRegex.exec(indexContent)) !== null) {
+            cssFiles.push(match[1]);
+        }
+        while ((match = jsRegex.exec(indexContent)) !== null) {
+            jsFiles.push(match[1]);
+        }
+
+        // 從 sw.js 的 SHELL_ASSETS 提取路徑
+        const shellAssetsMatch = swContent.match(/const SHELL_ASSETS = \[([\s\S]*?)\];/);
+        expect(shellAssetsMatch).toBeTruthy();
+
+        const shellAssetsStr = shellAssetsMatch[1];
+        const shellPaths = new Set();
+
+        // 提取 SHELL_ASSETS 中的所有字串（'...' 格式）
+        const pathRegex = /'([^']+)'/g;
+        let pathMatch;
+        while ((pathMatch = pathRegex.exec(shellAssetsStr)) !== null) {
+            shellPaths.add(pathMatch[1]);
+        }
+
+        // 驗證每個 CSS 檔案都在 SHELL_ASSETS 中
+        for (const cssFile of cssFiles) {
+            const shellKey = `/${cssFile}`;
+            expect(
+                shellPaths.has(shellKey),
+                `CSS 檔案 ${cssFile} 在 index.html 中但未在 sw.js 的 SHELL_ASSETS 中發現`
+            ).toBe(true);
+        }
+
+        // 驗證每個 JS 檔案都在 SHELL_ASSETS 中
+        for (const jsFile of jsFiles) {
+            const shellKey = `/${jsFile}`;
+            expect(
+                shellPaths.has(shellKey),
+                `JS 檔案 ${jsFile} 在 index.html 中但未在 sw.js 的 SHELL_ASSETS 中發現`
+            ).toBe(true);
+        }
     });
 });
