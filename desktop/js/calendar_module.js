@@ -475,9 +475,15 @@ const CalendarModule = (function() {
             </div>`;
 
         if (list.length === 0) {
-            html += `<div class="day-panel-empty">
-                    <p>${escapeHtml(I18N.t('calendar.noEvents'))}</p>
-                </div>`;
+            // 吉祥物插圖（v2.4 spec③ task 4）：舉手看月曆姿勢＋i18n 文案取代純文字提示。
+            // typeof guard 比照 diary_module.js／chat_module.js 既有慣例——calendar_module.js
+            // 目前沒有既有測試會 bare-load 到這條路徑，但保留 guard 與同檔案風格一致，
+            // 也防未來新增的 bare-load 測試踩到。
+            html += `<div class="day-panel-empty">` +
+                ((typeof MascotModule !== 'undefined')
+                    ? MascotModule.emptyHtml('calendar', I18N.t('mascot.emptyCalendar'))
+                    : `<p>${escapeHtml(I18N.t('calendar.noEvents'))}</p>`) +
+                `</div>`;
         } else {
             html += '<ul class="day-event-list">';
             list.forEach(occ => {

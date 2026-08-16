@@ -278,7 +278,11 @@ const I18N = (function() {
             'voice.modeFluent': '流暢直送（轉寫完直接送出）',
             'voice.autoread': '自動朗讀新回覆',
             'voice.voiceId': '朗讀語音（進階，留空＝預設）',
-            'voice.keyNote': '語音功能使用 xAI (Grok) 金鑰——桌面版用已存的 Grok 金鑰；手機版需在伺服器端存 Grok 憑證。'
+            'voice.keyNote': '語音功能使用 xAI (Grok) 金鑰——桌面版用已存的 Grok 金鑰；手機版需在伺服器端存 Grok 憑證。',
+
+            'mascot.emptyDiary': '還沒有日記——跟我聊聊今天吧',
+            'mascot.emptyCalendar': '這週還空空的，要記點什麼嗎？',
+            'mascot.emptyGeneric': '這裡還沒有東西耶'
         },
 
         'en': {
@@ -544,7 +548,11 @@ const I18N = (function() {
             'voice.modeFluent': 'Send immediately',
             'voice.autoread': 'Auto-read new replies',
             'voice.voiceId': 'Voice (advanced, empty = default)',
-            'voice.keyNote': 'Voice features use your xAI (Grok) key — desktop uses the stored Grok key; on mobile store a Grok credential server-side.'
+            'voice.keyNote': 'Voice features use your xAI (Grok) key — desktop uses the stored Grok key; on mobile store a Grok credential server-side.',
+
+            'mascot.emptyDiary': 'No diaries yet — come tell me about your day',
+            'mascot.emptyCalendar': 'This week is wide open — want to note something?',
+            'mascot.emptyGeneric': 'Nothing here yet'
         }
     };
 
