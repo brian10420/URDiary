@@ -51,6 +51,7 @@ const SHELL_ASSETS = [
     '/css/calendar.css',
     '/css/components.css',
     '/css/mobile.css',
+    '/css/mascot.css',
 
     '/js/security_utils.js',
     '/js/i18n.js',
@@ -59,6 +60,7 @@ const SHELL_ASSETS = [
     '/js/secure_store.js',
     '/js/api_service.js',
     '/js/settings_module.js',
+    '/js/mascot.js',
     '/js/sw_logic.js',
     '/js/ui_manager.js',
     '/js/chat_module.js',
