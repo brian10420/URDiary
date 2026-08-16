@@ -28,7 +28,7 @@ from services.prompt_loader import normalize_lang
 
 logger = logging.getLogger(__name__)
 
-CATEGORIES = ("work", "study", "health", "family", "anniversary", "other")
+CATEGORIES = ("work", "study", "health", "family", "anniversary", "travel", "other")
 RECURRENCES = ("none", "daily", "weekly", "monthly", "yearly")
 MAX_OCCURRENCES = 500      # 展開防禦上限
 CONTEXT_MAX_LINES = 10

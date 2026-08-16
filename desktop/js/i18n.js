@@ -182,6 +182,7 @@ const I18N = (function() {
             'category.health': '健康',
             'category.family': '家人',
             'category.anniversary': '紀念日',
+            'category.travel': '出遊',
             'category.other': '其他',
 
             'recurrence.none': '不重複',
@@ -452,6 +453,7 @@ const I18N = (function() {
             'category.health': 'Health',
             'category.family': 'Family',
             'category.anniversary': 'Anniversary',
+            'category.travel': 'Outing',
             'category.other': 'Other',
 
             'recurrence.none': 'Does not repeat',

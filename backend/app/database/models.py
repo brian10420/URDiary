@@ -187,7 +187,7 @@ class CalendarEvent(Base):
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
     title = Column(String(120), nullable=False)
     note = Column(Text, nullable=True)
-    category = Column(String(20), nullable=False, default="other")   # work/study/health/family/anniversary/other
+    category = Column(String(20), nullable=False, default="other")   # work/study/health/family/anniversary/travel/other
     event_date = Column(Date, nullable=False, index=True)  # 真實本地牆上日期 (非 5am 日記日，見 calendar_service 說明)
     event_time = Column(String(5), nullable=True)          # "HH:MM"；NULL = 全天
     recurrence = Column(String(10), nullable=False, default="none")  # none/daily/weekly/monthly/yearly

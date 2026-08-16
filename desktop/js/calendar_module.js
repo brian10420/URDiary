@@ -10,7 +10,7 @@ const CalendarModule = (function() {
 
     // 與後端 services/calendar_service.py 的 CATEGORIES / RECURRENCES 對齊；
     // 順序即色點的固定排列順序（同一格內恆定，顏色不會因事件先後而跳動）
-    const CATEGORIES = ['work', 'study', 'health', 'family', 'anniversary', 'other'];
+    const CATEGORIES = ['work', 'study', 'health', 'family', 'anniversary', 'travel', 'other'];
     const RECURRENCES = ['none', 'daily', 'weekly', 'monthly', 'yearly'];
 
     // 提醒選項（分鐘）：null = 不提醒

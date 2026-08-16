@@ -30,6 +30,7 @@
     --cat-health: #008300;
     --cat-family: #1baf7a;
     --cat-anniversary: #e34948;
+    --cat-travel: #8f62c9;
     --cat-other: #7a7367;
 }
 
@@ -40,6 +41,7 @@
     --cat-health: #008300;
     --cat-family: #199e70;
     --cat-anniversary: #e66767;
+    --cat-travel: #a678e8;
     --cat-other: #a8a295;
 }
 
@@ -217,6 +219,7 @@
 .cat-health { background-color: var(--cat-health); }
 .cat-family { background-color: var(--cat-family); }
 .cat-anniversary { background-color: var(--cat-anniversary); }
+.cat-travel { background-color: var(--cat-travel); }
 .cat-other { background-color: var(--cat-other); }
 
 /* ---------------------------------------------------------------------------
