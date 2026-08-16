@@ -1,0 +1,30 @@
+/* 吉祥物動畫與版位 (v2.4 spec ③)。動畫只此一處；reduced-motion 統一停用。 */
+.mascot-sway { display: inline-block; animation: mascot-sway 1.8s ease-in-out infinite; transform-origin: 50% 88%; }
+@keyframes mascot-sway { 0%, 100% { transform: rotate(-5deg); } 50% { transform: rotate(5deg); } }
+
+.mascot-dots span { animation: mascot-dot 1.2s infinite; font-weight: 700; }
+.mascot-dots span:nth-child(2) { animation-delay: .2s; }
+.mascot-dots span:nth-child(3) { animation-delay: .4s; }
+@keyframes mascot-dot { 0%, 60%, 100% { opacity: .25; } 30% { opacity: 1; } }
+
+.mascot-empty { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 28px 12px; opacity: .95; }
+.mascot-empty-caption { color: var(--text-secondary, #8a7a66); font-size: 14px; margin: 0; text-align: center; }
+
+.mascot-welcome { display: flex; justify-content: center; margin-bottom: 6px; }
+.mascot-checkin { display: inline-block; vertical-align: middle; margin-right: 6px; }
+
+.mascot-egg {
+    position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
+    pointer-events: none; z-index: 2000; opacity: 1; transition: opacity .5s ease;
+}
+.mascot-egg.fade { opacity: 0; }
+.mascot-egg-night { background: radial-gradient(circle at 50% 45%, rgba(62, 55, 82, .92), rgba(62, 55, 82, .75)); }
+.mascot-egg:not(.mascot-egg-night) svg { animation: mascot-pop .45s ease-out; }
+@keyframes mascot-pop { 0% { transform: translateY(18px) scale(.85); } 60% { transform: translateY(-6px) scale(1.04); } 100% { transform: translateY(0) scale(1); } }
+
+.mascot-cat-icon { vertical-align: middle; }
+
+@media (prefers-reduced-motion: reduce) {
+    .mascot-sway, .mascot-dots span, .mascot-egg svg { animation: none !important; }
+    .mascot-egg { transition: none; }
+}
