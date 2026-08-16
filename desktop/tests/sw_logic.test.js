@@ -190,6 +190,12 @@ describe('SHELL_ASSETS 同步檢查：index.html 載入的所有本地 CSS/JS �
             jsFiles.push(match[1]);
         }
 
+        // 防止迴歸測試空轉：確保提取的檔案清單非空
+        // 如果標籤格式改變（單引號、絕對路徑等），正則會默默失配零個元素，
+        // 迴圈零次迭代，測試仍會綠燈但實際檢查零東西——這裡鎖住該陷阱
+        expect(cssFiles.length).toBeGreaterThan(0);
+        expect(jsFiles.length).toBeGreaterThan(0);
+
         // 從 sw.js 的 SHELL_ASSETS 提取路徑
         const shellAssetsMatch = swContent.match(/const SHELL_ASSETS = \[([\s\S]*?)\];/);
         expect(shellAssetsMatch).toBeTruthy();
