@@ -46,7 +46,7 @@ EventSnapshot = namedtuple(
 
 _CATEGORY_LABELS_ZH = {
     "work": "工作", "study": "學業", "health": "健康",
-    "family": "家人", "anniversary": "紀念日", "other": "其他",
+    "family": "家人", "anniversary": "紀念日", "travel": "出遊", "other": "其他",
 }
 _WEEKDAY_ZH = ("週一", "週二", "週三", "週四", "週五", "週六", "週日")
 _WEEKDAY_EN = ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")

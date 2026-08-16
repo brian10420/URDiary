@@ -262,6 +262,16 @@ def test_build_calendar_context_today_event_includes_title_time_and_category(aut
     assert "健康" in result
 
 
+def test_build_calendar_context_travel_category_uses_travel_label(auth_header):
+    _, user_id = auth_header
+    today = date(2026, 8, 4)
+    _seed_event(user_id, title="去台南玩", event_date=today, category="travel")
+
+    result = build_calendar_context(user_id, today, "zh-TW")
+
+    assert "出遊" in result
+
+
 def test_build_calendar_context_yesterday_event_has_yesterday_suffix(auth_header):
     _, user_id = auth_header
     today = date(2026, 8, 4)
