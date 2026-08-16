@@ -6,14 +6,20 @@ import { loadScript } from './helpers/load.js';
 describe('MascotModule', () => {
     beforeEach(() => { loadScript('js/mascot.js'); });
 
-    test('eggKindFor：日間正向=happy、夜間=goodnight、負向永遠 quiet', () => {
-        expect(MascotModule.eggKindFor(0.5, 14)).toBe('happy');
-        expect(MascotModule.eggKindFor(null, 14)).toBe('happy');   // 無情緒資料視為正向
-        expect(MascotModule.eggKindFor(0.5, 23)).toBe('goodnight');
-        expect(MascotModule.eggKindFor(0.5, 4)).toBe('goodnight');
-        expect(MascotModule.eggKindFor(0.5, 5)).toBe('happy');     // 05:00 整回日間
-        expect(MascotModule.eggKindFor(-0.3, 23)).toBe('quiet');
-        expect(MascotModule.eggKindFor(-0.3, 14)).toBe('quiet');
+    // 門檻對齊 getMoodFromValence()（api_service.js:1301-1311）判定 sad 的
+    // 0.45 分界，不是 spec 字面的 <0——後端 valence 經 _clamp() 永遠落在
+    // [0,1]，中性值 0.5（controller ruling R5，task 5 field-check 後裁定）。
+    test('eggKindFor：日間正向=happy、夜間=goodnight、低於 0.45 門檻=quiet（quiet 優先於 goodnight）', () => {
+        expect(MascotModule.eggKindFor(0.7, 14)).toBe('happy');
+        expect(MascotModule.eggKindFor(null, 14)).toBe('happy');    // 無情緒資料視為正向
+        expect(MascotModule.eggKindFor(0.7, 23)).toBe('goodnight');
+        expect(MascotModule.eggKindFor(0.7, 4)).toBe('goodnight');
+        expect(MascotModule.eggKindFor(0.7, 5)).toBe('happy');      // 05:00 整回日間
+        expect(MascotModule.eggKindFor(0.3, 23)).toBe('quiet');     // quiet 優先於 goodnight（夜間也一樣）
+        expect(MascotModule.eggKindFor(0.3, 14)).toBe('quiet');
+        expect(MascotModule.eggKindFor(0.45, 14)).toBe('happy');    // 邊界：剛好 0.45 仍算正向
+        expect(MascotModule.eggKindFor(0.44, 14)).toBe('quiet');    // 邊界：低於 0.45 就安靜
+        expect(MascotModule.eggKindFor(-0.3, 14)).toBe('quiet');    // 量表外的負值仍要有防線（穩健性）
     });
 
     test('categoryIcon 兩級渲染：18px 無臉、24px 有臉', () => {

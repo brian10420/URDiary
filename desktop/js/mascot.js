@@ -151,8 +151,17 @@ const MascotModule = (function () {
     function welcomeHtml() { return `<div class="mascot-welcome">${svg220(POSE_WAVE, 110)}</div>`; }
     function checkinHtml() { return `<span class="mascot-checkin">${svg220(POSE_TEA, 44)}</span>`; }
 
+    // 安靜門檻：spec §4 原文寫「負向情緒 → 安靜版」並字面舉例 valence<0，
+    // 但後端 valence 經 diary_draft.py 的 _clamp() 永遠夾在 [0,1]
+    // （中性值 0.5，見 backend/app/services/diary_draft.py），不會是
+    // 負數——照字面的 <0 在真實資料上永遠不會觸發，形同死碼。改用 0.45，
+    // 對齊 getMoodFromValence()（desktop/js/api_service.js:1301-1311）
+    // 判定 sad 的既有分界，沿用同一套「後端 valence 是 0~1 量表」慣例
+    // （controller ruling R5，task 5 field-check 後裁定）。
+    const QUIET_VALENCE_THRESHOLD = 0.45;
+
     function eggKindFor(valence, hour) {
-        if (typeof valence === 'number' && valence < 0) return 'quiet';
+        if (typeof valence === 'number' && valence < QUIET_VALENCE_THRESHOLD) return 'quiet';
         if (hour >= 22 || hour < 5) return 'goodnight';
         return 'happy';
     }
