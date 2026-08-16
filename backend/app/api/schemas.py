@@ -25,7 +25,7 @@ class UserDiaryCreate(BaseModel):
 
 # 行事曆分類/重複規則的合法值；與 services.calendar_service.CATEGORIES /
 # RECURRENCES 對應 (schema 端獨立列出以取得 Pydantic/OpenAPI 的列舉驗證與文件)。
-_CalendarCategory = Literal["work", "study", "health", "family", "anniversary", "other"]
+_CalendarCategory = Literal["work", "study", "health", "family", "anniversary", "travel", "other"]
 _CalendarRecurrence = Literal["none", "daily", "weekly", "monthly", "yearly"]
 _EVENT_TIME_PATTERN = r"^([01]\d|2[0-3]):[0-5]\d$"
 

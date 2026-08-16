@@ -333,6 +333,7 @@ function initUserSelection() {
     const confirmPasswordInput = document.getElementById('confirm-password');
     const userListContainer = document.getElementById('user-list');
     const passwordDialog = document.getElementById('password-dialog');
+    const loginMascotElement = document.getElementById('login-mascot');
     const closePasswordDialogBtn = document.getElementById('close-password-dialog-btn');
     const loginUsernameInput = document.getElementById('login-username');
     const userPasswordInput = document.getElementById('user-password');
@@ -618,6 +619,13 @@ function initUserSelection() {
     function openPasswordDialog(username) {
         if (selectedUserInfo) {
             selectedUserInfo.textContent = '';
+        }
+
+        // 吉祥物歡迎圖（v2.4 spec③）：每次開啟登入框都重新注入一次，innerHTML
+        // 覆寫本身是 idempotent 操作，不需要判斷「是不是第一次開」。guard 只防
+        // #login-mascot 節點不存在／mascot.js 尚未載入的情況。
+        if (loginMascotElement && typeof MascotModule !== 'undefined') {
+            loginMascotElement.innerHTML = MascotModule.welcomeHtml();
         }
 
         // 我們現在使用啟動畫面作為背景，不需要單獨的背景遮罩

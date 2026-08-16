@@ -24,6 +24,16 @@
 
 importScripts('/js/sw_logic.js');
 
+// Version-bump policy: any byte change to this file makes the browser treat
+// it as a new worker and re-run install()'s cache.addAll() below, so new
+// SHELL_ASSETS entries get precached automatically WITHOUT bumping this —
+// no action needed for additions. Bump CACHE_VERSION only when (a) a file
+// is REMOVED from SHELL_ASSETS (the old cache under this name would keep
+// serving it forever, since nothing ever deletes entries from a still-named
+// cache) or (b) an existing shell file's content must be forcibly refreshed
+// for everyone (cache-first below means a same-URL update otherwise sits
+// stale in the old cache until this name changes and the old cache gets
+// evicted by the activate handler's cleanup).
 const CACHE_VERSION = 'urdiary-shell-v1';
 
 // App shell: every file the running app actually loads. Keep this in sync
@@ -51,6 +61,7 @@ const SHELL_ASSETS = [
     '/css/calendar.css',
     '/css/components.css',
     '/css/mobile.css',
+    '/css/mascot.css',
 
     '/js/security_utils.js',
     '/js/i18n.js',
@@ -59,8 +70,10 @@ const SHELL_ASSETS = [
     '/js/secure_store.js',
     '/js/api_service.js',
     '/js/settings_module.js',
+    '/js/mascot.js',
     '/js/sw_logic.js',
     '/js/ui_manager.js',
+    '/js/voice_module.js',
     '/js/chat_module.js',
     '/js/diary_module.js',
     '/js/calendar_module.js',

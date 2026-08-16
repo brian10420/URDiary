@@ -443,11 +443,20 @@ const DiaryModule = (function() {
             return;
         }
         
+        // 吉祥物插圖（v2.4 spec③ task 4）：睡覺姿勢＋單行文案取代原本的 icon+title+hint；
+        // 「開始對話」按鈕維持不變（既有可用的導覽捷徑，插圖只加視覺層，不拿掉功能）。
+        // typeof guard：mascot.js 在 index.html 一定比本檔先載入，但既有測試
+        // （diary_cache_indicator.test.js／diary_boot_guard.test.js）會單獨
+        // bare-load 本檔而不載入 mascot.js，沒有 guard 會讓那兩個既有測試出錯。
+        const mascotBlock = (typeof MascotModule !== 'undefined')
+            ? MascotModule.emptyHtml('diary', I18N.t('mascot.emptyDiary'))
+            : `<div class="empty-icon">📝</div>
+                <h3>${I18N.t('diary.emptyTitle')}</h3>
+                <p>${I18N.t('diary.emptyHint')}</p>`;
+
         diaryListElement.innerHTML = `
             <div class="empty-state">
-                <div class="empty-icon">📝</div>
-                <h3>${I18N.t('diary.emptyTitle')}</h3>
-                <p>${I18N.t('diary.emptyHint')}</p>
+                ${mascotBlock}
                 <button class="btn primary-btn" id="start-chat-btn">${I18N.t('diary.startChat')}</button>
             </div>
         `;

@@ -30,6 +30,7 @@
     --cat-health: #008300;
     --cat-family: #1baf7a;
     --cat-anniversary: #e34948;
+    --cat-travel: #8f62c9;
     --cat-other: #7a7367;
 }
 
@@ -40,6 +41,7 @@
     --cat-health: #008300;
     --cat-family: #199e70;
     --cat-anniversary: #e66767;
+    --cat-travel: #a678e8;
     --cat-other: #a8a295;
 }
 
@@ -191,8 +193,9 @@
 .cell-dots {
     display: flex;
     align-items: center;
-    /* 點與點之間留 4px 底色縫隙，相鄰色塊不相黏 */
-    gap: 4px;
+    /* 圖標本身已有輪廓與形狀區分，2px 縫隙足夠避免相鄰圖標貼合；
+       MascotModule 未載入時退回的 .cat-dot 色點也沿用同一條規則 */
+    gap: 2px;
     flex-wrap: wrap;
 }
 
@@ -217,6 +220,7 @@
 .cat-health { background-color: var(--cat-health); }
 .cat-family { background-color: var(--cat-family); }
 .cat-anniversary { background-color: var(--cat-anniversary); }
+.cat-travel { background-color: var(--cat-travel); }
 .cat-other { background-color: var(--cat-other); }
 
 /* ---------------------------------------------------------------------------

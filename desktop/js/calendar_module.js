@@ -10,7 +10,7 @@ const CalendarModule = (function() {
 
     // 與後端 services/calendar_service.py 的 CATEGORIES / RECURRENCES 對齊；
     // 順序即色點的固定排列順序（同一格內恆定，顏色不會因事件先後而跳動）
-    const CATEGORIES = ['work', 'study', 'health', 'family', 'anniversary', 'other'];
+    const CATEGORIES = ['work', 'study', 'health', 'family', 'anniversary', 'travel', 'other'];
     const RECURRENCES = ['none', 'daily', 'weekly', 'monthly', 'yearly'];
 
     // 提醒選項（分鐘）：null = 不提醒
@@ -426,13 +426,15 @@ const CalendarModule = (function() {
     }
 
     /**
-     * 一格的分類色點：一件事一個點、最多 MAX_DOTS_PER_CELL 個，其餘以 +N 表示
+     * 一格的分類圖標（吉祥物無臉 18px 版；MascotModule 未載入時退回色點）：
+     * 一件事一個圖標、最多 MAX_DOTS_PER_CELL 個，其餘以 +N 表示
      *
-     * 色點依 CATEGORIES 的固定順序排列（不是事件時間順序），同一格的顏色
-     * 排列才不會因為新增事件而整排重刷。色點是「這天有事、大概是哪類」的
-     * 密度指示，**不是**唯一的分類識別管道：每個點帶 title 提示，權威的
+     * 圖標／色點依 CATEGORIES 的固定順序排列（不是事件時間順序），同一格的
+     * 排列才不會因為新增事件而整排重刷。這是「這天有事、大概是哪類」的
+     * 密度指示，**不是**唯一的分類識別管道：每個圖標帶 title 提示，權威的
      * 分類名稱則以文字顯示在日面板每一列（六色在 8px 圓點上無法對所有
-     * 色覺都兩兩可分，詳見 css/calendar.css 的色彩說明）。
+     * 色覺都兩兩可分，詳見 css/calendar.css 的色彩說明——圖標版額外用形狀
+     * 區分，退回色點時色彩限制仍在，靠的正是 title／文字這兩層 relief）。
      */
     function renderCellDots(list) {
         if (!list || list.length === 0) return '';
@@ -446,7 +448,14 @@ const CalendarModule = (function() {
         shown.forEach(occ => {
             const category = categoryOf(occ);
             const tip = `${I18N.t('category.' + category)}: ${occ.title}`;
-            html += `<span class="cat-dot cat-${escapeHtml(category)}" title="${escapeHtml(tip)}"></span>`;
+            // 吉祥物插圖（v2.4 spec③ task 7）：色點換成無臉 18px 圖標；title
+            // 內容與跳脫方式逐字沿用舊版 cat-dot，只是外包一層 span 承載。
+            // typeof guard 比照本檔 renderDayPanel 空分支既有慣例——
+            // calendar_helpers.test.js 會不帶 mascot.js 單獨載入本檔，
+            // 退路是原本的 cat-dot 色點，css 未刪。
+            html += (typeof MascotModule !== 'undefined')
+                ? `<span title="${escapeHtml(tip)}">${MascotModule.categoryIcon(category, 18)}</span>`
+                : `<span class="cat-dot cat-${escapeHtml(category)}" title="${escapeHtml(tip)}"></span>`;
         });
         if (hiddenCount > 0) {
             html += `<span class="cell-more">+${hiddenCount}</span>`;
@@ -475,9 +484,15 @@ const CalendarModule = (function() {
             </div>`;
 
         if (list.length === 0) {
-            html += `<div class="day-panel-empty">
-                    <p>${escapeHtml(I18N.t('calendar.noEvents'))}</p>
-                </div>`;
+            // 吉祥物插圖（v2.4 spec③ task 4）：舉手看月曆姿勢＋i18n 文案取代純文字提示。
+            // typeof guard 比照 diary_module.js／chat_module.js 既有慣例——calendar_module.js
+            // 目前沒有既有測試會 bare-load 到這條路徑，但保留 guard 與同檔案風格一致，
+            // 也防未來新增的 bare-load 測試踩到。
+            html += `<div class="day-panel-empty">` +
+                ((typeof MascotModule !== 'undefined')
+                    ? MascotModule.emptyHtml('calendar', I18N.t('mascot.emptyCalendar'))
+                    : `<p>${escapeHtml(I18N.t('calendar.noEvents'))}</p>`) +
+                `</div>`;
         } else {
             html += '<ul class="day-event-list">';
             list.forEach(occ => {
@@ -485,7 +500,9 @@ const CalendarModule = (function() {
                 const timeLabel = occ.time ? occ.time : I18N.t('calendar.allDayLabel');
                 html += `<li class="day-event" data-event-id="${escapeHtml(occ.event_id)}">
                         <span class="day-event-time">${escapeHtml(timeLabel)}</span>
-                        <span class="cat-dot cat-${escapeHtml(category)}"></span>
+                        ${(typeof MascotModule !== 'undefined')
+                            ? MascotModule.categoryIcon(category, 24)
+                            : `<span class="cat-dot cat-${escapeHtml(category)}"></span>`}
                         <span class="day-event-main">
                             <span class="day-event-title">${escapeHtml(occ.title)}</span>
                             <span class="day-event-meta">${escapeHtml(I18N.t('category.' + category))}${

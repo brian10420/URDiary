@@ -66,6 +66,15 @@ def test_create_event_invalid_category_returns_422(client, auth_header):
     assert resp.status_code == 422
 
 
+def test_create_event_travel_category(client, auth_header):
+    headers, _ = auth_header
+
+    resp = _create_event(client, headers, category="travel", event_date="2026-09-01")
+
+    assert resp.status_code in (200, 201)
+    assert resp.json()["event"]["category"] == "travel"
+
+
 def test_create_event_invalid_event_time_format_returns_422(client, auth_header):
     headers, _ = auth_header
 
