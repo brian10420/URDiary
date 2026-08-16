@@ -6,9 +6,11 @@ import { loadCoreScripts, loadScript } from './helpers/load.js';
  * v2.4 spec③ task 4：空狀態整合（日記／行事曆／無結果）。
  *
  * 第一個 describe 是 brief 指定的模組輸出鎖定（emptyHtml 的三種姿勢在 task 1
- * 已經定案，這裡第一次跑就會過——這是接線任務，不是新功能）。後面兩個
+ * 已經定案，這裡第一次跑就會過——這是接線任務，不是新功能）。後面幾個
  * describe 是 DOM 級接線驗證：確認 diary_module.js／calendar_module.js 的
  * 「空」分支真的把 MascotModule 的輸出接進畫面，而不是只停留在「呼叫得到」。
+ * 最後一個 describe 是 task 7（分類圖標兩級渲染）的接線驗證，沿用同一組
+ * CalendarModule fixture，只是餵有事件而非空清單。
  *
  * 'generic' 姿勢目前沒有接線對象：diary_module.js／calendar_module.js 都
  * 沒有搜尋/篩選無結果的視圖（grep 過，兩檔都沒有 search/filter 相關字樣），
@@ -151,5 +153,65 @@ describe('CalendarModule 無事件視圖接線（吉祥物插圖）', () => {
         expect(emptyBlock.innerHTML).toContain(I18N.t('mascot.emptyCalendar'));
         // 舊版純文字提示不應再出現（已被吉祥物插圖取代）
         expect(emptyBlock.innerHTML).not.toContain(I18N.t('calendar.noEvents'));
+    });
+});
+
+/**
+ * v2.4 spec③ task 7：月曆分類圖標兩級渲染的 DOM 級接線驗證。
+ *
+ * 沿用上一個 describe 的 fixture（同一組 .calendar-grid／.calendar-day-panel
+ * DOM、mascot.js 先於 calendar_module.js 載入），改餵一筆「今天」的
+ * occurrence，一次同時覆蓋兩個渲染點：月格（renderCellDots，18px 無臉）與
+ * 日清單（renderDayPanel，24px 有臉）。guard fallback（MascotModule 未載入
+ * 時退回 cat-dot）沿用本檔一貫的既有慣例，不另外對 calendar_helpers.test.js
+ * 補 bare-load 渲染測試——該檔從建立以來就只測純函式／DOM-light 小函式，
+ * 從未跑過 renderGrid/renderDayPanel（day-panel-empty 的既有 guard 同樣沒有
+ * 對應的 bare-load 測試），這裡延續同一先例。
+ */
+describe('CalendarModule 分類圖標兩級渲染接線（吉祥物插圖，task 7）', () => {
+    beforeAll(() => {
+        loadCoreScripts(); // security_utils -> i18n -> config
+        loadScript('js/mascot.js');
+        loadScript('js/calendar_module.js');
+    });
+
+    beforeEach(() => {
+        document.body.innerHTML = `
+            <div id="calendar-view">
+                <div class="calendar-grid"></div>
+                <div class="calendar-day-panel"></div>
+            </div>
+        `;
+        window.UIManager = { showToast: vi.fn() };
+    });
+
+    it('月格用 18px 無臉圖標（title 提示逐字保留）；日清單用 24px 有臉圖標', async () => {
+        const todayIso = CalendarModule.toIsoDate(new Date());
+        const occurrence = {
+            event_id: 1,
+            title: '晨會',
+            note: null,
+            category: 'work',
+            date: todayIso,
+            time: '09:00',
+            recurrence: 'none',
+            reminder_minutes: null
+        };
+        window.ApiService = { getCalendarEvents: vi.fn().mockResolvedValue({ occurrences: [occurrence] }) };
+
+        CalendarModule.init(); // selectedDate 預設為今天，與 occurrence.date 對上
+        await CalendarModule.loadMonth();
+
+        const gridHtml = document.querySelector('.calendar-grid').innerHTML;
+        expect(gridHtml).toContain('mascot-cat-icon');
+        expect(gridHtml).toContain('width="18"');
+        expect(gridHtml).not.toContain('class="face"'); // 月格是無臉版
+        // 舊 cat-dot 的 title 提示（分類名稱: 事件標題）逐字保留，只是換了承載元素
+        expect(gridHtml).toContain(`title="${I18N.t('category.work')}: 晨會"`);
+
+        const dayListHtml = document.querySelector('.day-event-list').innerHTML;
+        expect(dayListHtml).toContain('mascot-cat-icon');
+        expect(dayListHtml).toContain('width="24"');
+        expect(dayListHtml).toContain('class="face"'); // 日清單是有臉版
     });
 });
