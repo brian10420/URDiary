@@ -442,3 +442,12 @@
     margin-top: 40px; margin-right: 3px; font-size: 9px;
     color: var(--text-secondary, #8a7a66); pointer-events: none;
 }
+
+/* --- 事件表單顏色 swatch (v2.5 Spec A) --- */
+.color-swatches { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.color-swatches .swatch { display: inline-flex; align-items: center; cursor: pointer; }
+.color-swatches .swatch input { width: auto; margin: 0; }
+.color-swatches .swatch:not(.swatch-default) input { appearance: none; -webkit-appearance: none;
+    width: 22px; height: 22px; border-radius: 50%; background: var(--swatch);
+    border: 2px solid transparent; cursor: pointer; }
+.color-swatches .swatch:not(.swatch-default) input:checked { border-color: var(--text-primary, #4b2e1e); }

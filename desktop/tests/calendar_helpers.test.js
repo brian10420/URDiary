@@ -243,7 +243,9 @@ describe('CalendarModule 純函式', () => {
                 event_time: null,
                 recurrence: 'none',
                 recurrence_until: null,
-                reminder_minutes: null
+                reminder_minutes: null,
+                end_date: null,
+                color: null
             });
         });
 

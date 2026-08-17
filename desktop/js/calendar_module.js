@@ -310,6 +310,11 @@ const CalendarModule = (function() {
         if (recurrenceInput) {
             recurrenceInput.addEventListener('change', syncRecurrenceState);
         }
+
+        const endDateInput = document.getElementById('event-end-date');
+        if (endDateInput) {
+            endDateInput.addEventListener('change', syncMultiDayState);
+        }
     }
 
     function bindClick(selector, handler) {
@@ -797,7 +802,9 @@ const CalendarModule = (function() {
             event_time: occurrence ? occurrence.time : null,
             recurrence: occurrence ? occurrence.recurrence : 'none',
             recurrence_until: occurrence ? occurrence.recurrence_until : null,
-            reminder_minutes: occurrence ? occurrence.reminder_minutes : null
+            reminder_minutes: occurrence ? occurrence.reminder_minutes : null,
+            end_date: (occurrence && occurrence.end_date) ? occurrence.end_date : null,
+            color: (occurrence && occurrence.color) ? occurrence.color : null
         };
     }
 
@@ -825,12 +832,19 @@ const CalendarModule = (function() {
         setValue('event-until', values.recurrence_until || '');
         setValue('event-reminder', values.reminder_minutes === null || values.reminder_minutes === undefined
             ? '' : String(values.reminder_minutes));
+        setValue('event-end-date', values.end_date || '');
+        const colorRadio = document.querySelector(
+            `input[name="event-color"][value="${values.color || ''}"]`);
+        const defaultRadio = document.querySelector('input[name="event-color"][value=""]');
+        if (colorRadio) colorRadio.checked = true;
+        else if (defaultRadio) defaultRadio.checked = true;
 
         const allDayInput = document.getElementById('event-all-day');
         if (allDayInput) allDayInput.checked = !values.event_time;
 
         syncAllDayState();
         syncRecurrenceState();
+        syncMultiDayState();
         showFormError('');
 
         // 標題與刪除鈕依「新增 / 編輯」切換
@@ -877,6 +891,31 @@ const CalendarModule = (function() {
         if (seriesHint) seriesHint.style.display = isRecurring ? '' : 'none';
     }
 
+    // 跨天（設了結束日）＝整天型鎖定：全天強制勾選並停用、時間/重複/提醒停用
+    // （與後端 schema/路由的 multi_day_invalid 不變量一致；readForm 對停用中的
+    // 重複選單一律輸出 'none'，比照「停用中的提醒＝未設提醒」的既有規則）
+    function syncMultiDayState() {
+        const endInput = document.getElementById('event-end-date');
+        if (!endInput) return;
+        const isMultiDay = !!endInput.value;
+
+        const allDayInput = document.getElementById('event-all-day');
+        if (allDayInput) {
+            if (isMultiDay) allDayInput.checked = true;
+            allDayInput.disabled = isMultiDay;
+        }
+        const recurrenceInput = document.getElementById('event-recurrence');
+        if (recurrenceInput) {
+            if (isMultiDay) recurrenceInput.value = 'none';
+            recurrenceInput.disabled = isMultiDay;
+        }
+        const hint = document.getElementById('event-multiday-hint');
+        if (hint) hint.style.display = isMultiDay ? 'block' : 'none';
+
+        syncAllDayState();
+        syncRecurrenceState();
+    }
+
     // 從表單讀出一份完整的事件欄位（值的形狀與後端 schema 一致）
     function readForm() {
         const allDay = document.getElementById('event-all-day');
@@ -887,6 +926,8 @@ const CalendarModule = (function() {
         // 值，也一律視為未設提醒，不能把它當成使用者這次的選擇送出。
         const reminder = (reminderInput && reminderInput.disabled) ? '' : getValue('event-reminder');
         const note = (getValue('event-note') || '').trim();
+        const colorInput = document.querySelector('input[name="event-color"]:checked');
+        const endDate = getValue('event-end-date');
 
         return {
             title: (getValue('event-title') || '').trim(),
@@ -896,7 +937,9 @@ const CalendarModule = (function() {
             event_time: (allDay && allDay.checked) ? null : (getValue('event-time') || null),
             recurrence: recurrence,
             recurrence_until: (recurrence === 'none' || !until) ? null : until,
-            reminder_minutes: reminder === '' ? null : Number(reminder)
+            reminder_minutes: reminder === '' ? null : Number(reminder),
+            end_date: endDate || null,
+            color: (colorInput && colorInput.value) ? colorInput.value : null
         };
     }
 
@@ -909,6 +952,10 @@ const CalendarModule = (function() {
         }
         if (!payload.event_date) {
             showFormError(I18N.t('calendar.dateRequired'));
+            return;
+        }
+        if (payload.end_date && payload.end_date < payload.event_date) {
+            showFormError(I18N.t('calendar.endBeforeStart'));
             return;
         }
         showFormError('');
@@ -1117,6 +1164,8 @@ const CalendarModule = (function() {
         // 用來回歸測試「全天事件連帶停用提醒欄位」與「停用中的提醒選單一律
         // 視為未設提醒」這條規則
         syncAllDayState: syncAllDayState,
-        readForm: readForm
+        readForm: readForm,
+        // 跨天結束日鎖定整天型 (v2.5 Spec A task 7)：同樣僅為 vitest 曝光
+        syncMultiDayState: syncMultiDayState
     };
 })();

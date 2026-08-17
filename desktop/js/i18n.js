@@ -180,6 +180,11 @@ const I18N = (function() {
             'calendar.stampDelete': '刪除這天的印章',
             'calendar.stampDeleteConfirm': '要拿掉這天的印章與小語嗎？',
             'calendar.stampDeleteFailed': '刪除印章失敗，請稍後再試',
+            'calendar.endDate': '結束日期（跨天活動，留空＝單日）:',
+            'calendar.multiDayHint': '跨天活動固定為整天型，時間／重複／提醒已停用',
+            'calendar.color': '顏色（跨天橫槓用）:',
+            'calendar.colorDefault': '分類色',
+            'calendar.endBeforeStart': '結束日期不可早於開始日期',
 
             'category.work': '工作',
             'category.study': '學業',
@@ -463,6 +468,11 @@ const I18N = (function() {
             'calendar.stampDelete': 'Remove this stamp',
             'calendar.stampDeleteConfirm': 'Remove the stamp and note for this day?',
             'calendar.stampDeleteFailed': 'Failed to remove the stamp, please try again',
+            'calendar.endDate': 'End date (multi-day, leave empty for single day):',
+            'calendar.multiDayHint': 'Multi-day events are all-day; time, repeat and reminder are disabled',
+            'calendar.color': 'Color (for the multi-day bar):',
+            'calendar.colorDefault': 'Category color',
+            'calendar.endBeforeStart': 'End date must not be before the start date',
 
             'category.work': 'Work',
             'category.study': 'Study',

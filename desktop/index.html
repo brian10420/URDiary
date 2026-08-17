@@ -328,6 +328,13 @@
                         </label>
                     </div>
                     <div class="form-group">
+                        <label for="event-end-date" data-i18n="calendar.endDate">結束日期（跨天活動，留空＝單日）:</label>
+                        <input type="date" id="event-end-date" class="form-control">
+                        <small id="event-multiday-hint" style="display: none; color: #888; margin-top: 4px;" data-i18n="calendar.multiDayHint">
+                            跨天活動固定為整天型，時間／重複／提醒已停用
+                        </small>
+                    </div>
+                    <div class="form-group">
                         <label for="event-time" data-i18n="calendar.time">時間:</label>
                         <input type="time" id="event-time" class="form-control" value="09:00">
                     </div>
@@ -342,6 +349,23 @@
                             <option value="travel" data-i18n="category.travel">出遊</option>
                             <option value="other" data-i18n="category.other" selected>其他</option>
                         </select>
+                    </div>
+                    <div class="form-group">
+                        <label data-i18n="calendar.color">顏色（跨天橫槓用）:</label>
+                        <div id="event-color-swatches" class="color-swatches">
+                            <label class="swatch swatch-default" title="分類色">
+                                <input type="radio" name="event-color" value="" checked>
+                                <span data-i18n="calendar.colorDefault">分類色</span>
+                            </label>
+                            <label class="swatch" style="--swatch: #e8836f;"><input type="radio" name="event-color" value="#e8836f"></label>
+                            <label class="swatch" style="--swatch: #f5c542;"><input type="radio" name="event-color" value="#f5c542"></label>
+                            <label class="swatch" style="--swatch: #5fd0a0;"><input type="radio" name="event-color" value="#5fd0a0"></label>
+                            <label class="swatch" style="--swatch: #7f96c9;"><input type="radio" name="event-color" value="#7f96c9"></label>
+                            <label class="swatch" style="--swatch: #8f62c9;"><input type="radio" name="event-color" value="#8f62c9"></label>
+                            <label class="swatch" style="--swatch: #e8899a;"><input type="radio" name="event-color" value="#e8899a"></label>
+                            <label class="swatch" style="--swatch: #2a78d6;"><input type="radio" name="event-color" value="#2a78d6"></label>
+                            <label class="swatch" style="--swatch: #b8b2a5;"><input type="radio" name="event-color" value="#b8b2a5"></label>
+                        </div>
                     </div>
                     <div class="form-group">
                         <label for="event-recurrence" data-i18n="calendar.recurrence">重複:</label>
