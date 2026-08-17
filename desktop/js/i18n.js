@@ -283,7 +283,15 @@ const I18N = (function() {
 
             'mascot.emptyDiary': '還沒有日記——跟我聊聊今天吧',
             'mascot.emptyCalendar': '這週還空空的，要記點什麼嗎？',
-            'mascot.emptyGeneric': '這裡還沒有東西耶'
+            'mascot.emptyGeneric': '這裡還沒有東西耶',
+            'stamp.cake': '生日蛋糕', 'stamp.gift': '驚喜禮物', 'stamp.heart': '愛心滿滿',
+            'stamp.cheers': '聚會乾杯', 'stamp.trophy': '成就獎盃', 'stamp.flag': '里程碑小旗',
+            'stamp.book': '讀書進修', 'stamp.star': '閃耀的一天', 'stamp.plane': '出發遠行',
+            'stamp.camera': '出遊留影', 'stamp.ball': '活力運動', 'stamp.movie': '看場電影',
+            'stamp.music': '音樂時光', 'stamp.food': '美味一餐', 'stamp.coffee': '小歇片刻',
+            'stamp.flower': '花草散步', 'stamp.sun': '晴朗有勁', 'stamp.umbrella': '雨天安好',
+            'stamp.moon': '靜靜的夜', 'stamp.rainbow': '雨過天晴', 'stamp.sprout': '新芽成長',
+            'stamp.heal': '照顧自己', 'stamp.paw': '毛孩時光', 'stamp.gradcap': '考試學業'
         },
 
         'en': {
@@ -554,7 +562,15 @@ const I18N = (function() {
 
             'mascot.emptyDiary': 'No diaries yet — come tell me about your day',
             'mascot.emptyCalendar': 'This week is wide open — want to note something?',
-            'mascot.emptyGeneric': 'Nothing here yet'
+            'mascot.emptyGeneric': 'Nothing here yet',
+            'stamp.cake': 'Birthday Cake', 'stamp.gift': 'Sweet Surprise', 'stamp.heart': 'Full of Love',
+            'stamp.cheers': 'Cheers Together', 'stamp.trophy': 'Achievement', 'stamp.flag': 'Milestone Flag',
+            'stamp.book': 'Study Time', 'stamp.star': 'Shining Day', 'stamp.plane': 'Off We Go',
+            'stamp.camera': 'Snapshot Day', 'stamp.ball': 'Active Day', 'stamp.movie': 'Movie Night',
+            'stamp.music': 'Music Time', 'stamp.food': 'Tasty Meal', 'stamp.coffee': 'Little Break',
+            'stamp.flower': 'Garden Walk', 'stamp.sun': 'Sunny Spirit', 'stamp.umbrella': 'Rainy Comfort',
+            'stamp.moon': 'Quiet Night', 'stamp.rainbow': 'After the Rain', 'stamp.sprout': 'New Sprout',
+            'stamp.heal': 'Self Care', 'stamp.paw': 'Furry Moments', 'stamp.gradcap': 'Exam Season'
         }
     };
 
