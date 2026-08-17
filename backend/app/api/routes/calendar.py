@@ -45,6 +45,8 @@ def _serialize_event(event) -> Dict[str, Any]:
         "recurrence": event.recurrence,
         "recurrence_until": event.recurrence_until.isoformat() if event.recurrence_until else None,
         "reminder_minutes": event.reminder_minutes,
+        "end_date": event.end_date.isoformat() if event.end_date else None,
+        "color": event.color,
         "created_at": event.created_at.isoformat(),
         "updated_at": event.updated_at.isoformat(),
     }
@@ -68,6 +70,8 @@ def create_event(payload: CalendarEventCreate,
         recurrence=payload.recurrence,
         recurrence_until=payload.recurrence_until,
         reminder_minutes=payload.reminder_minutes,
+        end_date=payload.end_date,
+        color=payload.color,
     )
 
     return {"message": msg("event_created", lang), "event": _serialize_event(event)}
@@ -144,6 +148,21 @@ def update_event(event_id: int, payload: CalendarEventUpdate,
         raise BadRequestError(
             error_code=ErrorCode.INVALID_INPUT,
             detail=msg("field_not_clearable", lang, fields=", ".join(nulled_fields))
+        )
+
+    # 跨天不變量以「合併後狀態」檢查：schema 只驗得到同請求內同時出現的欄位，
+    # 例如庫內事件帶 event_time、這次只送 end_date，就得在這裡擋下。
+    merged_event_date = update_data.get("event_date", existing.event_date)
+    merged_end_date = update_data.get("end_date", existing.end_date)
+    merged_time = update_data.get("event_time", existing.event_time)
+    merged_recurrence = update_data.get("recurrence", existing.recurrence)
+    if merged_end_date is not None and (
+            merged_time is not None or merged_recurrence != "none"
+            or merged_end_date < merged_event_date):
+        api_logger.warning(f"跨天事件不變量違反: event_id={event_id}, data={sorted(update_data)}")
+        raise BadRequestError(
+            error_code=ErrorCode.INVALID_INPUT,
+            detail=msg("multi_day_invalid", lang)
         )
 
     event = crud.update_calendar_event(db, event_id, **update_data)

@@ -196,6 +196,7 @@ def test_occurrence_dict_has_all_expected_fields():
         "category": "health", "date": "2026-08-05", "time": "14:30",
         "recurrence": "none", "event_date": "2026-08-05",
         "recurrence_until": None, "reminder_minutes": 30,
+        "end_date": None, "color": None, "span_day": None, "span_total": 1,
     }
 
 
@@ -222,6 +223,33 @@ def test_weekly_occurrences_share_same_anchor_event_date_while_dates_differ():
     assert len(dates) > 1
     assert len(set(dates)) == len(dates)          # 每筆的 date 各不相同
     assert anchors == {"2026-07-20"}               # 但 event_date 全部同一個錨定日
+
+
+# --- 跨天事件 (v2.5 Spec A) ---------------------------------------------------
+
+def test_multi_day_event_expands_each_day_with_span_fields():
+    ev = _ev(event_date=date(2026, 9, 1), recurrence="none")._replace(
+        end_date=date(2026, 9, 3), color="#8f62c9")
+    occs = expand_occurrences([ev], date(2026, 8, 31), date(2026, 9, 30))
+    assert [o["date"] for o in occs] == ["2026-09-01", "2026-09-02", "2026-09-03"]
+    assert [o["span_day"] for o in occs] == [1, 2, 3]
+    assert all(o["span_total"] == 3 for o in occs)
+    assert all(o["color"] == "#8f62c9" for o in occs)
+    assert all(o["end_date"] == "2026-09-03" for o in occs)
+
+
+def test_multi_day_event_clips_to_query_range():
+    ev = _ev(event_date=date(2026, 8, 30), recurrence="none")._replace(end_date=date(2026, 9, 2))
+    occs = expand_occurrences([ev], date(2026, 9, 1), date(2026, 9, 30))
+    assert [o["date"] for o in occs] == ["2026-09-01", "2026-09-02"]
+    assert [o["span_day"] for o in occs] == [3, 4]   # span_day 以事件自身起日錨定，不受查詢窗影響
+
+
+def test_single_day_event_has_null_span_day_and_total_one():
+    occs = expand_occurrences([_ev()], date(2026, 8, 1), date(2026, 8, 31))
+    assert occs[0]["span_day"] is None
+    assert occs[0]["span_total"] == 1
+    assert occs[0]["color"] is None
 
 
 # ==============================================================================

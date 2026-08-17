@@ -126,6 +126,10 @@ MESSAGES = {
         "zh-TW": "行事曆事件已刪除",
         "en": "Calendar event deleted",
     },
+    "multi_day_invalid": {
+        "zh-TW": "跨天事件必須是整天、不可重複，且結束日不可早於開始日",
+        "en": "Multi-day events must be all-day, non-repeating, and end on or after the start date",
+    },
 
     # --- 語音功能 (services/voice_service.py, api/routes/voice.py) ---
     "voice_key_missing": {

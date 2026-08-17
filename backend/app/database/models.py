@@ -193,5 +193,7 @@ class CalendarEvent(Base):
     recurrence = Column(String(10), nullable=False, default="none")  # none/daily/weekly/monthly/yearly
     recurrence_until = Column(Date, nullable=True)         # 含當日
     reminder_minutes = Column(Integer, nullable=True)      # NULL = 不提醒 (前端 in-app 通知用)
+    end_date = Column(Date, nullable=True)    # 跨天事件結束日 (含當日)；NULL=單日。僅 recurrence="none" 的全天事件可設 (schema+路由雙層驗證)
+    color = Column(String(7), nullable=True)  # 事件自選色 "#rrggbb"；NULL=前端用分類色 --cat-*
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

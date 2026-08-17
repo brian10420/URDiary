@@ -410,8 +410,9 @@ def get_user_embeddings(db: Session, user_id: int, model: str):
 def create_calendar_event(db: Session, user_id: int, title: str, event_date, *,
                           note: Optional[str] = None, category: str = "other",
                           event_time: Optional[str] = None, recurrence: str = "none",
-                          recurrence_until=None, reminder_minutes: Optional[int] = None):
-    """新增一筆行事曆事件 (event_date/recurrence_until 一律傳 datetime.date 物件)"""
+                          recurrence_until=None, reminder_minutes: Optional[int] = None,
+                          end_date=None, color: Optional[str] = None):
+    """新增一筆行事曆事件 (event_date/recurrence_until/end_date 一律傳 datetime.date 物件)"""
     event = models.CalendarEvent(
         user_id=user_id,
         title=title,
@@ -422,6 +423,8 @@ def create_calendar_event(db: Session, user_id: int, title: str, event_date, *,
         recurrence=recurrence,
         recurrence_until=recurrence_until,
         reminder_minutes=reminder_minutes,
+        end_date=end_date,
+        color=color,
     )
     db.add(event)
     db.commit()
