@@ -277,6 +277,21 @@ const CalendarModule = (function() {
         bindClick('#calendar-today-btn', goToToday);
         bindClick('#calendar-add-btn', () => openEventForm(null, selectedDate));
 
+        bindClick('#calendar-ym-btn', toggleYmPicker);
+        document.addEventListener('click', function(event) {
+            const picker = document.getElementById('calendar-ym-picker');
+            const btn = document.getElementById('calendar-ym-btn');
+            if (!picker || picker.style.display === 'none') return;
+            if (picker.contains(event.target) || (btn && btn.contains(event.target))) return;
+            picker.style.display = 'none';
+        });
+        document.addEventListener('keydown', function(event) {
+            if (event.key === 'Escape') {
+                const picker = document.getElementById('calendar-ym-picker');
+                if (picker) picker.style.display = 'none';
+            }
+        });
+
         // 格子／跨天橫槓點擊皆用事件委派：每次 renderGrid 重建 innerHTML 後不必重綁；
         // 橫槓優先於格子（橫槓疊在格子上方，點到橫槓開該事件編輯，不觸發選日）
         gridElement.addEventListener('click', function(event) {
@@ -757,6 +772,58 @@ const CalendarModule = (function() {
         viewYear = today.getFullYear();
         viewMonth = today.getMonth();
         loadMonth();
+    }
+
+    // --- 年月 picker (v2.5 Spec A #9) ------------------------------------------
+
+    let pickerYear = null;   // picker 內暫選的年（尚未套用）
+
+    function toggleYmPicker() {
+        const picker = document.getElementById('calendar-ym-picker');
+        if (!picker) return;
+        if (picker.style.display !== 'none') { picker.style.display = 'none'; return; }
+        pickerYear = viewYear;
+        renderYmPicker();
+        picker.style.display = 'block';
+    }
+
+    function renderYmPicker() {
+        const picker = document.getElementById('calendar-ym-picker');
+        if (!picker) return;
+
+        let html = '<div class="ym-years">';
+        for (let y = viewYear - 10; y <= viewYear + 10; y++) {
+            html += `<button type="button" class="btn btn-sm${y === pickerYear ? ' active' : ''}" data-ym-year="${y}">${y}</button>`;
+        }
+        html += '</div><div class="ym-months">';
+        for (let m = 0; m < 12; m++) {
+            const label = new Date(2026, m, 1).toLocaleDateString(I18N.dateLocale(), { month: 'short' });
+            html += `<button type="button" class="btn btn-sm" data-ym-month="${m}">${escapeHtml(label)}</button>`;
+        }
+        html += '</div>';
+        picker.innerHTML = html;
+
+        // stopPropagation：renderYmPicker 用 innerHTML 整組重建，年按鈕點下去那一刻
+        // 自己就被換成新節點、從 picker 分離；click 事件的冒泡路徑卻是「事件開始
+        // 分派那一刻」就固定好的（DOM 事件規格），不會因中途換節點而改道，照樣會
+        // 冒泡到 bindListeners 掛在 document 上的「點外面關閉」監聽器。屆時
+        // event.target 已不是 picker 的子孫，picker.contains(event.target) 判斷
+        // 會誤判成「點在外面」而把 picker 關掉——選年應該只更新高亮、不關閉。
+        // 月按鈕本身會自己關閉 picker，理論上不受影響，但同樣是 renderYmPicker
+        // 重建出來的節點、同一個潛在陷阱，一併擋掉冒泡以保持兩者行為對稱。
+        picker.querySelectorAll('[data-ym-year]').forEach(btn => btn.addEventListener('click', (event) => {
+            event.stopPropagation();
+            pickerYear = Number(btn.getAttribute('data-ym-year'));
+            renderYmPicker();   // 更新 active 高亮，不關閉
+        }));
+        picker.querySelectorAll('[data-ym-month]').forEach(btn => btn.addEventListener('click', (event) => {
+            event.stopPropagation();
+            viewYear = pickerYear;
+            viewMonth = Number(btn.getAttribute('data-ym-month'));
+            picker.style.display = 'none';
+            renderMonthLabel();   // 先同步更新標籤（loadMonth 是 async，不 await——標籤不該等網路）
+            loadMonth();
+        }));
     }
 
     // --- 事件表單 -------------------------------------------------------------

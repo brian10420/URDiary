@@ -45,8 +45,10 @@
     --cat-other: #a8a295;
 }
 
-/* 工具列 —— 面板本身不滾動，工具列固定高度不參與伸縮 */
+/* 工具列 —— 面板本身不滾動，工具列固定高度不參與伸縮
+   position: relative：年月 picker（.calendar-ym-picker）以此為錨點絕對定位 */
 .calendar-toolbar {
+    position: relative;
     flex: none;
     display: flex;
     align-items: center;
@@ -54,6 +56,16 @@
     margin-bottom: var(--spacing-md);
     flex-wrap: wrap;
 }
+
+/* --- 年月 picker (v2.5 Spec A) --- */
+.calendar-ym-picker {
+    position: absolute; z-index: 30; margin-top: 4px; padding: 10px;
+    background: var(--bg-secondary, #fff); border: 1px solid var(--border-color, #d8d2c6);
+    border-radius: 10px; box-shadow: 0 4px 14px rgba(0, 0, 0, .12); max-width: 340px;
+}
+.calendar-ym-picker .ym-years { display: flex; flex-wrap: wrap; gap: 4px; max-height: 120px; overflow-y: auto; margin-bottom: 8px; }
+.calendar-ym-picker .ym-months { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; }
+.calendar-ym-picker .btn.active { outline: 2px solid var(--cat-work, #2a78d6); }
 
 .calendar-month-label {
     font-size: var(--font-size-lg);

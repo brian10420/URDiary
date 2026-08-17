@@ -469,13 +469,16 @@
                     <button id="calendar-prev-btn" class="btn btn-sm" title="上個月" data-i18n-title="calendar.prevMonth">
                         <i class="fa fa-chevron-left"></i>
                     </button>
-                    <span class="calendar-month-label"></span>
+                    <button id="calendar-ym-btn" class="btn btn-sm" title="選擇年月" data-i18n-title="calendar.pickYearMonth">
+                        <span class="calendar-month-label"></span>
+                    </button>
                     <button id="calendar-next-btn" class="btn btn-sm" title="下個月" data-i18n-title="calendar.nextMonth">
                         <i class="fa fa-chevron-right"></i>
                     </button>
                     <button id="calendar-today-btn" class="btn btn-sm" data-i18n="calendar.today">今天</button>
                     <button id="calendar-add-btn" class="btn btn-sm btn-accent" data-i18n="calendar.addEvent">新增事件</button>
                 </div>
+                <div id="calendar-ym-picker" class="calendar-ym-picker" style="display: none;"></div>
                 <div class="calendar-body">
                     <div class="calendar-weekdays"></div>
                     <div class="calendar-grid"></div>
