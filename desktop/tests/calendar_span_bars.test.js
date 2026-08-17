@@ -50,6 +50,12 @@ describe('span bars', () => {
         expect(out.segments.map(s => s.lane).sort()).toEqual([0, 1]);
         expect(out.overflow.get('2026-09-02')).toBe(1);
         expect(out.overflow.get('2026-09-03')).toBe(1);
+        // 同起日（B id2／C id3 皆 09-02）tie-break 鎖定：id 小者先佔道，
+        // 上面三個斷言在「comparator 反過來、C 贏」的錯誤情境下也會全部通過
+        // （C 的 09-02~09-03 範圍與 B 一樣會標到 overflow 的這兩天、lane 也仍是 [0,1]），
+        // 唯獨「誰進了 segments／誰的尾巴 09-04 被標記」才分得出來：
+        expect(out.segments.map(s => s.eventId).sort()).toEqual([1, 2]);   // B(id2) 佔到道，C(id3) 才 overflow
+        expect(out.overflow.has('2026-09-04')).toBe(false);                // 若 B 才是 overflow 者，B 的尾巴 09-04 會被標記
     });
 
     test('與週無交集＝空結果', () => {
