@@ -130,6 +130,14 @@ MESSAGES = {
         "zh-TW": "跨天事件必須是整天、不可重複，且結束日不可早於開始日",
         "en": "Multi-day events must be all-day, non-repeating, and end on or after the start date",
     },
+    "day_note_deleted": {
+        "zh-TW": "這天的印章已刪除",
+        "en": "The stamp for this day has been removed",
+    },
+    "day_note_not_found": {
+        "zh-TW": "這天沒有印章",
+        "en": "No stamp on this day",
+    },
 
     # --- 語音功能 (services/voice_service.py, api/routes/voice.py) ---
     "voice_key_missing": {

@@ -478,3 +478,47 @@ def delete_calendar_event(db: Session, event_id: int) -> bool:
     db.delete(event)
     db.commit()
     return True
+
+
+# DayNote CRUD operations (v2.5 Spec A：AI 日記印章＋小語)
+def upsert_day_note(db: Session, user_id: int, note_date, stamp: str, phrase: str, *,
+                    source_diary_id: Optional[int] = None):
+    """同 (user_id, note_date) 覆蓋更新；不存在則新增 (v2.5 Spec A)。"""
+    row = (db.query(models.DayNote)
+             .filter(models.DayNote.user_id == user_id,
+                     models.DayNote.note_date == note_date)
+             .first())
+    if row is None:
+        row = models.DayNote(user_id=user_id, note_date=note_date,
+                             stamp=stamp, phrase=phrase, source_diary_id=source_diary_id)
+        db.add(row)
+    else:
+        row.stamp = stamp
+        row.phrase = phrase
+        row.source_diary_id = source_diary_id
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+def get_day_notes(db: Session, user_id: int, start, end) -> List[models.DayNote]:
+    """取 [start, end] (含兩端) 的印章，依日期排序。"""
+    return (db.query(models.DayNote)
+              .filter(models.DayNote.user_id == user_id,
+                      models.DayNote.note_date >= start,
+                      models.DayNote.note_date <= end)
+              .order_by(models.DayNote.note_date)
+              .all())
+
+
+def delete_day_note(db: Session, user_id: int, note_date) -> bool:
+    """刪除某日印章；不存在回 False。"""
+    row = (db.query(models.DayNote)
+             .filter(models.DayNote.user_id == user_id,
+                     models.DayNote.note_date == note_date)
+             .first())
+    if row is None:
+        return False
+    db.delete(row)
+    db.commit()
+    return True

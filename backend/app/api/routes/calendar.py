@@ -188,3 +188,45 @@ def delete_event(event_id: int, db: Session = Depends(get_db),
     crud.delete_calendar_event(db, event_id)
 
     return {"message": msg("event_deleted", lang)}
+
+
+@router.get("/day-notes", response_model=Dict[str, Any],
+           summary="查詢 AI 日記印章",
+           description="查詢 [start, end] 區間內的 AI 印章＋小語，跨度上限 63 天")
+def list_day_notes(start: date, end: date,
+                   current_user: User = Depends(get_current_user),
+                   lang: str = Depends(get_language)):
+    """查詢區間內的 day_notes (僅限本人；守讀→關→回傳)"""
+    if start > end or (end - start).days > MAX_RANGE_DAYS:
+        api_logger.warning(f"day-notes 查詢區間無效: start={start}, end={end}, user_id={current_user.id}")
+        raise BadRequestError(
+            error_code=ErrorCode.INVALID_INPUT,
+            detail=msg("invalid_date_range", lang)
+        )
+
+    with db_session() as db:
+        rows = crud.get_day_notes(db, current_user.id, start, end)
+        notes = [{
+            "date": r.note_date.isoformat(),
+            "stamp": r.stamp,
+            "phrase": r.phrase,
+            "source_diary_id": r.source_diary_id,
+        } for r in rows]
+
+    return {"start": start.isoformat(), "end": end.isoformat(), "notes": notes}
+
+
+@router.delete("/day-notes/{note_date}", response_model=Dict[str, str],
+              summary="刪除某日 AI 印章",
+              description="刪除自己某一天的 AI 印章與小語")
+def delete_day_note_route(note_date: date,
+                          db: Session = Depends(get_db),
+                          current_user: User = Depends(get_current_user),
+                          lang: str = Depends(get_language)):
+    """刪除某日印章 (僅限本人；不存在回 404)"""
+    if not crud.delete_day_note(db, current_user.id, note_date):
+        raise NotFoundError(
+            error_code=ErrorCode.RESOURCE_NOT_FOUND,
+            detail=msg("day_note_not_found", lang)
+        )
+    return {"message": msg("day_note_deleted", lang)}
