@@ -274,7 +274,8 @@ def generate_enhanced_diary_api(user_input: UserDiaryCreate,
             numeric_user_id,
             user_input.exclude_interaction_notes,
             cfg,
-            lang=lang
+            lang=lang,
+            enable_day_note=False,  # 印章只屬於 /chat/end，這裡明確傳 False
         )
     except LLMError as e:
         log_error(e, {"user_id": user_id, "action": "enhanced_diary_generate"})

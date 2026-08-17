@@ -29,6 +29,8 @@ class DiaryDraft:
     summary: Optional[str]
     valence: float
     arousal: float
+    stamp: Optional[str] = None   # v2.5 Spec A：AI 印章 id (未驗證原始值，day_stamp.finalize 才淨化)
+    note: Optional[str] = None    # v2.5 Spec A：印章小語原始值
 
 
 def _clamp(value, default=0.5):
@@ -73,6 +75,8 @@ def parse_diary_output(diary_text: str) -> DiaryDraft:
     summary = None
     valence = 0.5
     arousal = 0.5
+    stamp = None
+    note = None
     parsed_json = False
 
     # 1) JSON tail：取「最後一個」含 valence 的扁平 JSON 區塊
@@ -97,6 +101,8 @@ def parse_diary_output(diary_text: str) -> DiaryDraft:
             summary = _clean_field(data.get("summary"), SUMMARY_MAX)
             valence = _clamp(data.get("valence"))
             arousal = _clamp(data.get("arousal"))
+            stamp = _clean_field(data.get("stamp"), 24)
+            note = _clean_field(data.get("note"), 200)
             content = (diary_text[:tail_match.start()] + diary_text[tail_match.end():]).strip()
 
     # 2) 相容舊格式：純文字 valence/arousal
@@ -129,4 +135,6 @@ def parse_diary_output(diary_text: str) -> DiaryDraft:
         summary=summary,
         valence=valence,
         arousal=arousal,
+        stamp=stamp,
+        note=note,
     )

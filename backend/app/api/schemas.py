@@ -20,6 +20,7 @@ class UserDiaryCreate(BaseModel):
     user_id: Optional[str] = None  # 已忽略，身分取自 token
     numeric_user_id: Optional[int] = None  # 已忽略，身分取自 token
     exclude_interaction_notes: bool = False
+    enable_day_note: bool = True  # v2.5 Spec A：/chat/end 才會用；前端設定「AI 行事曆印章」開關
     model: Optional[str] = None  # 已忽略，模型取自 X-LLM-Model 標頭
 
 

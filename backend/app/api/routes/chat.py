@@ -176,7 +176,8 @@ def end_chat_session(user_input: UserDiaryCreate,
             numeric_user_id,
             user_input.exclude_interaction_notes,
             cfg,
-            lang=lang
+            lang=lang,
+            enable_day_note=user_input.enable_day_note,
         )
     except LLMError as e:
         log_error(e, {"user_id": user_id, "action": "end_chat_generate_diary"})

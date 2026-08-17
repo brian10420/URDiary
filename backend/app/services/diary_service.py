@@ -1,8 +1,10 @@
 from providers.base import LLMConfig, LLMError
 from database import crud, db_session
+from services import day_stamp
 from services.interaction_service import generate_enhanced_diary, process_interaction_note_update
 from services.prompt_loader import load_prompt
 from utils.logger import log_error
+from utils.time_utils import get_diary_date
 from typing import Dict, Any, Optional
 
 # 敏感詞分兩級 (危機處理的「機械保底」層；語意判斷由 crisis_mode.txt
@@ -80,7 +82,8 @@ def save_diary_for_user(user_id: str, numeric_user_id: int, cfg: Optional[LLMCon
 
 def run_end_of_chat_pipeline(user_id: str, numeric_user_id: int,
                               exclude_interaction_notes: bool,
-                              cfg: LLMConfig, lang: str = "zh-TW") -> Dict[str, Any]:
+                              cfg: LLMConfig, lang: str = "zh-TW",
+                              enable_day_note: bool = False) -> Dict[str, Any]:
     """生成日記(LLM) → 短交易存檔 → 互動筆記更新(LLM，容忍部分失敗)。
 
     `/chat/end/` 與 `/diary/enhanced-generate` 共用的收尾管線 (兩端點原本
@@ -121,6 +124,19 @@ def run_end_of_chat_pipeline(user_id: str, numeric_user_id: int,
             db.rollback()
             log_error(e, {"user_id": user_id, "action": "run_end_of_chat_pipeline_save_diary"})
             raise
+
+    # 2.5 AI 印章 (v2.5 Spec A)：印章跟著「日記日」(5am 換日) 走，代表那篇日記
+    # 的日子。任何失敗只記 log——印章是加分項，絕不影響日記主流程。
+    if enable_day_note:
+        try:
+            stamp, note_text = day_stamp.finalize(draft.stamp, draft.note, draft.valence)
+            if stamp:
+                with db_session() as db:
+                    crud.upsert_day_note(db, numeric_user_id, get_diary_date(),
+                                         stamp, note_text,
+                                         source_diary_id=diary_payload["diary_id"])
+        except Exception as e:
+            log_error(e, {"user_id": user_id, "action": "run_end_of_chat_pipeline_day_note"})
 
     # 3. 更新互動筆記 (又一次 LLM 呼叫，自行管理連線)。
     #    日記此時已存檔成功，筆記失敗回報部分成功即可，不讓整個請求失敗
