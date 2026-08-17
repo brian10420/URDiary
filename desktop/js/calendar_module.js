@@ -120,6 +120,7 @@ const CalendarModule = (function() {
     let viewMonth = 0;                      // 目前顯示的月（0-based）
     let selectedDate = null;                // 目前選取日 "YYYY-MM-DD"
     let occurrencesByDate = new Map();      // "YYYY-MM-DD" → occurrence[]（**只**服務目前顯示的月份）
+    let dayNotesByDate = new Map();         // "YYYY-MM-DD" → note（v2.5 Spec A AI 日記印章；一天最多一筆）
     let todaysOccurrences = [];             // 「今天」的 occurrence 快照，專供提醒用
     let todaysSnapshotDate = null;          // 上面那份快照對應的日期，null = 尚未取得
     let isRefreshingToday = false;          // refreshTodaysOccurrences 的併發防護
@@ -255,8 +256,15 @@ const CalendarModule = (function() {
 
         isLoading = true;
         try {
-            const response = await ApiService.getCalendarEvents(range.startIso, range.endIso);
+            const [response, notesResponse] = await Promise.all([
+                ApiService.getCalendarEvents(range.startIso, range.endIso),
+                (typeof ApiService.getDayNotes === 'function'
+                    ? ApiService.getDayNotes(range.startIso, range.endIso)
+                        .catch(err => { console.warn('載入 AI 印章失敗（不影響月曆）:', err); return null; })
+                    : Promise.resolve(null)),
+            ]);
             indexOccurrences(response && response.occurrences);
+            indexDayNotes(notesResponse && notesResponse.notes);
             // 這次載入的範圍涵蓋今天的話，順手更新提醒用的快照（免一次額外請求）
             applyTodaysSnapshot(range.startIso, range.endIso);
             loadedOnce = true;
@@ -294,6 +302,22 @@ const CalendarModule = (function() {
         });
 
         occurrencesByDate.forEach(list => list.sort(compareOccurrences));
+    }
+
+    // 印章依日期建索引；一天最多一筆 (後端 UNIQUE)，直接覆蓋
+    function indexDayNotes(notes) {
+        dayNotesByDate = new Map();
+        if (!Array.isArray(notes)) return;
+        notes.forEach(n => {
+            if (n && typeof n.date === 'string' && n.stamp) dayNotesByDate.set(n.date, n);
+        });
+    }
+
+    // 月格 14px 印章徽章 (核可佈局 A)；tooltip = 小語全文
+    function renderCellStamp(note) {
+        if (!note || typeof MascotModule === 'undefined' || !MascotModule.stampIcon) return '';
+        return `<span class="cell-stamp" title="${escapeHtml(note.phrase || '')}">` +
+               `${MascotModule.stampIcon(note.stamp, 14)}</span>`;
     }
 
     /**
@@ -418,6 +442,7 @@ const CalendarModule = (function() {
 
             html += `<button type="button" class="${classes.join(' ')}" data-date="${escapeHtml(iso)}">` +
                     `<span class="cell-day">${cellDate.getDate()}</span>` +
+                    renderCellStamp(dayNotesByDate.get(iso)) +
                     renderCellDots(occurrencesByDate.get(iso)) +
                     `</button>`;
         }
@@ -483,6 +508,22 @@ const CalendarModule = (function() {
                 <button type="button" class="btn btn-sm" data-action="add">${escapeHtml(I18N.t('calendar.addEvent'))}</button>
             </div>`;
 
+        const note = dayNotesByDate.get(iso);
+        if (note && typeof MascotModule !== 'undefined' && MascotModule.stampIcon) {
+            const sourceBtn = note.source_diary_id
+                ? `<button type="button" class="btn btn-sm" data-action="open-diary">${escapeHtml(I18N.t('calendar.stampFromDiary'))}</button>`
+                : '';
+            html += `<div class="day-stamp-card">
+                    ${MascotModule.stampIcon(note.stamp, 40)}
+                    <div class="day-stamp-text">
+                        <p class="day-stamp-phrase">${escapeHtml(note.phrase || '')}</p>
+                        ${sourceBtn}
+                    </div>
+                    <button type="button" class="btn btn-sm day-stamp-delete" data-action="delete-note"
+                            title="${escapeHtml(I18N.t('calendar.stampDelete'))}"><i class="fa fa-trash"></i></button>
+                </div>`;
+        }
+
         if (list.length === 0) {
             // 吉祥物插圖（v2.4 spec③ task 4）：舉手看月曆姿勢＋i18n 文案取代純文字提示。
             // typeof guard 比照 diary_module.js／chat_module.js 既有慣例——calendar_module.js
@@ -539,6 +580,17 @@ const CalendarModule = (function() {
         const action = button.getAttribute('data-action');
         if (action === 'add') {
             openEventForm(null, selectedDate);
+            return;
+        }
+        if (action === 'delete-note') {
+            deleteDayNoteFor(selectedDate);
+            return;
+        }
+        if (action === 'open-diary') {
+            // v1：跳到日記視圖（若 DiaryModule 未來提供 openDiary(id) 再深連結）
+            if (typeof UIManager !== 'undefined' && UIManager.handleNavigation) {
+                UIManager.handleNavigation('diary');
+            }
             return;
         }
 
@@ -799,6 +851,20 @@ const CalendarModule = (function() {
         }
     }
 
+    async function deleteDayNoteFor(dateIso) {
+        if (!dateIso || !dayNotesByDate.has(dateIso)) return;
+        if (!window.confirm(I18N.t('calendar.stampDeleteConfirm'))) return;
+        try {
+            await ApiService.deleteDayNote(dateIso);
+            dayNotesByDate.delete(dateIso);
+            renderGrid();
+            renderDayPanel(selectedDate);
+        } catch (error) {
+            console.error('刪除 AI 印章失敗:', error);
+            UIManager.showToast(I18N.t('calendar.stampDeleteFailed'));
+        }
+    }
+
     // --- 提醒通知 -------------------------------------------------------------
 
     // 首次進入行事曆時才詢問通知權限（不在 App 啟動時就打擾使用者）
@@ -903,6 +969,7 @@ const CalendarModule = (function() {
         console.log('重置行事曆模塊');
 
         occurrencesByDate = new Map();
+        dayNotesByDate = new Map();
         // 提醒快照也要清 —— 換帳號後不能再拿前一個帳號的事件發通知
         todaysOccurrences = [];
         todaysSnapshotDate = null;

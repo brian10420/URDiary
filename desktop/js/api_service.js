@@ -1270,6 +1270,17 @@ const ApiService = (function() {
         return await fetchAPI(`/calendar/events/${encodeURIComponent(eventId)}`, { method: 'DELETE' });
     }
 
+    // v2.5 Spec A：AI 日記印章（隨月載入；無 POST——寫入在 /chat/end 伺服器端）
+    async function getDayNotes(start, end) {
+        const path = `/calendar/day-notes?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}`;
+        return await fetchAPI(path, { method: 'GET' });
+    }
+
+    // 刪除某日印章 → { message }
+    async function deleteDayNote(dateIso) {
+        return await fetchAPI(`/calendar/day-notes/${encodeURIComponent(dateIso)}`, { method: 'DELETE' });
+    }
+
     /**
      * 推導日記標題
      * 後端 diaries 表沒有 title 欄位，若不推導，每篇日記都會顯示「無標題日記」。
@@ -1557,6 +1568,8 @@ const ApiService = (function() {
         createCalendarEvent: createCalendarEvent,
         updateCalendarEvent: updateCalendarEvent,
         deleteCalendarEvent: deleteCalendarEvent,
+        getDayNotes: getDayNotes,
+        deleteDayNote: deleteDayNote,
         getLocalData: getLocalData,
         saveLocalData: saveLocalData,
         setUserId: setUserId,

@@ -412,3 +412,16 @@
         transition: none;
     }
 }
+
+/* --- AI 日記印章 (v2.5 Spec A；佈局 A＝月格角落徽章、P1＝日面板印章開場) --- */
+.calendar-cell { position: relative; }
+.cell-stamp { position: absolute; top: 2px; right: 3px; line-height: 0; }
+.day-stamp-card {
+    display: flex; align-items: center; gap: 10px;
+    background: var(--bg-secondary, #fff); border: 2px solid var(--border-color, #f0e6d2);
+    border-radius: 10px; padding: 10px; margin-bottom: 8px;
+}
+.day-stamp-text { flex: 1; min-width: 0; }
+.day-stamp-phrase { margin: 0 0 4px; font-size: 14px; }
+.day-stamp-delete { opacity: .35; }
+.day-stamp-card:hover .day-stamp-delete, .day-stamp-delete:focus { opacity: 1; }

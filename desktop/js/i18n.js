@@ -176,6 +176,10 @@ const I18N = (function() {
             'calendar.titleRequired': '請輸入事件標題',
             'calendar.dateRequired': '請選擇事件日期',
             'calendar.editSeriesHint': '重複事件的編輯會套用到整個系列',
+            'calendar.stampFromDiary': '來自這天的日記',
+            'calendar.stampDelete': '刪除這天的印章',
+            'calendar.stampDeleteConfirm': '要拿掉這天的印章與小語嗎？',
+            'calendar.stampDeleteFailed': '刪除印章失敗，請稍後再試',
 
             'category.work': '工作',
             'category.study': '學業',
@@ -455,6 +459,10 @@ const I18N = (function() {
             'calendar.titleRequired': 'Please enter an event title',
             'calendar.dateRequired': 'Please pick an event date',
             'calendar.editSeriesHint': 'Edits to a repeating event apply to the whole series',
+            'calendar.stampFromDiary': "From this day's diary",
+            'calendar.stampDelete': 'Remove this stamp',
+            'calendar.stampDeleteConfirm': 'Remove the stamp and note for this day?',
+            'calendar.stampDeleteFailed': 'Failed to remove the stamp, please try again',
 
             'category.work': 'Work',
             'category.study': 'Study',
