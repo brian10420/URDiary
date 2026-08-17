@@ -291,6 +291,9 @@ const I18N = (function() {
             'voice.voiceId': '朗讀語音（進階，留空＝預設）',
             'voice.keyNote': '語音功能使用 xAI (Grok) 金鑰——桌面版用已存的 Grok 金鑰；手機版需在伺服器端存 Grok 憑證。',
 
+            'stampSet.sectionTitle': 'AI 行事曆印章',
+            'stampSet.enable': '日記完成後，自動在行事曆那天蓋上印章與小語',
+
             'mascot.emptyDiary': '還沒有日記——跟我聊聊今天吧',
             'mascot.emptyCalendar': '這週還空空的，要記點什麼嗎？',
             'mascot.emptyGeneric': '這裡還沒有東西耶',
@@ -579,6 +582,9 @@ const I18N = (function() {
             'voice.autoread': 'Auto-read new replies',
             'voice.voiceId': 'Voice (advanced, empty = default)',
             'voice.keyNote': 'Voice features use your xAI (Grok) key — desktop uses the stored Grok key; on mobile store a Grok credential server-side.',
+
+            'stampSet.sectionTitle': 'AI Calendar Stamps',
+            'stampSet.enable': 'After each diary, stamp that day on the calendar with a little note',
 
             'mascot.emptyDiary': 'No diaries yet — come tell me about your day',
             'mascot.emptyCalendar': 'This week is wide open — want to note something?',

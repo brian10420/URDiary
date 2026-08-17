@@ -1150,7 +1150,7 @@ const ApiService = (function() {
     // POST（會觸發 LLM 產生日記、寫入資料庫），先前的自動重試迴圈同樣移除，
     // 只送一次，失敗如實拋出。對話歷史仍保留在伺服器端，使用者可以自己
     // 決定要不要再按一次「結束對話」。
-    async function endChat(model = null) {
+    async function endChat(model = null, enableDayNote = true) {
         try {
             console.log(`調用API結束聊天並生成日記${model ? `(模型: ${model})` : ''}`);
 
@@ -1165,7 +1165,8 @@ const ApiService = (function() {
             const data = await fetchAPI('/chat/end/', {
                 method: 'POST',
                 body: {
-                    exclude_interaction_notes: true  // 防止將互動筆記融入日記
+                    exclude_interaction_notes: true,  // 防止將互動筆記融入日記
+                    enable_day_note: enableDayNote !== false  // v2.5 Spec A：AI 行事曆印章開關
                 }
             });
 

@@ -283,6 +283,14 @@
                         <input type="text" id="voice-id" class="form-control" maxlength="64" placeholder="">
                         <small style="display:block;margin-top:4px;color:#888;" data-i18n="voice.keyNote">語音功能使用 xAI (Grok) 金鑰——桌面版用已存的 Grok 金鑰；手機版需在伺服器端存 Grok 憑證。</small>
                     </div>
+                    <hr style="margin: 14px 0;">
+                    <h4 data-i18n="stampSet.sectionTitle">AI 行事曆印章</h4>
+                    <div class="form-group">
+                        <label style="display:flex;align-items:center;gap:8px;">
+                            <input type="checkbox" id="stamp-enabled" style="width:auto;" checked>
+                            <span data-i18n="stampSet.enable">日記完成後，自動在行事曆那天蓋上印章與小語</span>
+                        </label>
+                    </div>
                     <div id="settings-error" class="error-message" style="display: none; color: red; margin-top: 5px;"></div>
                     <div class="form-actions">
                         <button id="settings-save" class="btn" data-i18n="settings.save">儲存並使用</button>
