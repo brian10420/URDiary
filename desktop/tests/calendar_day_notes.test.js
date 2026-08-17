@@ -75,4 +75,42 @@ describe('calendar day notes', () => {
         await CalendarModule.loadMonth();
         expect(document.querySelectorAll('[data-date]').length).toBe(42);
     });
+
+    // --- final-review fixes（本檔是唯一有完整渲染出 grid＋day panel 的 fixture）---
+
+    test('Fix 1 回歸鎖：月格皆帶 inline grid-row/grid-column，不依賴 CSS Grid 自動排列', () => {
+        // .calendar-grid 沒有 grid-template-rows：42 格與跨天橫槓／+N 溢出徽章
+        // 共用同一份隱式格線。CSS Grid 的 sparse 自動排列規則會先安置「兩軸皆
+        // 定位」的顯式子項，讓沒有定位的項目跳過已佔用格依序排——一旦有橫槓，
+        // 42 格會整批被擠位、列數從 6 長成 7（headless Chromium 對真實樣式表
+        // 已實測證實；jsdom 不跑版面配置量不出這個回歸，這裡只鎖「每格都有
+        // 顯式定位」這個前提本身，真正的視覺回歸留給 Chromium repro 顧）。
+        const cells = document.querySelectorAll('.calendar-grid [data-date]');
+        expect(cells.length).toBe(42);
+        cells.forEach((cell, i) => {
+            expect(cell.style.gridRow).toBe(String(Math.floor(i / 7) + 1));
+            expect(cell.style.gridColumn).toBe(String((i % 7) + 1));
+        });
+    });
+
+    test('Fix 2：日面板跨天事件帶「第 N 天／共 M 天」徽章＋左緣 4px 色條 (spec §4 P1 item 2)', async () => {
+        window.ApiService.getCalendarEvents = vi.fn(async () => ({
+            occurrences: [{
+                event_id: 9, title: '花蓮小旅行', category: 'travel', color: '#8f62c9',
+                date: NOTE.date, event_date: NOTE.date, end_date: NOTE.date,
+                time: null, note: null, recurrence: 'none', reminder_minutes: null,
+                span_day: 2, span_total: 3,
+            }],
+        }));
+        await CalendarModule.loadMonth();
+
+        const row = document.querySelector('.day-event');
+        expect(row).toBeTruthy();
+        // 用同引擎解析一份參照值來比較，繞開 jsdom 顏色/簡寫屬性序列化的細節
+        // （不同 jsdom 版本對 "#rrggbb" 是否轉成 rgb() 字串不保證一致）。
+        const probe = document.createElement('div');
+        probe.style.borderLeft = '4px solid #8f62c9';
+        expect(row.style.borderLeft).toBe(probe.style.borderLeft);
+        expect(row.querySelector('.day-event-span-badge').textContent).toBe('第 2 天／共 3 天');
+    });
 });

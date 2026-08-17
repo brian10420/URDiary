@@ -186,6 +186,7 @@ const I18N = (function() {
             'calendar.color': '顏色（跨天橫槓用）:',
             'calendar.colorDefault': '分類色',
             'calendar.endBeforeStart': '結束日期不可早於開始日期',
+            'calendar.spanDayBadge': '第 {n} 天／共 {m} 天',
 
             'category.work': '工作',
             'category.study': '學業',
@@ -478,6 +479,7 @@ const I18N = (function() {
             'calendar.color': 'Color (for the multi-day bar):',
             'calendar.colorDefault': 'Category color',
             'calendar.endBeforeStart': 'End date must not be before the start date',
+            'calendar.spanDayBadge': 'Day {n} of {m}',
 
             'category.work': 'Work',
             'category.study': 'Study',

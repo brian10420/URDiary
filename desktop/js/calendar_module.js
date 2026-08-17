@@ -550,7 +550,18 @@ const CalendarModule = (function() {
             if (iso === selectedDate) classes.push('selected');
             if (cellDate.getDay() === 0 || cellDate.getDay() === 6) classes.push('weekend');
 
-            html += `<button type="button" class="${classes.join(' ')}" data-date="${escapeHtml(iso)}">` +
+            // 顯式定位（grid-row/grid-column）：.calendar-grid 沒有 grid-template-rows，
+            // 42 格與跨天橫槓／+N 溢出徽章都落在同一份隱式格線上。CSS Grid 的
+            // sparse 自動排列會先安置「兩軸皆定位」的顯式項目（橫槓／徽章），
+            // 再讓沒有定位的項目跳過已佔用格子依序排——一旦有橫槓，42 格就會
+            // 整批被擠位、列數從 6 長成 7（headless Chromium 對真樣式表實測
+            // 證實，jsdom 量不到）。把每一格也做成「兩軸皆定位」的顯式項目，
+            // 兩者就能在同一格自由疊放（橫槓既有的 z-index 負責疊放順序），
+            // 不再觸發自動排列的避讓規則。row/col 皆 1-based。
+            const gridRow = Math.floor(i / 7) + 1;
+            const gridCol = (i % 7) + 1;
+            html += `<button type="button" class="${classes.join(' ')}" data-date="${escapeHtml(iso)}"` +
+                    ` style="grid-row: ${gridRow}; grid-column: ${gridCol};">` +
                     `<span class="cell-day">${cellDate.getDate()}</span>` +
                     renderCellStamp(dayNotesByDate.get(iso)) +
                     renderCellDots(occurrencesByDate.get(iso)) +
@@ -669,13 +680,23 @@ const CalendarModule = (function() {
             list.forEach(occ => {
                 const category = categoryOf(occ);
                 const timeLabel = occ.time ? occ.time : I18N.t('calendar.allDayLabel');
-                html += `<li class="day-event" data-event-id="${escapeHtml(occ.event_id)}">
+                // 跨天事件 (spec §4 日面板 item 2)：「第 N 天／共 M 天」徽章＋左緣
+                // 4px 色條。顏色規則與月曆橫槓 (renderGrid 內 seg.color) 同一條：
+                // color || 分類色，一樣 escapeHtml 兩者，不信任後端存的自選色格式。
+                const isSpan = occ.span_total > 1;
+                const spanBadge = isSpan
+                    ? `<span class="day-event-span-badge">${escapeHtml(
+                        I18N.t('calendar.spanDayBadge', { n: occ.span_day, m: occ.span_total }))}</span>`
+                    : '';
+                const edgeColor = occ.color ? escapeHtml(occ.color) : `var(--cat-${escapeHtml(category)})`;
+                const rowStyle = isSpan ? ` style="border-left: 4px solid ${edgeColor}; padding-left: 6px;"` : '';
+                html += `<li class="day-event" data-event-id="${escapeHtml(occ.event_id)}"${rowStyle}>
                         <span class="day-event-time">${escapeHtml(timeLabel)}</span>
                         ${(typeof MascotModule !== 'undefined')
                             ? MascotModule.categoryIcon(category, 24)
                             : `<span class="cat-dot cat-${escapeHtml(category)}"></span>`}
                         <span class="day-event-main">
-                            <span class="day-event-title">${escapeHtml(occ.title)}</span>
+                            <span class="day-event-title">${escapeHtml(occ.title)}${spanBadge}</span>
                             <span class="day-event-meta">${escapeHtml(I18N.t('category.' + category))}${
                                 occ.recurrence && occ.recurrence !== 'none'
                                     ? ' · ' + escapeHtml(I18N.t('recurrence.' + occ.recurrence))

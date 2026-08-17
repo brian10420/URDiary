@@ -46,7 +46,11 @@
 }
 
 /* 工具列 —— 面板本身不滾動，工具列固定高度不參與伸縮
-   position: relative：年月 picker（.calendar-ym-picker）以此為錨點絕對定位 */
+   年月 picker（#calendar-ym-picker）在 index.html 是 .calendar-toolbar 的
+   手足、不是子孫，所以不會以這裡的 position: relative 為 containing block。
+   它本身 absolute 定位卻沒設 top/left/right/bottom，因此依 CSS 的 static
+   position 規則落在自己在文件流中原本的位置——也就是緊接在 .calendar-toolbar
+   後面那格（見下面 .calendar-ym-picker 規則），與這行 relative 無關。 */
 .calendar-toolbar {
     position: relative;
     flex: none;
@@ -325,6 +329,22 @@
     word-break: break-word;
 }
 
+/* 跨天事件「第 N 天／共 M 天」徽章 (v2.5 Spec A §4 日面板 item 2)。
+   小 chip，樣式比照 .day-event-time 的時間 chip（同一份中性配色語彙），
+   inline 掛在標題文字後面，不佔獨立一行 */
+.day-event-span-badge {
+    display: inline-block;
+    margin-left: 6px;
+    padding: 1px 6px;
+    border-radius: var(--border-radius-full);
+    background-color: var(--neutral-200);
+    color: var(--text-secondary, #666);
+    font-size: var(--font-size-xs);
+    font-weight: 400;
+    white-space: nowrap;
+    vertical-align: middle;
+}
+
 /* 分類名稱以文字呈現 —— 分類身分不靠顏色單獨承擔 */
 .day-event-meta {
     font-size: var(--font-size-xs);
@@ -449,10 +469,17 @@
 .cal-span-bar.lane-1 { margin-top: 40px; }
 .cal-span-bar.no-round-left { border-top-left-radius: 0; border-bottom-left-radius: 0; }
 .cal-span-bar.no-round-right { border-top-right-radius: 0; border-bottom-right-radius: 0; }
+/* +N 溢出徽章：與 .cal-span-bar.lane-1 同一 margin-top（兩道 lane 都佔滿時，
+   徽章本就該疊在第 2 道橫槓尾端那個位置），但純文字直接疊在有色橫槓上難以
+   辨讀。給它一顆小背景 chip 撐開視覺層次，z-index 蓋過橫槓（3 > 2）而非
+   跟橫槓同層──同層時堆疊順序取決於 DOM 順序這種容易變動的東西。 */
 .cell-span-more {
-    align-self: start; justify-self: end; z-index: 2;
-    margin-top: 40px; margin-right: 3px; font-size: 9px;
+    align-self: start; justify-self: end; z-index: 3;
+    margin-top: 40px; margin-right: 3px; padding: 0 4px;
+    border-radius: 6px; background: var(--bg-secondary, #fff);
+    font-size: 9px; line-height: 14px;
     color: var(--text-secondary, #8a7a66); pointer-events: none;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, .18);
 }
 
 /* --- 事件表單顏色 swatch (v2.5 Spec A) --- */
@@ -462,4 +489,4 @@
 .color-swatches .swatch:not(.swatch-default) input { appearance: none; -webkit-appearance: none;
     width: 22px; height: 22px; border-radius: 50%; background: var(--swatch);
     border: 2px solid transparent; cursor: pointer; }
-.color-swatches .swatch:not(.swatch-default) input:checked { border-color: var(--text-primary, #4b2e1e); }
+.color-swatches .swatch:not(.swatch-default) input:checked { border-color: var(--text-color, #4b2e1e); }
