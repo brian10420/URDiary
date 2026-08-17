@@ -114,6 +114,81 @@ const CalendarModule = (function() {
         return new Date(Number(dateMatch[1]), Number(dateMatch[2]) - 1, Number(dateMatch[3]), hour, minute, 0, 0);
     }
 
+    // "YYYY-MM-DD" ± n 天 → "YYYY-MM-DD"（本地，避開 toISOString 的 UTC 偏移）
+    function addDaysIso(dateIso, days) {
+        const d = new Date(`${dateIso}T00:00:00`);
+        return toIsoDate(new Date(d.getFullYear(), d.getMonth(), d.getDate() + days));
+    }
+
+    /**
+     * ★ 純函式：從 occurrence 陣列收集跨天事件（span_total > 1），依 event_id 去重
+     * @returns {Array<{eventId, title, category, color, start, end}>}
+     */
+    function collectSpanEvents(occurrences) {
+        const byId = new Map();
+        (Array.isArray(occurrences) ? occurrences : []).forEach(occ => {
+            if (!occ || !(occ.span_total > 1) || !occ.event_date || !occ.end_date) return;
+            if (byId.has(occ.event_id)) return;
+            byId.set(occ.event_id, {
+                eventId: occ.event_id, title: occ.title,
+                category: categoryOf(occ), color: occ.color || null,
+                start: occ.event_date, end: occ.end_date,
+            });
+        });
+        return Array.from(byId.values());
+    }
+
+    /**
+     * ★ 純函式：某一週（weekStartIso＝該週週一）的橫槓段落與溢出計數
+     *
+     * lane 分配（spec §4）：起日早者先佔上道，同起日依 eventId 小者先；
+     * 最多 2 條 lane，其餘進 overflow（date → 被藏起的條數），該格顯示 +N。
+     * 段落欄位 colStart/colEnd 為 1-based（1=週一格 … 7=週日格，含兩端）。
+     */
+    function computeWeekSegments(spanEvents, weekStartIso) {
+        const weekEndIso = addDaysIso(weekStartIso, 6);
+        const segments = [];
+        const overflow = new Map();
+        const laneEnds = [null, null];   // 每道目前佔用到的結束日
+
+        const sorted = (spanEvents || []).slice().sort((a, b) =>
+            a.start < b.start ? -1 : a.start > b.start ? 1 : (a.eventId - b.eventId));
+
+        sorted.forEach(ev => {
+            if (ev.end < weekStartIso || ev.start > weekEndIso) return;   // 與本週無交集
+
+            const segStart = ev.start > weekStartIso ? ev.start : weekStartIso;
+            const segEnd = ev.end < weekEndIso ? ev.end : weekEndIso;
+
+            let lane = -1;
+            for (let i = 0; i < laneEnds.length; i++) {
+                if (laneEnds[i] === null || laneEnds[i] < ev.start) { lane = i; break; }
+            }
+            if (lane === -1) {
+                // 兩道皆滿：整段每一天記一筆溢出
+                for (let d = segStart; d <= segEnd; d = addDaysIso(d, 1)) {
+                    overflow.set(d, (overflow.get(d) || 0) + 1);
+                }
+                return;
+            }
+            laneEnds[lane] = ev.end;
+
+            const dayDiff = (a, b) => Math.round(
+                (new Date(`${a}T00:00:00`) - new Date(`${b}T00:00:00`)) / 86400000);
+            segments.push({
+                eventId: ev.eventId, title: ev.title, category: ev.category,
+                color: ev.color, lane: lane,
+                colStart: dayDiff(segStart, weekStartIso) + 1,
+                colEnd: dayDiff(segEnd, weekStartIso) + 1,
+                roundLeft: ev.start >= weekStartIso,
+                roundRight: ev.end <= weekEndIso,
+                showTitle: ev.start >= weekStartIso,   // 標題只在含事件起日的那一段
+            });
+        });
+
+        return { segments: segments, overflow: overflow };
+    }
+
     // --- 狀態 -----------------------------------------------------------------
 
     let viewYear = 0;                       // 目前顯示的年
@@ -202,8 +277,16 @@ const CalendarModule = (function() {
         bindClick('#calendar-today-btn', goToToday);
         bindClick('#calendar-add-btn', () => openEventForm(null, selectedDate));
 
-        // 格子點擊用事件委派：每次 renderGrid 重建 innerHTML 後不必重綁
+        // 格子／跨天橫槓點擊皆用事件委派：每次 renderGrid 重建 innerHTML 後不必重綁；
+        // 橫槓優先於格子（橫槓疊在格子上方，點到橫槓開該事件編輯，不觸發選日）
         gridElement.addEventListener('click', function(event) {
+            const bar = event.target.closest('[data-span-event-id]');
+            if (bar && gridElement.contains(bar)) {
+                const id = bar.getAttribute('data-span-event-id');
+                const occurrence = flattenOccurrences().find(o => String(o.event_id) === String(id));
+                if (occurrence) openEventForm(occurrence, occurrence.date);
+                return;
+            }
             const cell = event.target.closest('[data-date]');
             if (cell && gridElement.contains(cell)) {
                 selectDate(cell.getAttribute('data-date'));
@@ -302,6 +385,13 @@ const CalendarModule = (function() {
         });
 
         occurrencesByDate.forEach(list => list.sort(compareOccurrences));
+    }
+
+    // 目前月份索引攤平回陣列（collectSpanEvents 的輸入）
+    function flattenOccurrences() {
+        const all = [];
+        occurrencesByDate.forEach(list => { all.push.apply(all, list); });
+        return all;
     }
 
     // 印章依日期建索引；一天最多一筆 (後端 UNIQUE)，直接覆蓋
@@ -445,6 +535,26 @@ const CalendarModule = (function() {
                     renderCellStamp(dayNotesByDate.get(iso)) +
                     renderCellDots(occurrencesByDate.get(iso)) +
                     `</button>`;
+        }
+
+        // 跨天橫槓：顯式定位的 grid 子項（見 Task 6 渲染原理），附加在 cell 之後
+        const spanEvents = collectSpanEvents(flattenOccurrences());
+        for (let week = 0; week < 6; week++) {
+            const weekStartIso = toIsoDate(new Date(start.getFullYear(), start.getMonth(), start.getDate() + week * 7));
+            const out = computeWeekSegments(spanEvents, weekStartIso);
+            out.segments.forEach(seg => {
+                const cls = ['cal-span-bar', `lane-${seg.lane}`];
+                if (!seg.roundLeft) cls.push('no-round-left');
+                if (!seg.roundRight) cls.push('no-round-right');
+                const bg = seg.color ? escapeHtml(seg.color) : `var(--cat-${escapeHtml(seg.category)})`;
+                html += `<button type="button" class="${cls.join(' ')}" data-span-event-id="${escapeHtml(seg.eventId)}"` +
+                        ` style="grid-row: ${week + 1}; grid-column: ${seg.colStart} / ${seg.colEnd + 1}; background: ${bg};"` +
+                        ` title="${escapeHtml(seg.title)}">${seg.showTitle ? escapeHtml(seg.title) : ''}</button>`;
+            });
+            out.overflow.forEach((count, dateIso) => {
+                const col = Math.round((new Date(`${dateIso}T00:00:00`) - new Date(`${weekStartIso}T00:00:00`)) / 86400000) + 1;
+                html += `<span class="cell-span-more" style="grid-row: ${week + 1}; grid-column: ${col};">+${count}</span>`;
+            });
         }
 
         gridElement.innerHTML = html;
@@ -994,12 +1104,15 @@ const CalendarModule = (function() {
         refreshTodaysOccurrences: refreshTodaysOccurrences,
         // 提醒快照的現況，供 CDP 驗證與除錯（回複本，外部改不到內部狀態）
         getReminderSnapshot: () => ({ date: todaysSnapshotDate, occurrences: todaysOccurrences.slice() }),
-        // 以下五個是純函式，僅為 vitest 單元測試曝光，行為不變
+        // 以下七個是純函式，僅為 vitest 單元測試曝光，行為不變
         toIsoDate: toIsoDate,
         monthGridRange: monthGridRange,
         computeReminderTimes: computeReminderTimes,
         rangeCoversDate: rangeCoversDate,
         buildFormValues: buildFormValues,
+        // 跨天橫槓 lane 計算 (v2.5 Spec A task 6)
+        collectSpanEvents: collectSpanEvents,
+        computeWeekSegments: computeWeekSegments,
         // 同樣僅為 vitest 曝光：會讀/寫 DOM，但對缺失元素安全（不丟例外），
         // 用來回歸測試「全天事件連帶停用提醒欄位」與「停用中的提醒選單一律
         // 視為未設提醒」這條規則

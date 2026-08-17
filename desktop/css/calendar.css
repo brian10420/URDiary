@@ -425,3 +425,20 @@
 .day-stamp-phrase { margin: 0 0 4px; font-size: 14px; }
 .day-stamp-delete { opacity: .35; }
 .day-stamp-card:hover .day-stamp-delete, .day-stamp-delete:focus { opacity: 1; }
+
+/* --- 跨天橫槓 (v2.5 Spec A)：grid 顯式定位項，蓋過格線的連續膠囊 --- */
+.cal-span-bar {
+    align-self: start; z-index: 2; height: 14px; margin-top: 24px;
+    border: none; border-radius: 7px; padding: 0 6px;
+    color: #fff; font-size: 10px; line-height: 14px; text-align: left;
+    overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
+    cursor: pointer; box-shadow: 0 1px 2px rgba(0, 0, 0, .18);
+}
+.cal-span-bar.lane-1 { margin-top: 40px; }
+.cal-span-bar.no-round-left { border-top-left-radius: 0; border-bottom-left-radius: 0; }
+.cal-span-bar.no-round-right { border-top-right-radius: 0; border-bottom-right-radius: 0; }
+.cell-span-more {
+    align-self: start; justify-self: end; z-index: 2;
+    margin-top: 40px; margin-right: 3px; font-size: 9px;
+    color: var(--text-secondary, #8a7a66); pointer-events: none;
+}
