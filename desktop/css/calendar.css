@@ -487,6 +487,32 @@
 .color-swatches .swatch { display: inline-flex; align-items: center; cursor: pointer; }
 .color-swatches .swatch input { width: auto; margin: 0; }
 .color-swatches .swatch:not(.swatch-default) input { appearance: none; -webkit-appearance: none;
-    width: 22px; height: 22px; border-radius: 50%; background: var(--swatch);
+    width: 22px; height: 22px; border-radius: 4px; background: var(--swatch);
     border: 2px solid transparent; cursor: pointer; }
 .color-swatches .swatch:not(.swatch-default) input:checked { border-color: var(--text-color, #4b2e1e); }
+
+/* --- 事件表單日期區間選擇器 (v2.5 驗收回饋：航空訂票式) --- */
+#event-date-group { position: relative; }
+#event-date[readonly], #event-end-date[readonly] { cursor: pointer; }
+.event-range-picker {
+    position: absolute; left: 0; top: 100%; z-index: 40; margin-top: 4px; padding: 10px;
+    background: var(--bg-secondary, #fff); border: 1px solid var(--border-color, #d8d2c6);
+    border-radius: 10px; box-shadow: 0 4px 14px rgba(0, 0, 0, .15); width: 296px;
+}
+.range-picker-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px; }
+.range-picker-hint { margin: 0 0 6px; font-size: 11px; color: var(--text-secondary, #8a7a66); }
+.range-picker-week {
+    display: grid; grid-template-columns: repeat(7, 1fr); text-align: center;
+    font-size: 11px; color: var(--text-secondary, #8a7a66); margin-bottom: 2px;
+}
+.range-picker-days { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; }
+.range-day {
+    border: none; background: none; padding: 6px 0; border-radius: 6px;
+    cursor: pointer; font-size: 13px; color: inherit;
+}
+.range-day:hover { background: var(--border-color, #f0e6d2); }
+.range-day.other-month { opacity: .35; }
+.range-day.in-preview { background: rgba(42, 120, 214, .18); }
+.range-day.range-selected, .range-day.range-selected.in-preview {
+    background: var(--cat-work, #2a78d6); color: #fff;
+}

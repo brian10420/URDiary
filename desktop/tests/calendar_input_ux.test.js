@@ -37,11 +37,17 @@ describe('calendar input UX fixes', () => {
         await CalendarModule.loadMonth();
     });
 
-    test('點日期欄位任意處＝開啟原生日期選擇器（三個 date 欄位都綁）', () => {
-        for (const id of ['event-date', 'event-end-date', 'event-until']) {
+    test('「重複到」欄位點任意處＝開啟原生日期選擇器', () => {
+        HTMLInputElement.prototype.showPicker.mockClear();
+        document.getElementById('event-until').dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        expect(HTMLInputElement.prototype.showPicker).toHaveBeenCalled();
+    });
+
+    test('日期／結束日期欄位不再走原生 showPicker（改開自製區間選擇器）', () => {
+        for (const id of ['event-date', 'event-end-date']) {
             HTMLInputElement.prototype.showPicker.mockClear();
             document.getElementById(id).dispatchEvent(new MouseEvent('click', { bubbles: true }));
-            expect(HTMLInputElement.prototype.showPicker, `${id} 點擊後應呼叫 showPicker`).toHaveBeenCalled();
+            expect(HTMLInputElement.prototype.showPicker, `${id} 不應呼叫 showPicker`).not.toHaveBeenCalled();
         }
     });
 

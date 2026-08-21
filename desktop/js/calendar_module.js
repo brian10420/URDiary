@@ -277,16 +277,65 @@ const CalendarModule = (function() {
         bindClick('#calendar-today-btn', goToToday);
         bindClick('#calendar-add-btn', () => openEventForm(null, selectedDate));
 
-        // 原生 date input 只有點到右緣小圖示才會開日曆，桌面使用者幾乎不會發現
-        // （本 app 其他日期都是點月格選的）——點欄位任何位置都直接開啟選擇器。
-        // showPicker 需要 user gesture，click 事件符合；沒有此 API 的環境維持原生行為。
-        ['event-date', 'event-end-date', 'event-until'].forEach(id => {
-            const input = document.getElementById(id);
+        // 「重複到」維持原生 date input：點欄位任意處直接開選擇器（原生只有
+        // 右緣小圖示會開日曆，幾乎不可發現）。showPicker 需 user gesture，click 符合。
+        (function() {
+            const input = document.getElementById('event-until');
             if (input && typeof input.showPicker === 'function') {
                 input.addEventListener('click', () => {
                     try { input.showPicker(); } catch (error) { /* 非手勢或選擇器已開啟：保留原生行為 */ }
                 });
             }
+        })();
+
+        // 日期／結束日期改用自製區間選擇器（v2.5 驗收回饋：航空訂票式兩次點選）
+        ['event-date', 'event-end-date'].forEach(id => {
+            const input = document.getElementById(id);
+            if (input) input.addEventListener('click', openRangePicker);
+        });
+        const rangePickerEl = document.getElementById('event-range-picker');
+        if (rangePickerEl) {
+            rangePickerEl.addEventListener('click', function(event) {
+                const nav = event.target.closest('[data-range-nav]');
+                if (nav) {
+                    // renderRangePicker 會重建 innerHTML，讓 event.target 脫離文件；
+                    // 不擋掉冒泡的話，document 層的外點關閉會誤判（task 8 同款坑）
+                    event.stopPropagation();
+                    const delta = Number(nav.getAttribute('data-range-nav'));
+                    const d = new Date(rangePickerMonth.year, rangePickerMonth.month + delta, 1);
+                    rangePickerMonth = { year: d.getFullYear(), month: d.getMonth() };
+                    renderRangePicker();
+                    return;
+                }
+                const day = event.target.closest('[data-range-date]');
+                if (day) {
+                    event.stopPropagation();
+                    handleRangeDayClick(day.getAttribute('data-range-date'));
+                }
+            });
+            // 航空網站式範圍預覽：選了起點後，滑過任一天即高亮兩者之間的區間
+            rangePickerEl.addEventListener('mouseover', function(event) {
+                if (!rangeFirstIso) return;
+                const btn = event.target.closest('[data-range-date]');
+                if (!btn) return;
+                const hoverIso = btn.getAttribute('data-range-date');
+                const lo = rangeFirstIso < hoverIso ? rangeFirstIso : hoverIso;
+                const hi = rangeFirstIso < hoverIso ? hoverIso : rangeFirstIso;
+                rangePickerEl.querySelectorAll('[data-range-date]').forEach(b => {
+                    const d = b.getAttribute('data-range-date');
+                    b.classList.toggle('in-preview', d >= lo && d <= hi);
+                });
+            });
+        }
+        document.addEventListener('click', function(event) {
+            const picker = document.getElementById('event-range-picker');
+            if (!picker || picker.style.display === 'none') return;
+            if (picker.contains(event.target)) return;
+            const dateInput = document.getElementById('event-date');
+            const endInput = document.getElementById('event-end-date');
+            if ((dateInput && dateInput.contains(event.target)) ||
+                (endInput && endInput.contains(event.target))) return;
+            closeRangePicker();
         });
 
         bindClick('#calendar-ym-btn', toggleYmPicker);
@@ -301,6 +350,7 @@ const CalendarModule = (function() {
             if (event.key === 'Escape') {
                 const picker = document.getElementById('calendar-ym-picker');
                 if (picker) picker.style.display = 'none';
+                closeRangePicker();
             }
         });
 
@@ -626,14 +676,9 @@ const CalendarModule = (function() {
         shown.forEach(occ => {
             const category = categoryOf(occ);
             const tip = `${I18N.t('category.' + category)}: ${occ.title}`;
-            // 吉祥物插圖（v2.4 spec③ task 7）：色點換成無臉 18px 圖標；title
-            // 內容與跳脫方式逐字沿用舊版 cat-dot，只是外包一層 span 承載。
-            // typeof guard 比照本檔 renderDayPanel 空分支既有慣例——
-            // calendar_helpers.test.js 會不帶 mascot.js 單獨載入本檔，
-            // 退路是原本的 cat-dot 色點，css 未刪。
-            html += (typeof MascotModule !== 'undefined')
-                ? `<span title="${escapeHtml(tip)}">${MascotModule.categoryIcon(category, 18)}</span>`
-                : `<span class="cat-dot cat-${escapeHtml(category)}" title="${escapeHtml(tip)}"></span>`;
+            // v2.5 驗收回饋：跨天橫槓會壓到 18px 吉祥物圖標，月格改回小色點
+            // 保持整潔；吉祥物圖標只留在右側日面板（renderDayPanel 24px 有臉）。
+            html += `<span class="cat-dot cat-${escapeHtml(category)}" title="${escapeHtml(tip)}"></span>`;
         });
         if (hiddenCount > 0) {
             html += `<span class="cell-more">+${hiddenCount}</span>`;
@@ -852,6 +897,82 @@ const CalendarModule = (function() {
             renderMonthLabel();   // 先同步更新標籤（loadMonth 是 async，不 await——標籤不該等網路）
             loadMonth();
         }));
+    }
+
+    // --- 事件表單日期區間選擇器（v2.5 驗收回饋：航空訂票式兩次點選） ----------
+    // 點日期/結束日期欄開啟；第一次點選＝起點（標記並保持開啟），第二次點選
+    // 後依前後自動排序寫回兩欄（同一天點兩次＝單日，結束日清空）並關閉。
+
+    let rangePickerMonth = null;   // { year, month }：彈窗目前顯示的月份
+    let rangeFirstIso = null;      // 第一次點選的日期（null＝尚未選）
+
+    function openRangePicker() {
+        const picker = document.getElementById('event-range-picker');
+        if (!picker) return;
+        const startVal = getValue('event-date');
+        const base = startVal ? new Date(`${startVal}T00:00:00`) : new Date();
+        rangePickerMonth = { year: base.getFullYear(), month: base.getMonth() };
+        rangeFirstIso = null;
+        renderRangePicker();
+        picker.style.display = 'block';
+    }
+
+    function closeRangePicker() {
+        const picker = document.getElementById('event-range-picker');
+        if (picker) picker.style.display = 'none';
+        rangeFirstIso = null;
+    }
+
+    function renderRangePicker() {
+        const picker = document.getElementById('event-range-picker');
+        if (!picker || !rangePickerMonth) return;
+        const year = rangePickerMonth.year;
+        const month = rangePickerMonth.month;
+        const label = new Date(year, month, 1).toLocaleDateString(
+            I18N.dateLocale(), { year: 'numeric', month: 'long' });
+
+        let html = `<div class="range-picker-header">
+                <button type="button" class="btn btn-sm" data-range-nav="-1">&lsaquo;</button>
+                <span class="range-picker-label">${escapeHtml(label)}</span>
+                <button type="button" class="btn btn-sm" data-range-nav="1">&rsaquo;</button>
+            </div>
+            <p class="range-picker-hint">${escapeHtml(I18N.t('calendar.rangeHint'))}</p>`;
+
+        // 週標頭與主月曆同語系、同週一起始（2026-06-01 是週一）
+        html += '<div class="range-picker-week">';
+        for (let d = 0; d < 7; d++) {
+            const wd = new Date(2026, 5, 1 + d);
+            html += `<span>${escapeHtml(wd.toLocaleDateString(I18N.dateLocale(), { weekday: 'narrow' }))}</span>`;
+        }
+        html += '</div><div class="range-picker-days">';
+
+        const first = new Date(year, month, 1);
+        const mondayOffset = (first.getDay() + 6) % 7;
+        for (let i = 0; i < 42; i++) {
+            const d = new Date(year, month, 1 - mondayOffset + i);
+            const iso = toIsoDate(d);
+            const cls = ['range-day'];
+            if (d.getMonth() !== month) cls.push('other-month');
+            if (iso === rangeFirstIso) cls.push('range-selected');
+            html += `<button type="button" class="${cls.join(' ')}" data-range-date="${iso}">${d.getDate()}</button>`;
+        }
+        html += '</div>';
+        picker.innerHTML = html;
+    }
+
+    function handleRangeDayClick(iso) {
+        if (!rangeFirstIso) {
+            rangeFirstIso = iso;
+            renderRangePicker();   // 標記起點，保持開啟等第二次點選
+            return;
+        }
+        // 第二次點選：依日期前後自動決定起訖；同一天＝單日
+        const start = rangeFirstIso < iso ? rangeFirstIso : iso;
+        const end = rangeFirstIso < iso ? iso : rangeFirstIso;
+        setValue('event-date', start);
+        setValue('event-end-date', end > start ? end : '');
+        closeRangePicker();
+        syncMultiDayState();   // 跨天＝整天鎖定；單日＝解除鎖定
     }
 
     // --- 事件表單 -------------------------------------------------------------

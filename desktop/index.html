@@ -324,10 +324,11 @@
                         <input type="text" id="event-title" class="form-control" maxlength="120"
                                placeholder="例如：看牙醫" data-i18n-placeholder="calendar.eventTitlePlaceholder">
                     </div>
-                    <div class="form-group">
+                    <div class="form-group" id="event-date-group">
                         <label for="event-date" data-i18n="calendar.date">日期:</label>
-                        <input type="date" id="event-date" class="form-control">
+                        <input type="text" id="event-date" class="form-control" readonly>
                         <p id="event-series-hint" class="form-hint" style="display: none;" data-i18n="calendar.editSeriesHint">重複事件的編輯會套用到整個系列</p>
+                        <div id="event-range-picker" class="event-range-picker" style="display: none;"></div>
                     </div>
                     <div class="form-group">
                         <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
@@ -337,7 +338,7 @@
                     </div>
                     <div class="form-group">
                         <label for="event-end-date" data-i18n="calendar.endDate">結束日期（跨天活動，留空＝單日）:</label>
-                        <input type="date" id="event-end-date" class="form-control">
+                        <input type="text" id="event-end-date" class="form-control" readonly>
                         <small id="event-multiday-hint" style="display: none; color: #888; margin-top: 4px;" data-i18n="calendar.multiDayHint">
                             跨天活動固定為整天型，時間／重複／提醒已停用
                         </small>
