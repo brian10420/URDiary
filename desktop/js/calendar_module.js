@@ -277,6 +277,18 @@ const CalendarModule = (function() {
         bindClick('#calendar-today-btn', goToToday);
         bindClick('#calendar-add-btn', () => openEventForm(null, selectedDate));
 
+        // 原生 date input 只有點到右緣小圖示才會開日曆，桌面使用者幾乎不會發現
+        // （本 app 其他日期都是點月格選的）——點欄位任何位置都直接開啟選擇器。
+        // showPicker 需要 user gesture，click 事件符合；沒有此 API 的環境維持原生行為。
+        ['event-date', 'event-end-date', 'event-until'].forEach(id => {
+            const input = document.getElementById(id);
+            if (input && typeof input.showPicker === 'function') {
+                input.addEventListener('click', () => {
+                    try { input.showPicker(); } catch (error) { /* 非手勢或選擇器已開啟：保留原生行為 */ }
+                });
+            }
+        });
+
         bindClick('#calendar-ym-btn', toggleYmPicker);
         document.addEventListener('click', function(event) {
             const picker = document.getElementById('calendar-ym-picker');
@@ -646,7 +658,6 @@ const CalendarModule = (function() {
 
         let html = `<div class="day-panel-header">
                 <h3 class="day-panel-title">${escapeHtml(heading)}</h3>
-                <button type="button" class="btn btn-sm" data-action="add">${escapeHtml(I18N.t('calendar.addEvent'))}</button>
             </div>`;
 
         const note = dayNotesByDate.get(iso);
@@ -729,10 +740,6 @@ const CalendarModule = (function() {
         if (!button || !dayPanelElement.contains(button)) return;
 
         const action = button.getAttribute('data-action');
-        if (action === 'add') {
-            openEventForm(null, selectedDate);
-            return;
-        }
         if (action === 'delete-note') {
             deleteDayNoteFor(selectedDate);
             return;

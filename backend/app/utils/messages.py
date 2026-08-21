@@ -245,22 +245,6 @@ MESSAGES = {
         "zh-TW": "密碼長度至少需要8個字符",
         "en": "Password must be at least 8 characters",
     },
-    "password_need_upper": {
-        "zh-TW": "密碼需要包含至少一個大寫字母",
-        "en": "Password needs at least one uppercase letter",
-    },
-    "password_need_lower": {
-        "zh-TW": "密碼需要包含至少一個小寫字母",
-        "en": "Password needs at least one lowercase letter",
-    },
-    "password_need_digit": {
-        "zh-TW": "密碼需要包含至少一個數字",
-        "en": "Password needs at least one digit",
-    },
-    "password_need_special": {
-        "zh-TW": "密碼需要包含至少一個特殊字符",
-        "en": "Password needs at least one special character",
-    },
 }
 
 

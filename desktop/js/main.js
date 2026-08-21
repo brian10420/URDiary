@@ -367,12 +367,9 @@ function initUserSelection() {
     }
 
     // 前端即時密碼強度檢查（純 UX 提示，真正的門檻在後端 password_validator）
+    // v2.5 放寬：僅要求長度 ≥8，純數字可（與後端規則同步）
     function validatePasswordStrength(password) {
         if (!password || password.length < 8) return { valid: false, message: I18N.t('password.tooShort') };
-        if (!/[A-Z]/.test(password)) return { valid: false, message: I18N.t('password.needUpper') };
-        if (!/[a-z]/.test(password)) return { valid: false, message: I18N.t('password.needLower') };
-        if (!/[0-9]/.test(password)) return { valid: false, message: I18N.t('password.needDigit') };
-        if (!/[!@#$%^&*(),.?":{}|<>]/.test(password)) return { valid: false, message: I18N.t('password.needSpecial') };
         return { valid: true };
     }
 

@@ -58,7 +58,7 @@ const I18N = (function() {
             'create.inviteCode': '邀請碼:',
             'create.inviteCodePlaceholder': '請輸入邀請碼',
             'create.inviteRequired': '請輸入邀請碼',
-            'create.passwordPlaceholder': '至少8字元，含大小寫字母、數字與特殊符號',
+            'create.passwordPlaceholder': '至少8字元，純數字也可以',
             'create.confirmPassword': '確認密碼:',
             'create.confirmPlaceholder': '請再次輸入密碼',
             'create.submit': '創建',
@@ -68,10 +68,6 @@ const I18N = (function() {
             'create.autoLoginFailed': '帳號已建立，但自動登入失敗，請手動登入',
 
             'password.tooShort': '密碼長度至少需要8個字符',
-            'password.needUpper': '密碼需要包含至少一個大寫字母',
-            'password.needLower': '密碼需要包含至少一個小寫字母',
-            'password.needDigit': '密碼需要包含至少一個數字',
-            'password.needSpecial': '密碼需要包含至少一個特殊字符',
 
             'settings.title': '設定',
             'settings.provider': 'AI 供應商:',
@@ -351,7 +347,7 @@ const I18N = (function() {
             'create.inviteCode': 'Invite code:',
             'create.inviteCodePlaceholder': 'Enter invite code',
             'create.inviteRequired': 'Please enter the invite code',
-            'create.passwordPlaceholder': 'At least 8 characters, with upper & lower case, a number and a symbol',
+            'create.passwordPlaceholder': 'At least 8 characters (digits alone are fine)',
             'create.confirmPassword': 'Confirm password:',
             'create.confirmPlaceholder': 'Re-enter password',
             'create.submit': 'Create',
@@ -361,10 +357,6 @@ const I18N = (function() {
             'create.autoLoginFailed': 'Account created, but automatic sign-in failed — please sign in manually',
 
             'password.tooShort': 'Password must be at least 8 characters',
-            'password.needUpper': 'Password needs at least one uppercase letter',
-            'password.needLower': 'Password needs at least one lowercase letter',
-            'password.needDigit': 'Password needs at least one number',
-            'password.needSpecial': 'Password needs at least one special character',
 
             'settings.title': 'Settings',
             'settings.provider': 'AI provider:',
