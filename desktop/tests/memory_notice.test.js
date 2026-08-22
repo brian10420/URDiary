@@ -81,6 +81,10 @@ describe('日記完成後的記憶通知', () => {
         expect(notice).toBeTruthy();
         expect(notice.classList.contains('system-message')).toBe(true);
 
+        // 1a-ii. fix wave（spec §5 裁決）：泡泡不能只靠滑鼠游標樣式暗示可
+        // 點——「去看看」/goSee 文字必須看得見，不是只有點擊事件掛著。
+        expect(notice.textContent).toContain(I18N.t('memory.goSee'));
+
         // 1b. 不持久化：chat_module.js 的持久層是 saveChatHistory()／
         // localStorage 鍵 `${CONFIG.STORAGE.CHAT_HISTORY}_${userId}`
         // （見 loadChatHistory/saveChatHistory）。endChat 成功路徑在
@@ -96,10 +100,13 @@ describe('日記完成後的記憶通知', () => {
         // 送出下一則聊天訊息）才會被存進 localStorage——這與既有的
         // diaryMessage（「日記已結束」訊息）本身完全同構，不是通知訊息
         // 專屬的新缺口。這裡驗證的就是「呼叫 endChat 之後、在任何後續存檔
-        // 動作發生之前」localStorage 裡的聊天歷史不含通知文字。
+        // 動作發生之前」localStorage 裡的聊天歷史不含通知文字——fix wave
+        // 之後通知文字是 pendingNotice + goSee 的拼接，兩段都要分別確認
+        // 沒有洩漏進持久層（不能只查其中一段就宣稱「不含通知文字」）。
         const saved = JSON.parse(localStorage.getItem('urdiary_chat_history_notice-user'));
         expect(Array.isArray(saved)).toBe(true);
         expect(saved.some(m => typeof m.content === 'string' && m.content.includes(I18N.t('memory.pendingNotice')))).toBe(false);
+        expect(saved.some(m => typeof m.content === 'string' && m.content.includes(I18N.t('memory.goSee')))).toBe(false);
     });
 
     it('點通知氣泡開記憶 modal', async () => {

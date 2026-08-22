@@ -69,6 +69,7 @@ const SHELL_ASSETS = [
     '/js/error_logger.js',
     '/js/secure_store.js',
     '/js/api_service.js',
+    '/js/memory_module.js',
     '/js/settings_module.js',
     '/js/mascot.js',
     '/js/sw_logic.js',

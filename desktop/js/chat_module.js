@@ -985,9 +985,13 @@ const ChatModule = (function() {
             // 早於這整段執行，成功路徑之後不再呼叫 saveChatHistory()，所以
             // 這裡沿用預設參數（捲動到通知是正確的 UX）即可，訊息不會落盤，
             // 與上面的 diaryMessage 本身同構（見該處）。
+            // spec §5 裁決（fix wave）：泡泡需要看得見的「去看看」文字提示，
+            // 不能只靠純滑鼠游標樣式暗示可點——兩把 i18n 鑰匙用最小拼接組成
+            // 訊息文字，不新增 HTML 機關；整顆泡泡仍然可點擊 → MemoryModule.open()。
             const review = response.memory_review;
             if (review && review.pending > 0) {
-                const noticeElement = addSystemMessage(I18N.t('memory.pendingNotice'));
+                const noticeText = `${I18N.t('memory.pendingNotice')} ${I18N.t('memory.goSee')}`;
+                const noticeElement = addSystemMessage(noticeText);
                 const noticeBubble = noticeElement && noticeElement.querySelector('.message-bubble');
                 if (noticeBubble && typeof MemoryModule !== 'undefined') {
                     noticeBubble.style.cursor = 'pointer';
