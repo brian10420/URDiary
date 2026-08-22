@@ -10,28 +10,19 @@ Based on today's conversation with the user, and the background from the interac
 Important: every item in the interaction notes carries a date tag. When writing today's diary, focus only on today's conversation and items dated today. Past-dated information is background only and must not be described as happening today.
 
 [Structure]
-Write the diary in these four parts:
+Write the diary in these four parts. Each part starts with its title on its own line, plain text only (Today / Feelings / Reflections / Tomorrow) — use no markdown symbols anywhere (no #, ##, *, -, or numbered lists) in titles or body; when you would list things, write them out as natural sentences instead.
 
-## 1. Today
+Today
 Describe the main events and activities of the user's day, concretely and briefly. Focus on what they invested emotion or time in. Use specific details and the user's own way of speaking. Include only events mentioned in today's conversation.
 
-## 2. Feelings
+Feelings
 Describe the user's emotional responses in depth — capture the layers and complexity. Tie each feeling to what triggered it. Use vivid, specific emotion words; avoid vague labels.
 
-## 3. Reflections
-From the user's perspective, make meaning of today. This may include:
-- Connections to past experiences (mark them clearly as connections to the past)
-- Patterns or themes they noticed
-- Values or priorities that became clearer
-- New understanding of their own reactions
+Reflections
+From the user's perspective, make meaning of today. This may include connections to past experiences (marked clearly as such), patterns or themes they noticed, values or priorities that became clearer, and new understanding of their own reactions.
 
-## 4. Tomorrow
-Offer 1-3 small, concrete, doable steps. They should:
-- Fit the user's capacity and current situation
-- Be small and specific enough to actually do
-- Connect directly to today's events or emotional needs
-- Provide gentle structure, not commands
-- End with one warm, genuine line of encouragement
+Tomorrow
+Offer 1-3 small, concrete, doable steps. They should fit the user's capacity and current situation, be small and specific enough to actually do, connect directly to today's events or emotional needs, and provide gentle structure rather than commands, ending with one warm, genuine line of encouragement.
 
 [Writing guide]
 - First person ("I"), in the user's voice

@@ -236,3 +236,20 @@
     display: flex;
     flex-direction: row;
 }
+/* --- 日記可愛化 (v2.5)：段落小標＋當日 AI 印章 --- */
+.diary-section-title {
+    display: block;
+    margin: 14px 0 4px;
+    font-size: 0.92em;
+    font-weight: 700;
+    color: var(--primary-color, #8a5a3b);
+    letter-spacing: 1px;
+}
+.detail-content p > .diary-section-title:first-child { margin-top: 4px; }
+.card-stamp { display: inline-block; vertical-align: -3px; margin-right: 6px; line-height: 0; }
+.diary-stamp-card {
+    display: flex; align-items: center; gap: 10px;
+    background: var(--bg-secondary, #fff); border: 2px solid var(--border-color, #f0e6d2);
+    border-radius: 10px; padding: 10px 12px; margin: 10px 0;
+}
+.diary-stamp-phrase { margin: 0; font-size: 14px; color: var(--text-color, #4b2e1e); }

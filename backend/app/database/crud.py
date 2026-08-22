@@ -522,3 +522,19 @@ def delete_day_note(db: Session, user_id: int, note_date) -> bool:
     db.delete(row)
     db.commit()
     return True
+
+
+def get_day_notes_by_diary_ids(db: Session, user_id: int, diary_ids) -> dict:
+    """依 source_diary_id 反查印章（日記區顯示用，v2.5 日記可愛化）。
+
+    回 {diary_id: DayNote}；未蓋章的日記不在字典裡。日記列表時間跨度任意，
+    所以走 diary_id 反查而不是 get_day_notes 的日期區間（有 63 天上限）。
+    """
+    ids = [i for i in diary_ids if i is not None]
+    if not ids:
+        return {}
+    rows = (db.query(models.DayNote)
+              .filter(models.DayNote.user_id == user_id,
+                      models.DayNote.source_diary_id.in_(ids))
+              .all())
+    return {r.source_diary_id: r for r in rows}

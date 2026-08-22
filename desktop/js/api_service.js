@@ -1234,7 +1234,10 @@ const ApiService = (function() {
             date: diary.diary_date || new Date().toISOString(),
             mood: getMoodFromValence(diary.valence),
             valence: diary.valence || 0.5,
-            arousal: diary.arousal || 0.5
+            arousal: diary.arousal || 0.5,
+            // v2.5 日記可愛化：當日 AI 印章（無章＝null）
+            stamp: diary.stamp || null,
+            stamp_phrase: diary.stamp_phrase || null
         }));
 
         // 保存到本地存儲，作為離線時的唯讀快取
