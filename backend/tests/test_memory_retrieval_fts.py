@@ -24,6 +24,20 @@ def test_fts_path_returns_snapshots(client, auth_header):
     assert set(hits[0][0].keys()) == {"id", "date", "title", "summary", "valence"}
 
 
+def test_fts_path_does_not_touch_like_query(client, auth_header, monkeypatch):
+    """FTS 可用時分流器不該碰 LIKE 查詢 (即使 diary_fts.search 本身也可能命中)。"""
+    _h, uid = auth_header
+    from utils.time_utils import get_diary_date
+    diary_id = _make_old_diary(uid, "上週去台南吃牛肉湯很開心", "台南牛肉湯")
+
+    def _boom(*args, **kwargs):
+        raise AssertionError("LIKE path must not run when FTS is available")
+
+    monkeypatch.setattr(crud, "search_diaries_by_terms", _boom)
+    hits = mrv._keyword_hits(uid, ["牛肉湯"], get_diary_date())
+    assert hits and hits[0][0]["id"] == diary_id
+
+
 def test_like_fallback_when_fts_down(client, auth_header, monkeypatch):
     _h, uid = auth_header
     from utils.time_utils import get_diary_date
