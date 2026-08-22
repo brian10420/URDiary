@@ -979,6 +979,23 @@ const ChatModule = (function() {
             const diaryMessage = response.message || I18N.t('chat.diaryDone');
             addSystemMessage(diaryMessage);
 
+            // v2.5 Spec C：核可制下有待核可記憶 → 溫暖邀請（不寫入聊天持久層）。
+            // 控制器裁決 R5：addSystemMessage 的第二參數是「要不要捲動」，不是
+            // 「要不要持久化」——上面 chatHistory = []; saveChatHistory(); 已經
+            // 早於這整段執行，成功路徑之後不再呼叫 saveChatHistory()，所以
+            // 這裡沿用預設參數（捲動到通知是正確的 UX）即可，訊息不會落盤，
+            // 與上面的 diaryMessage 本身同構（見該處）。
+            const review = response.memory_review;
+            if (review && review.pending > 0) {
+                const noticeElement = addSystemMessage(I18N.t('memory.pendingNotice'));
+                const noticeBubble = noticeElement && noticeElement.querySelector('.message-bubble');
+                if (noticeBubble && typeof MemoryModule !== 'undefined') {
+                    noticeBubble.style.cursor = 'pointer';
+                    noticeBubble.addEventListener('click', () => MemoryModule.open());
+                }
+                if (typeof MemoryModule !== 'undefined') MemoryModule.refreshBadge();
+            }
+
             // v2.4 spec ③：存日記彩蛋。只綁這個操作事件；negative valence → 安靜略過。
             if (typeof MascotModule !== 'undefined') {
                 const valence = (response.diary && typeof response.diary.valence === 'number')

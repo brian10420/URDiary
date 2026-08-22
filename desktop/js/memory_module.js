@@ -120,11 +120,133 @@ const MemoryModule = (function() {
         }
     }
 
-    // Task 13 擴充為完整帳本渲染；本階段先渲染空狀態
+    function escapeHtml(value) {
+        const div = document.createElement('div');
+        div.textContent = value == null ? '' : String(value);
+        return div.innerHTML;
+    }
+
+    const STATUS_KEYS = {
+        applied: 'memory.stApplied', pending: 'memory.stPending', rejected: 'memory.stRejected',
+        undone: 'memory.stUndone', stale: 'memory.stStale', failed: 'memory.stFailed',
+    };
+
+    function opChipClass(status) {
+        if (status === 'applied') return 'memory-chip applied';
+        if (status === 'pending') return 'memory-chip pending';
+        if (status === 'failed') return 'memory-chip failed';
+        return 'memory-chip';
+    }
+
+    function opDescription(op) {
+        const fileName = I18N.t(op.file_key === 'user_profile' ? 'memory.fileProfile' : 'memory.fileCompanion');
+        if (op.action === 'user_edit') return `${I18N.t('memory.opUserEdit')} ${fileName}`;
+        if (op.action === 'add') {
+            const sec = op.section ? `・${escapeHtml(op.section)}` : '';
+            return `${I18N.t('memory.opAdd')} ${fileName}${sec}：「${escapeHtml(op.new_text)}」`;
+        }
+        if (op.action === 'replace') {
+            return `${I18N.t('memory.opReplace')} ${fileName}：「${escapeHtml(op.target_text)}」→「${escapeHtml(op.new_text)}」`;
+        }
+        return `${I18N.t('memory.opRemove')} ${fileName}：「${escapeHtml(op.target_text)}」`;
+    }
+
+    function batchTitle(ops) {
+        const first = ops[0];
+        const date = (first.created_at || '').slice(0, 10);
+        if (first.source === 'user_edit') return `${date}・${I18N.t('memory.selfEdit')}`;
+        if (first.source_diary_title) {
+            return `${date}・${I18N.t('memory.fromDiary', { title: first.source_diary_title })}`;
+        }
+        return date;
+    }
+
+    function opRowHtml(op) {
+        const chip = `<span class="${opChipClass(op.status)}">${I18N.t(STATUS_KEYS[op.status] || 'memory.stFailed')}</span>`;
+        let buttons = '';
+        if (op.status === 'pending') {
+            buttons = `<button class="memory-op-btn approve" data-op-approve="${op.id}">${I18N.t('memory.approve')}</button>` +
+                      `<button class="memory-op-btn" data-op-reject="${op.id}">${I18N.t('memory.reject')}</button>`;
+        } else if (op.status === 'applied' && op.action !== 'user_edit') {
+            buttons = `<button class="memory-op-btn" data-op-undo="${op.id}">${I18N.t('memory.undo')}</button>`;
+        }
+        const dim = (op.status === 'rejected' || op.status === 'undone' || op.status === 'stale' || op.status === 'failed');
+        const error = op.error ? `<div class="memory-op-error">${escapeHtml(op.error)}</div>` : '';
+        return `<div class="memory-op-row${dim ? ' dimmed' : ''}">` +
+               `<div class="memory-op-text">${opDescription(op)}${error}</div>` +
+               `<div class="memory-op-side">${chip}${buttons}</div></div>`;
+    }
+
     async function renderLedger() {
         const list = el('memory-ledger-list');
         if (!list) return;
-        list.innerHTML = `<div class="memory-hint">${I18N.t('memory.emptyLedger')}</div>`;
+        let ops = [];
+        try {
+            ops = (await ApiService.getMemoryOps()).ops || [];
+        } catch (e) {
+            list.innerHTML = `<div class="memory-hint">${I18N.t('memory.actionFailed', { error: escapeHtml(e.message || e) })}</div>`;
+            return;
+        }
+        const banner = el('memory-approval-banner');
+        const hasPending = ops.some(op => op.status === 'pending');
+        if (banner) banner.style.display = (overview && overview.write_mode === 'approval' && hasPending) ? '' : 'none';
+        if (!ops.length) {
+            list.innerHTML = `<div class="memory-hint">${I18N.t('memory.emptyLedger')}</div>`;
+            return;
+        }
+        // 依出現順序 (已是新→舊) 分組 batch
+        const groups = [];
+        const byBatch = {};
+        ops.forEach(op => {
+            if (!byBatch[op.batch_id]) { byBatch[op.batch_id] = []; groups.push(op.batch_id); }
+            byBatch[op.batch_id].push(op);
+        });
+        list.innerHTML = groups.map(batchId => {
+            const groupOps = byBatch[batchId];
+            const pendingHere = groupOps.some(op => op.status === 'pending');
+            const actions = pendingHere
+                ? `<div class="memory-batch-actions">` +
+                  `<button class="memory-op-btn approve" data-batch-approve="${escapeHtml(batchId)}">${I18N.t('memory.approveAll')}</button>` +
+                  `<button class="memory-op-btn" data-batch-reject="${escapeHtml(batchId)}">${I18N.t('memory.rejectAll')}</button></div>`
+                : '';
+            return `<div class="memory-batch-header"><span>${escapeHtml(batchTitle(groupOps))}</span>${actions}</div>` +
+                   groupOps.map(opRowHtml).join('');
+        }).join('');
+
+        list.querySelectorAll('[data-op-approve]').forEach(btn =>
+            btn.addEventListener('click', () => opAction(Number(btn.dataset.opApprove), 'approve')));
+        list.querySelectorAll('[data-op-reject]').forEach(btn =>
+            btn.addEventListener('click', () => opAction(Number(btn.dataset.opReject), 'reject')));
+        list.querySelectorAll('[data-op-undo]').forEach(btn =>
+            btn.addEventListener('click', () => opAction(Number(btn.dataset.opUndo), 'undo')));
+        list.querySelectorAll('[data-batch-approve]').forEach(btn =>
+            btn.addEventListener('click', () => batchAction(btn.dataset.batchApprove, 'approve')));
+        list.querySelectorAll('[data-batch-reject]').forEach(btn =>
+            btn.addEventListener('click', () => batchAction(btn.dataset.batchReject, 'reject')));
+    }
+
+    async function opAction(opId, action) {
+        try {
+            await ApiService.memoryOpAction(opId, action);
+        } catch (e) {
+            if (typeof UIManager !== 'undefined' && UIManager.showToast) {
+                UIManager.showToast(I18N.t('memory.actionFailed', { error: e.message || e }));
+            }
+        }
+        await refreshBadge();
+        await renderLedger();
+    }
+
+    async function batchAction(batchId, action) {
+        try {
+            await ApiService.memoryBatchAction(batchId, action);
+        } catch (e) {
+            if (typeof UIManager !== 'undefined' && UIManager.showToast) {
+                UIManager.showToast(I18N.t('memory.actionFailed', { error: e.message || e }));
+            }
+        }
+        await refreshBadge();
+        await renderLedger();
     }
 
     function init() {
