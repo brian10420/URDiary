@@ -444,6 +444,10 @@ const SettingsModule = (function() {
         }
         settingsDialog.style.display = 'block';
         settingsDialog.style.zIndex = '1000';
+
+        if (typeof MemoryModule !== 'undefined') {
+            MemoryModule.refreshBadge();
+        }
     }
 
     function closeDialog() {
@@ -759,6 +763,11 @@ const SettingsModule = (function() {
         if (saveBtn) saveBtn.addEventListener('click', save);
         if (clearKeyBtn) clearKeyBtn.addEventListener('click', clearKey);
         if (logoutBtn) logoutBtn.addEventListener('click', logout);
+
+        // 記憶管理 (v2.5 Spec C)：模組自綁事件；開設定面板時刷新 pending 徽章
+        if (typeof MemoryModule !== 'undefined') {
+            MemoryModule.init();
+        }
 
         // 金鑰載入完成後刷新狀態顯示（面板若已開啟）
         if (typeof SecureStore !== 'undefined' && SecureStore.ready) {
