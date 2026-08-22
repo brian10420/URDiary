@@ -538,3 +538,80 @@ def get_day_notes_by_diary_ids(db: Session, user_id: int, diary_ids) -> dict:
                       models.DayNote.source_diary_id.in_(ids))
               .all())
     return {r.source_diary_id: r for r in rows}
+
+
+# MemoryFile / MemoryOp CRUD operations (v2.5 Spec C)
+def get_memory_file(db: Session, user_id: int, file_key: str):
+    return (db.query(models.MemoryFile)
+              .filter(models.MemoryFile.user_id == user_id,
+                      models.MemoryFile.file_key == file_key)
+              .first())
+
+
+def get_memory_files(db: Session, user_id: int) -> dict:
+    """回 {file_key: MemoryFile}；沒建立的檔不在字典裡 (懶建立語意)。"""
+    rows = (db.query(models.MemoryFile)
+              .filter(models.MemoryFile.user_id == user_id)
+              .all())
+    return {r.file_key: r for r in rows}
+
+
+def upsert_memory_file(db: Session, user_id: int, file_key: str, content: str):
+    row = get_memory_file(db, user_id, file_key)
+    if row is None:
+        row = models.MemoryFile(user_id=user_id, file_key=file_key, content=content)
+        db.add(row)
+    else:
+        row.content = content
+        row.updated_at = datetime.utcnow()
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+def create_memory_ops(db: Session, ops_dicts: List[dict]) -> List[models.MemoryOp]:
+    """一批 ops 一次 commit (一次 review pass = 一個 batch)。"""
+    rows = [models.MemoryOp(**d) for d in ops_dicts]
+    db.add_all(rows)
+    db.commit()
+    for r in rows:
+        db.refresh(r)
+    return rows
+
+
+def get_memory_ops(db: Session, user_id: int, limit: int = 100, offset: int = 0):
+    return (db.query(models.MemoryOp)
+              .filter(models.MemoryOp.user_id == user_id)
+              .order_by(models.MemoryOp.id.desc())
+              .offset(offset).limit(limit).all())
+
+
+def get_memory_op(db: Session, user_id: int, op_id: int):
+    return (db.query(models.MemoryOp)
+              .filter(models.MemoryOp.user_id == user_id,
+                      models.MemoryOp.id == op_id)
+              .first())
+
+
+def get_pending_ops(db: Session, user_id: int):
+    """核可制的待決清單，最舊在前 (套用順序)。"""
+    return (db.query(models.MemoryOp)
+              .filter(models.MemoryOp.user_id == user_id,
+                      models.MemoryOp.status == "pending")
+              .order_by(models.MemoryOp.id)
+              .all())
+
+
+def count_pending_ops(db: Session, user_id: int) -> int:
+    return (db.query(models.MemoryOp)
+              .filter(models.MemoryOp.user_id == user_id,
+                      models.MemoryOp.status == "pending")
+              .count())
+
+
+def get_ops_by_batch(db: Session, user_id: int, batch_id: str):
+    return (db.query(models.MemoryOp)
+              .filter(models.MemoryOp.user_id == user_id,
+                      models.MemoryOp.batch_id == batch_id)
+              .order_by(models.MemoryOp.id)
+              .all())

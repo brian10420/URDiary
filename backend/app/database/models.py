@@ -22,6 +22,7 @@ class User(Base):
     style_reply_length = Column(String(10), nullable=True)  # short / natural / chatty
     style_emoji = Column(String(10), nullable=True)         # none / low / high
     style_formality = Column(String(10), nullable=True)     # casual / polite
+    memory_write_mode = Column(String(10), nullable=True)  # NULL=auto / "approval" (v2.5 Spec C 治理)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     diaries = relationship("Diary", back_populates="user")
@@ -217,3 +218,44 @@ class DayNote(Base):
     source_diary_id = Column(Integer, ForeignKey("diaries.id"), nullable=True)  # 回顧連結；刪日記時服務層置 NULL (未來 Spec D)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class MemoryFile(Base):
+    """常駐記憶檔 (v2.5 Spec C)：一使用者兩列 (user_profile / companion_notes)。
+
+    懶建立——首次寫入 (review pass seed 或使用者編輯) 才產生列；
+    不存在＝還沒開始記，注入層 fallback 舊互動筆記或佔位。
+    """
+    __tablename__ = "memory_files"
+    __table_args__ = (UniqueConstraint("user_id", "file_key", name="uq_memory_files_user_key"),)
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    file_key = Column(String(16), nullable=False)   # services/memory_files.FILE_KEYS 之一
+    content = Column(Text, nullable=False, default="")
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class MemoryOp(Base):
+    """記憶帳本 (v2.5 Spec C)：每筆變更一列——同時是稽核軌跡與核可制的 pending 佇列。
+
+    status: applied/pending/rejected/undone/stale/failed（語意見設計文件 §2）。
+    source_diary_id 供「這筆記憶來自哪篇日記」回溯；刪日記時服務層置 NULL
+    (同 day_notes 慣例，不依賴 FK pragma)。
+    """
+    __tablename__ = "memory_ops"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    file_key = Column(String(16), nullable=False)
+    batch_id = Column(String(36), nullable=False, index=True)
+    action = Column(String(12), nullable=False)      # add/replace/remove/user_edit
+    section = Column(String(40), nullable=True)
+    target_text = Column(Text, nullable=True)
+    new_text = Column(Text, nullable=True)
+    status = Column(String(12), nullable=False, default="applied", index=True)
+    source = Column(String(20), nullable=False, default="review_pass")
+    source_diary_id = Column(Integer, ForeignKey("diaries.id"), nullable=True)
+    error = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    decided_at = Column(DateTime, nullable=True)
