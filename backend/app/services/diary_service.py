@@ -1,7 +1,7 @@
 from providers.base import LLMConfig, LLMError
 from database import crud, db_session
 from services import day_stamp
-from services.interaction_service import generate_enhanced_diary, process_interaction_note_update
+from services.interaction_service import generate_enhanced_diary
 from services.prompt_loader import load_prompt
 from utils.logger import log_error
 from utils.time_utils import get_diary_date
@@ -84,13 +84,14 @@ def run_end_of_chat_pipeline(user_id: str, numeric_user_id: int,
                               exclude_interaction_notes: bool,
                               cfg: LLMConfig, lang: str = "zh-TW",
                               enable_day_note: bool = False) -> Dict[str, Any]:
-    """生成日記(LLM) → 短交易存檔 → 互動筆記更新(LLM，容忍部分失敗)。
+    """生成日記(LLM) → 短交易存檔 → 記憶 review pass(LLM，容忍部分失敗)。
 
     `/chat/end/` 與 `/diary/enhanced-generate` 共用的收尾管線 (兩端點原本
     近乎重複實作)。呼叫端須先以 llm.resolve_config() 補齊 cfg 再傳入 (早期
     解析：缺金鑰在任何 LLM 呼叫前就報錯，對話/日記資料不受影響)。
 
-    回傳 {"diary": payload, "interaction_note": ..., "interaction_note_error": ...}
+    回傳 {"diary": payload, "memory_review": ReviewResult.as_dict() 或 None,
+    "memory_review_error": ...}
     """
     # 1. 生成今日日記 (LLM 呼叫，期間不持有 DB 連線)。
     #    失敗時讓 LLMError 往上拋——絕不可把錯誤字串當成日記內容寫進資料庫，
@@ -138,21 +139,27 @@ def run_end_of_chat_pipeline(user_id: str, numeric_user_id: int,
         except Exception as e:
             log_error(e, {"user_id": user_id, "action": "run_end_of_chat_pipeline_day_note"})
 
-    # 3. 更新互動筆記 (又一次 LLM 呼叫，自行管理連線)。
-    #    日記此時已存檔成功，筆記失敗回報部分成功即可，不讓整個請求失敗
-    #    (與原本兩個端點的既有語意一致)。
-    note_result = None
-    note_error = None
+    # 3. 記憶 review pass (v2.5 Spec C：取代舊互動筆記整份重寫；又一次 LLM 呼叫，
+    #    自行管理連線)。日記此時已存檔成功，review 失敗回報部分成功即可。
+    from services.memory_review import run_review_pass
+    from memory_manager import get_chat_history
+    review_result = None
+    review_error = None
     try:
-        note_result = process_interaction_note_update(
-            user_id, numeric_user_id, draft.content, cfg, lang=lang
+        review = run_review_pass(
+            numeric_user_id, cfg, lang=lang,
+            chat_history=get_chat_history(user_id),
+            diary_content=draft.content,
+            diary_id=diary_payload["diary_id"],
+            valence=draft.valence,
         )
+        review_result = review.as_dict()
     except LLMError as e:
-        note_error = str(e)
-        log_error(e, {"user_id": user_id, "action": "run_end_of_chat_pipeline_update_note"})
+        review_error = str(e)
+        log_error(e, {"user_id": user_id, "action": "run_end_of_chat_pipeline_memory_review"})
 
     return {
         "diary": diary_payload,
-        "interaction_note": note_result,
-        "interaction_note_error": note_error,
+        "memory_review": review_result,
+        "memory_review_error": review_error,
     }

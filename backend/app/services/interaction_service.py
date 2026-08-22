@@ -9,7 +9,7 @@ from services.prompt_loader import load_prompt, get_role
 from services.prompt_builder import build_conversation_system, build_checkin_prompt
 from sqlalchemy.orm import Session
 from utils.time_utils import get_diary_date, get_diary_datetime, get_local_now
-from typing import Dict, Any, Optional
+from typing import Optional
 
 def get_latest_interaction_note(db: Session, user_id: int) -> Optional[InteractionNote]:
     """
@@ -22,6 +22,8 @@ def get_latest_interaction_note(db: Session, user_id: int) -> Optional[Interacti
 def create_interaction_note(db: Session, user_id: int, content: str) -> InteractionNote:
     """
     創建新的互動筆記
+
+    停寫保留：僅供懶遷移測試 seed 與歷史相容，管線已改走 memory_review.run_review_pass。
     """
     # 獲取當前最新版本
     latest_note = get_latest_interaction_note(db, user_id)
@@ -36,115 +38,6 @@ def create_interaction_note(db: Session, user_id: int, content: str) -> Interact
     db.commit()
     db.refresh(interaction_note)
     return interaction_note
-
-def update_interaction_note(
-    chat_history: list,
-    previous_note_content: Optional[str],
-    today_diary: str,
-    cfg: Optional[LLMConfig] = None,
-    user_id: Optional[int] = None,
-    lang: str = "zh-TW"
-) -> str:
-    """
-    生成更新的互動筆記內容
-
-    Args:
-        chat_history: 聊天歷史
-        previous_note_content: 前一個互動筆記內容
-        today_diary: 今日日記內容
-        cfg: 請求範圍的 LLM 設定；None 時走 .env Grok 後備
-        user_id: 用戶數字ID，提供時會執行情緒趨勢分析
-        lang: 提示詞語言
-    """
-    # 讀取互動筆記提示詞
-    prompt_template = load_prompt("interaction_note_prompt.txt", lang)
-
-    # 格式化對話歷史
-    chat_content = format_chat_content(chat_history)
-
-    # 獲取今日日期，格式為YYYY-MM-DD
-    # 必須用日記的本地日期基準：容器內 datetime.now() 是 UTC，
-    # 台北早上 7 點 = UTC 前一天 23 點，會讓提示詞把今天的事標成昨天。
-    today_date = get_diary_date().strftime("%Y-%m-%d")
-    
-    # 執行情緒分析 (JSON key 為英文，與 emotion_analysis_prompt.txt 的輸出格式對齊)
-    from services.analytics_service import analyze_emotion_trends
-    emotion_analysis = {"theme_analysis": {"themes": ["無資料"], "pattern": "無資料", "factors": "無資料", "focus": "無資料"}}
-
-    try:
-        # 若呼叫端提供用戶ID，執行情緒分析（沿用同一份 LLM 設定 —— 最深的串接鏈）
-        if user_id:
-            emotion_analysis = analyze_emotion_trends(user_id, "week", cfg, lang=lang)
-    except Exception as e:
-        print(f"分析情緒時發生錯誤: {str(e)}")
-
-    # 提取情緒分析結果
-    emotion_themes = emotion_analysis.get("theme_analysis", {})
-    themes = emotion_themes.get('themes', ['無資料'])
-    if not isinstance(themes, list):
-        themes = [str(themes)]
-    emotion_info = f"""
-情緒分析結果：
-- 主要情緒主題: {', '.join(str(t) for t in themes)}
-- 情緒變化模式: {emotion_themes.get('pattern', '無資料')}
-- 正負向因素: {emotion_themes.get('factors', '無資料')}
-- 建議留意: {emotion_themes.get('focus', '無資料')}
-"""
-    
-    # 準備提示詞
-    prompt = prompt_template.format(
-        previous_interaction_note=previous_note_content or "尚無互動筆記",
-        chat_history=chat_content,
-        todays_diary=today_diary,
-        today_date=today_date,
-        emotion_analysis=emotion_info
-    )
-    
-    # 調用 LLM
-    # 不可捕捉 LLMError：失敗訊息若被當成筆記內容存入資料庫，
-    # 會污染之後每一次對話的 system prompt。讓例外往上拋，由路由回 5xx。
-    messages = [
-        {"role": "system", "content": get_role("note_taker", lang)},
-        {"role": "user", "content": prompt}
-    ]
-
-    return llm.chat(messages, cfg)
-
-def process_interaction_note_update(chat_id: str, numeric_user_id: int, today_diary: str, cfg: Optional[LLMConfig] = None, lang: str = "zh-TW") -> Dict[str, Any]:
-    """
-    處理互動筆記更新流程
-
-    Args:
-        chat_id: 聊天ID
-        numeric_user_id: 用戶數字ID
-        today_diary: 今日日記內容
-        cfg: 請求範圍的 LLM 設定；None 時走 .env Grok 後備
-    """
-    # 讀取階段 —— 取完資料立刻關閉連線。
-    # 絕不可在持有 DB 連線 (開著的交易) 的狀態下呼叫 LLM：一次 /chat/end/ 會做
-    # 2~3 次 Grok 往返，每次數十秒，連線會被釘住直到連線池 (20+30) 耗盡。
-    with db_session() as db:
-        chat_history = get_chat_history(chat_id)
-        latest_note = get_latest_interaction_note(db, numeric_user_id)
-        previous_content = latest_note.content if latest_note else None
-
-    # LLM 階段 —— 此時不持有任何 DB 連線
-    new_content = update_interaction_note(
-        chat_history, previous_content, today_diary, cfg,
-        user_id=numeric_user_id, lang=lang
-    )
-
-    # 寫入階段 (獨立的第二個 session；絕不可與上面的讀取階段合併，
-    # 否則 session 會跨越中間的 LLM 呼叫)
-    with db_session() as db:
-        new_note = create_interaction_note(db, numeric_user_id, new_content)
-
-        return {
-            "note_id": new_note.id,
-            "version": new_note.version,
-            "content": new_note.content,
-            "created_at": new_note.created_at.isoformat()
-        }
 
 def get_conversation_context(numeric_user_id: int) -> str:
     """

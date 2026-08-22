@@ -145,13 +145,13 @@ def daily_checkin_route(current_user: User = Depends(get_current_user),
 
 @router.post("/end/", response_model=Dict[str, Any],
            summary="結束對話並生成摘要",
-           description="結束當前對話，生成日記並更新互動筆記")
+           description="結束當前對話，生成日記並更新記憶")
 def end_chat_session(user_input: UserDiaryCreate,
                      current_user: User = Depends(get_current_user),
                      llm_config: Optional[LLMConfig] = Depends(get_llm_config),
                      lang: str = Depends(get_language),
                      _rate_limit: None = Depends(enforce_llm_rate_limit)):
-    """結束當前對話，生成日記並更新互動筆記"""
+    """結束當前對話，生成日記並更新記憶"""
     # 身分由 token 導出，不信任 body
     user_id = str(current_user.id)
     numeric_user_id = current_user.id
@@ -167,7 +167,7 @@ def end_chat_session(user_input: UserDiaryCreate,
         )
     model = cfg.model
 
-    # 生成日記 → 短交易存檔 → 更新互動筆記 (與 /diary/enhanced-generate 共用管線)。
+    # 生成日記 → 短交易存檔 → 記憶 review pass (與 /diary/enhanced-generate 共用管線)。
     # 失敗時直接回 503 —— 絕不可把 "Error: ..." 當成日記內容寫進資料庫，
     # 也不清除對話歷史，讓使用者可以重試。
     try:
@@ -190,9 +190,9 @@ def end_chat_session(user_input: UserDiaryCreate,
     clear_chat_history(user_id)
 
     return {
-        "message": "對話已結束並生成摘要" if result["interaction_note_error"] is None else "日記已生成，但互動筆記更新失敗",
+        "message": "對話已結束並生成摘要" if result["memory_review_error"] is None else "日記已生成，但記憶更新失敗",
         "model_used": model,
         "diary": result["diary"],
-        "interaction_note": result["interaction_note"],
-        "interaction_note_error": result["interaction_note_error"],
+        "memory_review": result["memory_review"],
+        "memory_review_error": result["memory_review_error"],
     }

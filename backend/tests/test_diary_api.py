@@ -164,10 +164,10 @@ def test_enhanced_generate_success_parses_diary_and_creates_note(
         {"role": "assistant", "content": "聽起來平淡的一天，有什麼想多聊聊的嗎？"},
     ])
 
-    # 現行流程在一次 /enhanced-generate 裡實際會打 3 次 llm.chat：
-    # 日記生成 -> (筆記更新內部先做一次情緒分析) -> 筆記生成。用「依 system
-    # role 內容決定回覆」取代「依呼叫順序腳本化」，才不會被中間那次情緒分析
-    # 呼叫打亂順序 (也對之後可能的呼叫順序調整更有韌性)。
+    # 現行流程在一次 /enhanced-generate 裡實際會打 2 次 llm.chat：
+    # 日記生成 -> 記憶 review pass (v2.5 Spec C，沿用同一個 note_taker role)。
+    # 用「依 system role 內容決定回覆」取代「依呼叫順序腳本化」，對之後可能
+    # 的呼叫順序調整更有韌性。
     from services.prompt_loader import get_role
     diary_writer_role = get_role("diary_writer", "zh-TW")
     note_taker_role = get_role("note_taker", "zh-TW")
@@ -177,7 +177,7 @@ def test_enhanced_generate_success_parses_diary_and_creates_note(
         '{"title": "平淡卻踏實的一天", "summary": "上班下班，和自己相處", '
         '"valence": 0.65, "arousal": 0.35}'
     )
-    note_reply = "使用者今天過得平淡但心情穩定，持續上下班的日常步調。"
+    review_reply = '{"ops": []}'  # 平凡的一天：review pass 判定不記
     harmless_default = mock_llm.default_reply  # 先存一份，避免下面覆寫後自我參照
 
     def scripted(messages, cfg):
@@ -185,8 +185,8 @@ def test_enhanced_generate_success_parses_diary_and_creates_note(
         if system_content == diary_writer_role:
             return diary_reply
         if system_content == note_taker_role:
-            return note_reply
-        return harmless_default  # 情緒分析等其他呼叫：回無害預設值即可
+            return review_reply
+        return harmless_default  # 其他呼叫：回無害預設值即可
 
     mock_llm.default_reply = scripted
 
@@ -201,9 +201,9 @@ def test_enhanced_generate_success_parses_diary_and_creates_note(
     assert body["diary"]["valence"] == 0.65
     assert body["diary"]["arousal"] == 0.35
     assert "valence" not in body["diary"]["content"]
-    assert body["interaction_note"] is not None
-    assert body["interaction_note"]["content"] == note_reply
-    assert body["interaction_note_error"] is None
+    assert body["memory_review"] is not None
+    assert body["memory_review"]["applied"] == 0 and body["memory_review"]["error"] is None
+    assert body["memory_review_error"] is None
 
     # DB 驗證：日記確實入庫，且欄位與回應一致
     from database import crud, SessionLocal
