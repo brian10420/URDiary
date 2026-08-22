@@ -39,18 +39,6 @@ def create_interaction_note(db: Session, user_id: int, content: str) -> Interact
     db.refresh(interaction_note)
     return interaction_note
 
-def get_conversation_context(numeric_user_id: int) -> str:
-    """
-    獲取對話開始時的互動筆記上下文
-    """
-    with db_session() as db:
-        latest_note = get_latest_interaction_note(db, numeric_user_id)
-
-        if not latest_note:
-            return "尚無互動筆記記錄。"
-
-        return latest_note.content
-
 def enhanced_chat_with_context(chat_id: str, numeric_user_id: int, message: str, cfg: Optional[LLMConfig] = None, semantic: bool = False, crisis: bool = False, lang: str = "zh-TW") -> str:
     """
     使用互動筆記增強對話體驗
@@ -64,8 +52,9 @@ def enhanced_chat_with_context(chat_id: str, numeric_user_id: int, message: str,
         crisis: 敏感詞命中時附加危機模式指示 (雙保險之一)
         lang: 提示詞語言
     """
-    # 獲取互動筆記上下文
-    interaction_context = get_conversation_context(numeric_user_id)
+    # 獲取記憶注入區塊 (使用者檔案＋陪伴者筆記；三態 fallback 見 services.user_profile)
+    from services.user_profile import get_memory_context
+    memory_ctx = get_memory_context(numeric_user_id, lang)
 
     # 獲取對話歷史 (先取：記憶檢索需要上一則使用者訊息當 query 上下文)
     chat_history = get_chat_history(chat_id)
@@ -88,7 +77,8 @@ def enhanced_chat_with_context(chat_id: str, numeric_user_id: int, message: str,
     # 分層組裝系統提示詞 (人格核心 → 對話框架與記憶 → 危機模式附錄)
     system_prompt = build_conversation_system(
         lang=lang,
-        interaction_note=interaction_context,
+        user_profile_block=memory_ctx.profile_block,
+        companion_notes_block=memory_ctx.companion_block,
         relevant_memories=relevant_memories,
         today_date=get_diary_date().strftime("%Y-%m-%d"),
         calendar_context=calendar_context,
@@ -150,9 +140,8 @@ def generate_enhanced_diary(chat_id: str, numeric_user_id: int, exclude_interact
     # 獲取互動筆記上下文 (短交易；LLM 呼叫前關閉連線)
     interaction_context = "尚無互動筆記記錄。"
     if not exclude_interaction_notes:
-        with db_session() as db:
-            latest_note = get_latest_interaction_note(db, numeric_user_id)
-            interaction_context = latest_note.content if latest_note else "尚無互動筆記記錄。"
+        from services.user_profile import get_memory_context
+        interaction_context = get_memory_context(numeric_user_id, lang).diary_context
 
     # 格式化對話歷史
     chat_content = format_chat_content(chat_history)
@@ -240,12 +229,17 @@ def daily_checkin(chat_id: str, numeric_user_id: int, cfg: Optional[LLMConfig] =
         else:
             last_diary_block = "（最近三天沒有日記）" if lang != "en" else "(no diary entries in the past three days)"
 
-        note = get_latest_interaction_note(db, numeric_user_id)
-        if note is not None:
-            user_profile = note.content[:400]
-        else:
-            user_profile = ("（你們還不熟，這可能是最初幾次見面）" if lang != "en"
-                            else "(you barely know each other yet — this may be one of your first meetings)")
+    # 記憶注入區塊：讀階段的 session 已關閉，get_memory_context 自管自己的
+    # 短交易並在回傳前關掉，接下來的 llm.chat 仍不持有任何 DB 連線。
+    from services.user_profile import get_memory_context
+    memory_ctx = get_memory_context(numeric_user_id, lang)
+    if memory_ctx.has_any:
+        user_profile = memory_ctx.profile_block
+        if memory_ctx.companion_block:
+            user_profile += "\n\n" + memory_ctx.companion_block
+    else:
+        user_profile = ("（你們還不熟，這可能是最初幾次見面）" if lang != "en"
+                        else "(you barely know each other yet — this may be one of your first meetings)")
 
     # 行事曆脈絡：讀階段的 session 已關閉，build_calendar_context 自管自己的
     # 短交易並在回傳前關掉，接下來的 llm.chat 仍不持有任何 DB 連線。

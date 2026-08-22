@@ -9,7 +9,8 @@ def test_build_conversation_system_injects_all_values():
     persona = load_prompt("persona_core.txt", "zh-TW")
     system = build_conversation_system(
         lang="zh-TW",
-        interaction_note="【互動筆記哨兵文字ABC123】",
+        user_profile_block="【互動筆記哨兵文字ABC123】",
+        companion_notes_block="",
         relevant_memories="【相關記憶哨兵文字XYZ789】",
         today_date="2026-08-04",
         crisis=False,
@@ -25,7 +26,8 @@ def test_build_conversation_system_crisis_false_does_not_append_crisis_mode():
     crisis_text = load_prompt("crisis_mode.txt", "zh-TW")
     system = build_conversation_system(
         lang="zh-TW",
-        interaction_note="note",
+        user_profile_block="note",
+        companion_notes_block="",
         relevant_memories="mem",
         today_date="2026-08-04",
         crisis=False,
@@ -37,7 +39,8 @@ def test_build_conversation_system_crisis_true_appends_crisis_mode():
     crisis_text = load_prompt("crisis_mode.txt", "zh-TW")
     system = build_conversation_system(
         lang="zh-TW",
-        interaction_note="note",
+        user_profile_block="note",
+        companion_notes_block="",
         relevant_memories="mem",
         today_date="2026-08-04",
         crisis=True,
@@ -73,7 +76,8 @@ CAL_LINE_EN = "- [08/05(Tue) 14:00]《Interview》(work)"
 def test_build_conversation_system_injects_calendar_context():
     system = build_conversation_system(
         lang="zh-TW",
-        interaction_note="note",
+        user_profile_block="note",
+        companion_notes_block="",
         relevant_memories="mem",
         today_date="2026-08-04",
         calendar_context=CAL_LINE_ZH,
@@ -85,11 +89,13 @@ def test_build_conversation_system_injects_calendar_context():
 
 def test_build_conversation_system_calendar_none_uses_placeholder_per_language():
     zh_system = build_conversation_system(
-        lang="zh-TW", interaction_note="note", relevant_memories="mem",
+        lang="zh-TW", user_profile_block="note", companion_notes_block="",
+        relevant_memories="mem",
         today_date="2026-08-04", calendar_context=None,
     )
     en_system = build_conversation_system(
-        lang="en", interaction_note="note", relevant_memories="mem",
+        lang="en", user_profile_block="note", companion_notes_block="",
+        relevant_memories="mem",
         today_date="2026-08-04", calendar_context=None,
     )
 
@@ -102,7 +108,8 @@ def test_build_conversation_system_calendar_none_uses_placeholder_per_language()
 
 def test_build_conversation_system_empty_calendar_string_uses_placeholder():
     system = build_conversation_system(
-        lang="zh-TW", interaction_note="note", relevant_memories="mem",
+        lang="zh-TW", user_profile_block="note", companion_notes_block="",
+        relevant_memories="mem",
         today_date="2026-08-04", calendar_context="",
     )
     assert "（近期沒有行事曆事件）" in system
@@ -112,7 +119,8 @@ def test_build_conversation_system_crisis_appends_after_calendar_block():
     crisis_text = load_prompt("crisis_mode.txt", "zh-TW")
     system = build_conversation_system(
         lang="zh-TW",
-        interaction_note="note",
+        user_profile_block="note",
+        companion_notes_block="",
         relevant_memories="mem",
         today_date="2026-08-04",
         calendar_context=CAL_LINE_ZH,
@@ -165,7 +173,8 @@ def test_build_checkin_prompt_injects_calendar_block_en():
 
 def test_build_conversation_system_calendar_context_en():
     en_system = build_conversation_system(
-        lang="en", interaction_note="note", relevant_memories="mem",
+        lang="en", user_profile_block="note", companion_notes_block="",
+        relevant_memories="mem",
         today_date="2026-08-04", calendar_context=CAL_LINE_EN,
     )
 
