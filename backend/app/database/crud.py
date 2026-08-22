@@ -305,6 +305,12 @@ def create_diary(db: Session, user_id: int, content: str,
     except Exception:
         pass
 
+    try:
+        from services.diary_fts import index_diary
+        index_diary(db, diary)
+    except Exception:
+        pass
+
     return diary
 
 def get_diary(db: Session, diary_id: int):
@@ -329,6 +335,13 @@ def update_diary(db: Session, diary_id: int, **kwargs):
             
     db.commit()
     db.refresh(diary)
+
+    try:
+        from services.diary_fts import index_diary
+        index_diary(db, diary)
+    except Exception:
+        pass
+
     return diary
 
 def delete_diary(db: Session, diary_id: int):
@@ -337,8 +350,16 @@ def delete_diary(db: Session, diary_id: int):
     if not diary:
         return False
 
+    diary_id = diary.id
     db.delete(diary)
     db.commit()
+
+    try:
+        from services.diary_fts import remove_diary
+        remove_diary(db, diary_id)
+    except Exception:
+        pass
+
     return True
 
 def search_diaries_by_terms(db: Session, user_id: int, terms: List[str],
@@ -498,6 +519,16 @@ def upsert_day_note(db: Session, user_id: int, note_date, stamp: str, phrase: st
         row.source_diary_id = source_diary_id
     db.commit()
     db.refresh(row)
+
+    if source_diary_id:
+        try:
+            from services.diary_fts import index_diary
+            diary = get_diary(db, source_diary_id)
+            if diary is not None:
+                index_diary(db, diary)  # 小語併入該篇日記的索引列
+        except Exception:
+            pass
+
     return row
 
 
@@ -615,3 +646,15 @@ def get_ops_by_batch(db: Session, user_id: int, batch_id: str):
                       models.MemoryOp.batch_id == batch_id)
               .order_by(models.MemoryOp.id)
               .all())
+
+
+def get_diaries_by_ids(db: Session, user_id: int, ids) -> dict:
+    """FTS 候選回撈 (帶 user_id 過濾雙保險)；回 {diary_id: Diary}。"""
+    ids = [i for i in ids if i is not None]
+    if not ids:
+        return {}
+    rows = (db.query(models.Diary)
+              .filter(models.Diary.user_id == user_id,
+                      models.Diary.id.in_(ids))
+              .all())
+    return {r.id: r for r in rows}

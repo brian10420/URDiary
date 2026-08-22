@@ -228,6 +228,12 @@ async def startup_event():
     # create_all 不會為既有表加欄位；跨版本升級靠 ensure_schema 補欄
     from database.schema_upgrade import ensure_schema
     ensure_schema(engine)
+
+    # FTS5 全文索引 (v2.5 Spec C)：建表失敗自動降級 LIKE，絕不擋啟動
+    from services.diary_fts import ensure_fts, start_backfill_thread_if_empty
+    ensure_fts(engine)
+    start_backfill_thread_if_empty()
+
     schedule_cleanup()
 
     app_logger.info("URDiary后端服务已启动")
