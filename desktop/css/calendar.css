@@ -45,8 +45,14 @@
     --cat-other: #a8a295;
 }
 
-/* 工具列 —— 面板本身不滾動，工具列固定高度不參與伸縮 */
+/* 工具列 —— 面板本身不滾動，工具列固定高度不參與伸縮
+   年月 picker（#calendar-ym-picker）在 index.html 是 .calendar-toolbar 的
+   手足、不是子孫，所以不會以這裡的 position: relative 為 containing block。
+   它本身 absolute 定位卻沒設 top/left/right/bottom，因此依 CSS 的 static
+   position 規則落在自己在文件流中原本的位置——也就是緊接在 .calendar-toolbar
+   後面那格（見下面 .calendar-ym-picker 規則），與這行 relative 無關。 */
 .calendar-toolbar {
+    position: relative;
     flex: none;
     display: flex;
     align-items: center;
@@ -54,6 +60,16 @@
     margin-bottom: var(--spacing-md);
     flex-wrap: wrap;
 }
+
+/* --- 年月 picker (v2.5 Spec A) --- */
+.calendar-ym-picker {
+    position: absolute; z-index: 30; margin-top: 4px; padding: 10px;
+    background: var(--bg-secondary, #fff); border: 1px solid var(--border-color, #d8d2c6);
+    border-radius: 10px; box-shadow: 0 4px 14px rgba(0, 0, 0, .12); max-width: 340px;
+}
+.calendar-ym-picker .ym-years { display: flex; flex-wrap: wrap; gap: 4px; max-height: 120px; overflow-y: auto; margin-bottom: 8px; }
+.calendar-ym-picker .ym-months { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; }
+.calendar-ym-picker .btn.active { outline: 2px solid var(--cat-work, #2a78d6); }
 
 .calendar-month-label {
     font-size: var(--font-size-lg);
@@ -313,6 +329,22 @@
     word-break: break-word;
 }
 
+/* 跨天事件「第 N 天／共 M 天」徽章 (v2.5 Spec A §4 日面板 item 2)。
+   小 chip，樣式比照 .day-event-time 的時間 chip（同一份中性配色語彙），
+   inline 掛在標題文字後面，不佔獨立一行 */
+.day-event-span-badge {
+    display: inline-block;
+    margin-left: 6px;
+    padding: 1px 6px;
+    border-radius: var(--border-radius-full);
+    background-color: var(--neutral-200);
+    color: var(--text-secondary, #666);
+    font-size: var(--font-size-xs);
+    font-weight: 400;
+    white-space: nowrap;
+    vertical-align: middle;
+}
+
 /* 分類名稱以文字呈現 —— 分類身分不靠顏色單獨承擔 */
 .day-event-meta {
     font-size: var(--font-size-xs);
@@ -411,4 +443,76 @@
     .calendar-cell {
         transition: none;
     }
+}
+
+/* --- AI 日記印章 (v2.5 Spec A；佈局 A＝月格角落徽章、P1＝日面板印章開場) --- */
+.calendar-cell { position: relative; }
+.cell-stamp { position: absolute; top: 2px; right: 3px; line-height: 0; }
+.day-stamp-card {
+    display: flex; align-items: center; gap: 10px;
+    background: var(--bg-secondary, #fff); border: 2px solid var(--border-color, #f0e6d2);
+    border-radius: 10px; padding: 10px; margin-bottom: 8px;
+}
+.day-stamp-text { flex: 1; min-width: 0; }
+.day-stamp-phrase { margin: 0 0 4px; font-size: 14px; }
+.day-stamp-delete { opacity: .35; }
+.day-stamp-card:hover .day-stamp-delete, .day-stamp-delete:focus { opacity: 1; }
+
+/* --- 跨天橫槓 (v2.5 Spec A)：grid 顯式定位項，蓋過格線的連續膠囊 --- */
+.cal-span-bar {
+    align-self: start; z-index: 2; height: 14px; margin-top: 24px;
+    border: none; border-radius: 7px; padding: 0 6px;
+    color: #fff; font-size: 10px; line-height: 14px; text-align: left;
+    overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
+    cursor: pointer; box-shadow: 0 1px 2px rgba(0, 0, 0, .18);
+}
+.cal-span-bar.lane-1 { margin-top: 40px; }
+.cal-span-bar.no-round-left { border-top-left-radius: 0; border-bottom-left-radius: 0; }
+.cal-span-bar.no-round-right { border-top-right-radius: 0; border-bottom-right-radius: 0; }
+/* +N 溢出徽章：與 .cal-span-bar.lane-1 同一 margin-top（兩道 lane 都佔滿時，
+   徽章本就該疊在第 2 道橫槓尾端那個位置），但純文字直接疊在有色橫槓上難以
+   辨讀。給它一顆小背景 chip 撐開視覺層次，z-index 蓋過橫槓（3 > 2）而非
+   跟橫槓同層──同層時堆疊順序取決於 DOM 順序這種容易變動的東西。 */
+.cell-span-more {
+    align-self: start; justify-self: end; z-index: 3;
+    margin-top: 40px; margin-right: 3px; padding: 0 4px;
+    border-radius: 6px; background: var(--bg-secondary, #fff);
+    font-size: 9px; line-height: 14px;
+    color: var(--text-secondary, #8a7a66); pointer-events: none;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, .18);
+}
+
+/* --- 事件表單顏色 swatch (v2.5 Spec A) --- */
+.color-swatches { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.color-swatches .swatch { display: inline-flex; align-items: center; cursor: pointer; }
+.color-swatches .swatch input { width: auto; margin: 0; }
+.color-swatches .swatch:not(.swatch-default) input { appearance: none; -webkit-appearance: none;
+    width: 22px; height: 22px; border-radius: 4px; background: var(--swatch);
+    border: 2px solid transparent; cursor: pointer; }
+.color-swatches .swatch:not(.swatch-default) input:checked { border-color: var(--text-color, #4b2e1e); }
+
+/* --- 事件表單日期區間選擇器 (v2.5 驗收回饋：航空訂票式) --- */
+#event-date-group { position: relative; }
+#event-date[readonly], #event-end-date[readonly] { cursor: pointer; }
+.event-range-picker {
+    position: absolute; left: 0; top: 100%; z-index: 40; margin-top: 4px; padding: 10px;
+    background: var(--bg-secondary, #fff); border: 1px solid var(--border-color, #d8d2c6);
+    border-radius: 10px; box-shadow: 0 4px 14px rgba(0, 0, 0, .15); width: 296px;
+}
+.range-picker-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px; }
+.range-picker-hint { margin: 0 0 6px; font-size: 11px; color: var(--text-secondary, #8a7a66); }
+.range-picker-week {
+    display: grid; grid-template-columns: repeat(7, 1fr); text-align: center;
+    font-size: 11px; color: var(--text-secondary, #8a7a66); margin-bottom: 2px;
+}
+.range-picker-days { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; }
+.range-day {
+    border: none; background: none; padding: 6px 0; border-radius: 6px;
+    cursor: pointer; font-size: 13px; color: inherit;
+}
+.range-day:hover { background: var(--border-color, #f0e6d2); }
+.range-day.other-month { opacity: .35; }
+.range-day.in-preview { background: rgba(42, 120, 214, .18); }
+.range-day.range-selected, .range-day.range-selected.in-preview {
+    background: var(--cat-work, #2a78d6); color: #fff;
 }

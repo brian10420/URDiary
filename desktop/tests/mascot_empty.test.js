@@ -185,7 +185,7 @@ describe('CalendarModule 分類圖標兩級渲染接線（吉祥物插圖，task
         window.UIManager = { showToast: vi.fn() };
     });
 
-    it('月格用 18px 無臉圖標（title 提示逐字保留）；日清單用 24px 有臉圖標', async () => {
+    it('月格保持整潔只用色點（v2.5 驗收回饋）；日清單維持 24px 有臉圖標', async () => {
         const todayIso = CalendarModule.toIsoDate(new Date());
         const occurrence = {
             event_id: 1,
@@ -202,11 +202,12 @@ describe('CalendarModule 分類圖標兩級渲染接線（吉祥物插圖，task
         CalendarModule.init(); // selectedDate 預設為今天，與 occurrence.date 對上
         await CalendarModule.loadMonth();
 
+        // v2.5 驗收回饋：跨天橫槓會壓到月格圖標，月格改回小色點保持整潔，
+        // 吉祥物圖標只留在右側日面板（24px 有臉）。
         const gridHtml = document.querySelector('.calendar-grid').innerHTML;
-        expect(gridHtml).toContain('mascot-cat-icon');
-        expect(gridHtml).toContain('width="18"');
-        expect(gridHtml).not.toContain('class="face"'); // 月格是無臉版
-        // 舊 cat-dot 的 title 提示（分類名稱: 事件標題）逐字保留，只是換了承載元素
+        expect(gridHtml).toContain('cat-dot');
+        expect(gridHtml).not.toContain('mascot-cat-icon');
+        // cat-dot 的 title 提示（分類名稱: 事件標題）維持不變
         expect(gridHtml).toContain(`title="${I18N.t('category.work')}: 晨會"`);
 
         const dayListHtml = document.querySelector('.day-event-list').innerHTML;

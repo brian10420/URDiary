@@ -196,6 +196,20 @@ const ApiService = (function() {
                     if (getRefreshToken() === storedRefreshToken) {
                         console.warn('刷新令牌已失效，需要重新登入');
                         clearAuthToken();
+                        // session 真死必須立刻帶使用者回登入畫面。少了這步，
+                        // 後續請求因 accessToken 已清空而走不進 fetchAPI 的
+                        // 強制登出分支（`&& accessToken` guard），使用者只會
+                        // 看到一個默默 401 的空殼 UI——行事曆被錯誤路徑清空，
+                        // 看起來像「資料不見了」（2026-08-22 實際事故）。
+                        if (typeof UIManager !== 'undefined' && UIManager.showToast && typeof I18N !== 'undefined') {
+                            UIManager.showToast(I18N.t('errors.authFailed'));
+                        }
+                        try {
+                            window.dispatchEvent(new CustomEvent('urdiary:auth-expired',
+                                { detail: { endpoint: '/users/token/refresh' } }));
+                        } catch (dispatchError) {
+                            console.warn('無法發送認證失效事件 (refresh):', dispatchError);
+                        }
                     } else {
                         console.warn('刷新令牌已被其他分頁換新，保留較新的令牌');
                     }
@@ -1150,7 +1164,7 @@ const ApiService = (function() {
     // POST（會觸發 LLM 產生日記、寫入資料庫），先前的自動重試迴圈同樣移除，
     // 只送一次，失敗如實拋出。對話歷史仍保留在伺服器端，使用者可以自己
     // 決定要不要再按一次「結束對話」。
-    async function endChat(model = null) {
+    async function endChat(model = null, enableDayNote = true) {
         try {
             console.log(`調用API結束聊天並生成日記${model ? `(模型: ${model})` : ''}`);
 
@@ -1165,7 +1179,8 @@ const ApiService = (function() {
             const data = await fetchAPI('/chat/end/', {
                 method: 'POST',
                 body: {
-                    exclude_interaction_notes: true  // 防止將互動筆記融入日記
+                    exclude_interaction_notes: true,  // 防止將互動筆記融入日記
+                    enable_day_note: enableDayNote !== false  // v2.5 Spec A：AI 行事曆印章開關
                 }
             });
 
@@ -1233,7 +1248,10 @@ const ApiService = (function() {
             date: diary.diary_date || new Date().toISOString(),
             mood: getMoodFromValence(diary.valence),
             valence: diary.valence || 0.5,
-            arousal: diary.arousal || 0.5
+            arousal: diary.arousal || 0.5,
+            // v2.5 日記可愛化：當日 AI 印章（無章＝null）
+            stamp: diary.stamp || null,
+            stamp_phrase: diary.stamp_phrase || null
         }));
 
         // 保存到本地存儲，作為離線時的唯讀快取
@@ -1268,6 +1286,17 @@ const ApiService = (function() {
     // 刪除事件 → { message }
     async function deleteCalendarEvent(eventId) {
         return await fetchAPI(`/calendar/events/${encodeURIComponent(eventId)}`, { method: 'DELETE' });
+    }
+
+    // v2.5 Spec A：AI 日記印章（隨月載入；無 POST——寫入在 /chat/end 伺服器端）
+    async function getDayNotes(start, end) {
+        const path = `/calendar/day-notes?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}`;
+        return await fetchAPI(path, { method: 'GET' });
+    }
+
+    // 刪除某日印章 → { message }
+    async function deleteDayNote(dateIso) {
+        return await fetchAPI(`/calendar/day-notes/${encodeURIComponent(dateIso)}`, { method: 'DELETE' });
     }
 
     /**
@@ -1557,6 +1586,8 @@ const ApiService = (function() {
         createCalendarEvent: createCalendarEvent,
         updateCalendarEvent: updateCalendarEvent,
         deleteCalendarEvent: deleteCalendarEvent,
+        getDayNotes: getDayNotes,
+        deleteDayNote: deleteDayNote,
         getLocalData: getLocalData,
         saveLocalData: saveLocalData,
         setUserId: setUserId,

@@ -700,6 +700,12 @@ const SettingsModule = (function() {
         if (modeEl) modeEl.value = VoiceModule.getInputMode();
         if (autoreadEl) autoreadEl.checked = VoiceModule.isAutoRead();
         if (voiceIdEl) voiceIdEl.value = VoiceModule.getVoiceId();
+
+        // v2.5 Spec A：「AI 行事曆印章」設定載入
+        const stampEl = document.getElementById('stamp-enabled');
+        if (stampEl && typeof ChatModule !== 'undefined' && ChatModule.isDayNoteEnabled) {
+            stampEl.checked = ChatModule.isDayNoteEnabled();
+        }
     }
 
     function saveVoicePrefs() {
@@ -709,6 +715,12 @@ const SettingsModule = (function() {
         if (modeEl) VoiceModule.setInputMode(modeEl.value);
         if (autoreadEl) VoiceModule.setAutoRead(autoreadEl.checked);
         if (voiceIdEl) VoiceModule.setVoiceId(voiceIdEl.value.trim());
+
+        // v2.5 Spec A：「AI 行事曆印章」設定保存（stampEl 於儲存函式內重新 getElementById）
+        const stampEl = document.getElementById('stamp-enabled');
+        if (stampEl && typeof ChatModule !== 'undefined' && ChatModule.setDayNoteEnabled) {
+            ChatModule.setDayNoteEnabled(stampEl.checked);
+        }
     }
 
     function init() {

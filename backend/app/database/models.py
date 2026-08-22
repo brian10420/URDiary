@@ -193,5 +193,27 @@ class CalendarEvent(Base):
     recurrence = Column(String(10), nullable=False, default="none")  # none/daily/weekly/monthly/yearly
     recurrence_until = Column(Date, nullable=True)         # 含當日
     reminder_minutes = Column(Integer, nullable=True)      # NULL = 不提醒 (前端 in-app 通知用)
+    end_date = Column(Date, nullable=True)    # 跨天事件結束日 (含當日)；NULL=單日。僅 recurrence="none" 的全天事件可設 (schema+路由雙層驗證)
+    color = Column(String(7), nullable=True)  # 事件自選色 "#rrggbb"；NULL=前端用分類色 --cat-*
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class DayNote(Base):
+    """AI 日記印章＋小語 (v2.5 Spec A)。一使用者一天最多一筆 (upsert 覆蓋)。
+
+    note_date 用「日記日」(utils.time_utils.get_diary_date，凌晨 5 點換日)——
+    印章代表的是那篇日記的日子，跟行事曆事件的「真實牆上日期」語意不同，
+    這是刻意的：半夜寫完的日記，印章要蓋在使用者心中的「今天」。
+    """
+    __tablename__ = "day_notes"
+    __table_args__ = (UniqueConstraint("user_id", "note_date", name="uq_day_notes_user_date"),)
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    note_date = Column(Date, nullable=False, index=True)
+    stamp = Column(String(24), nullable=False)      # services/day_stamp.py STAMP_IDS 之一
+    phrase = Column(Text, nullable=False)           # AI 小語 (目標 ≤30 字，入庫上限見 day_stamp.NOTE_MAX)
+    source_diary_id = Column(Integer, ForeignKey("diaries.id"), nullable=True)  # 回顧連結；刪日記時服務層置 NULL (未來 Spec D)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

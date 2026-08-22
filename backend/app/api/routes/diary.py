@@ -83,9 +83,12 @@ def get_user_diaries(user_id: int, skip: int = 0, limit: int = 100,
         )
 
     diaries = crud.get_user_diaries(db, user_id, skip, limit)
-    
+    # v2.5 日記可愛化：附上該篇日記當日的 AI 印章（無章＝None）
+    notes_by_diary = crud.get_day_notes_by_diary_ids(db, user_id, [d.id for d in diaries])
+
     results = []
     for d in diaries:
+        note = notes_by_diary.get(d.id)
         results.append({
             "diary_id": d.id,
             "title": d.title,
@@ -94,7 +97,9 @@ def get_user_diaries(user_id: int, skip: int = 0, limit: int = 100,
             "valence": d.valence,
             "arousal": d.arousal,
             "diary_date": d.diary_date.isoformat(),
-            "created_at": d.created_at.isoformat()
+            "created_at": d.created_at.isoformat(),
+            "stamp": note.stamp if note else None,
+            "stamp_phrase": note.phrase if note else None
         })
     
     api_logger.info(f"成功獲取日記列表: user_id={user_id}, count={len(results)}")
@@ -119,6 +124,7 @@ def get_diary(diary_id: int, db: Session = Depends(get_db),
         )
 
     api_logger.info(f"成功獲取日記: diary_id={diary_id}")
+    note = crud.get_day_notes_by_diary_ids(db, current_user.id, [diary.id]).get(diary.id)
     return {
         "diary_id": diary.id,
         "user_id": diary.user_id,
@@ -128,7 +134,9 @@ def get_diary(diary_id: int, db: Session = Depends(get_db),
         "valence": diary.valence,
         "arousal": diary.arousal,
         "diary_date": diary.diary_date.isoformat(),
-        "created_at": diary.created_at.isoformat()
+        "created_at": diary.created_at.isoformat(),
+        "stamp": note.stamp if note else None,
+        "stamp_phrase": note.phrase if note else None
     }
 
 @router.get("/analytics/emotion/{user_id}", response_model=Dict[str, Any],
@@ -274,7 +282,8 @@ def generate_enhanced_diary_api(user_input: UserDiaryCreate,
             numeric_user_id,
             user_input.exclude_interaction_notes,
             cfg,
-            lang=lang
+            lang=lang,
+            enable_day_note=False,  # 印章只屬於 /chat/end，這裡明確傳 False
         )
     except LLMError as e:
         log_error(e, {"user_id": user_id, "action": "enhanced_diary_generate"})

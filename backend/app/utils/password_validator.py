@@ -1,27 +1,17 @@
-import re
-
 from utils.messages import msg
 
 # 規則 -> (檢查函式, 訊息鍵)。訊息一律走 msg()，避免中文寫死在後端而讓
 # 英文使用者在手機上看到中文錯誤 (v2.3 認證強化)。
+# v2.5 放寬（使用者要求「密碼僅要求數字即可，簡單就好」）：唯一規則＝長度
+# 至少 8 字元——純數字（如 12345678）即可通過；本專案是全本地單機資料，
+# 密碼複雜度交給使用者自行決定。
 _RULES = (
     (lambda p: len(p) >= 8, "password_min_length"),
-    (lambda p: bool(re.search(r'[A-Z]', p)), "password_need_upper"),
-    (lambda p: bool(re.search(r'[a-z]', p)), "password_need_lower"),
-    (lambda p: bool(re.search(r'[0-9]', p)), "password_need_digit"),
-    (lambda p: bool(re.search(r'[!@#$%^&*(),.?":{}|<>]', p)), "password_need_special"),
 )
 
 
 def is_strong_password(password: str) -> bool:
-    """
-    檢查密碼強度是否滿足要求:
-    1. 至少8個字符
-    2. 至少包含一個大寫字母
-    3. 至少包含一個小寫字母
-    4. 至少包含一個數字
-    5. 至少包含一個特殊字符
-    """
+    """檢查密碼是否滿足要求：至少 8 個字符（純數字可）。"""
     return all(check(password) for check, _ in _RULES)
 
 

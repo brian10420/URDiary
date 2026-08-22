@@ -283,6 +283,14 @@
                         <input type="text" id="voice-id" class="form-control" maxlength="64" placeholder="">
                         <small style="display:block;margin-top:4px;color:#888;" data-i18n="voice.keyNote">語音功能使用 xAI (Grok) 金鑰——桌面版用已存的 Grok 金鑰；手機版需在伺服器端存 Grok 憑證。</small>
                     </div>
+                    <hr style="margin: 14px 0;">
+                    <h4 data-i18n="stampSet.sectionTitle">AI 行事曆印章</h4>
+                    <div class="form-group">
+                        <label style="display:flex;align-items:center;gap:8px;">
+                            <input type="checkbox" id="stamp-enabled" style="width:auto;" checked>
+                            <span data-i18n="stampSet.enable">日記完成後，自動在行事曆那天蓋上印章與小語</span>
+                        </label>
+                    </div>
                     <div id="settings-error" class="error-message" style="display: none; color: red; margin-top: 5px;"></div>
                     <div class="form-actions">
                         <button id="settings-save" class="btn" data-i18n="settings.save">儲存並使用</button>
@@ -316,16 +324,24 @@
                         <input type="text" id="event-title" class="form-control" maxlength="120"
                                placeholder="例如：看牙醫" data-i18n-placeholder="calendar.eventTitlePlaceholder">
                     </div>
-                    <div class="form-group">
+                    <div class="form-group" id="event-date-group">
                         <label for="event-date" data-i18n="calendar.date">日期:</label>
-                        <input type="date" id="event-date" class="form-control">
+                        <input type="text" id="event-date" class="form-control" readonly>
                         <p id="event-series-hint" class="form-hint" style="display: none;" data-i18n="calendar.editSeriesHint">重複事件的編輯會套用到整個系列</p>
+                        <div id="event-range-picker" class="event-range-picker" style="display: none;"></div>
                     </div>
                     <div class="form-group">
                         <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
                             <input type="checkbox" id="event-all-day" style="width: auto;" checked>
                             <span data-i18n="calendar.allDay">整天</span>
                         </label>
+                    </div>
+                    <div class="form-group">
+                        <label for="event-end-date" data-i18n="calendar.endDate">結束日期（跨天活動，留空＝單日）:</label>
+                        <input type="text" id="event-end-date" class="form-control" readonly>
+                        <small id="event-multiday-hint" style="display: none; color: #888; margin-top: 4px;" data-i18n="calendar.multiDayHint">
+                            跨天活動固定為整天型，時間／重複／提醒已停用
+                        </small>
                     </div>
                     <div class="form-group">
                         <label for="event-time" data-i18n="calendar.time">時間:</label>
@@ -342,6 +358,23 @@
                             <option value="travel" data-i18n="category.travel">出遊</option>
                             <option value="other" data-i18n="category.other" selected>其他</option>
                         </select>
+                    </div>
+                    <div class="form-group">
+                        <label data-i18n="calendar.color">顏色（跨天橫槓用）:</label>
+                        <div id="event-color-swatches" class="color-swatches">
+                            <label class="swatch swatch-default" title="分類色" data-i18n-title="calendar.colorDefault">
+                                <input type="radio" name="event-color" value="" checked>
+                                <span data-i18n="calendar.colorDefault">分類色</span>
+                            </label>
+                            <label class="swatch" style="--swatch: #e8836f;"><input type="radio" name="event-color" value="#e8836f" aria-label="#e8836f"></label>
+                            <label class="swatch" style="--swatch: #f5c542;"><input type="radio" name="event-color" value="#f5c542" aria-label="#f5c542"></label>
+                            <label class="swatch" style="--swatch: #5fd0a0;"><input type="radio" name="event-color" value="#5fd0a0" aria-label="#5fd0a0"></label>
+                            <label class="swatch" style="--swatch: #7f96c9;"><input type="radio" name="event-color" value="#7f96c9" aria-label="#7f96c9"></label>
+                            <label class="swatch" style="--swatch: #8f62c9;"><input type="radio" name="event-color" value="#8f62c9" aria-label="#8f62c9"></label>
+                            <label class="swatch" style="--swatch: #e8899a;"><input type="radio" name="event-color" value="#e8899a" aria-label="#e8899a"></label>
+                            <label class="swatch" style="--swatch: #2a78d6;"><input type="radio" name="event-color" value="#2a78d6" aria-label="#2a78d6"></label>
+                            <label class="swatch" style="--swatch: #b8b2a5;"><input type="radio" name="event-color" value="#b8b2a5" aria-label="#b8b2a5"></label>
+                        </div>
                     </div>
                     <div class="form-group">
                         <label for="event-recurrence" data-i18n="calendar.recurrence">重複:</label>
@@ -427,6 +460,7 @@
                                 <button id="back-to-list-btn" class="btn btn-sm" data-i18n="diary.backToList">返回列表</button>
                             </div>
                         </div>
+                        <div class="diary-stamp-slot" style="display: none;"></div>
                         <div class="detail-content"></div>
                         <div class="detail-footer">
                             <div class="detail-meta">
@@ -445,13 +479,16 @@
                     <button id="calendar-prev-btn" class="btn btn-sm" title="上個月" data-i18n-title="calendar.prevMonth">
                         <i class="fa fa-chevron-left"></i>
                     </button>
-                    <span class="calendar-month-label"></span>
+                    <button id="calendar-ym-btn" class="btn btn-sm" title="選擇年月" data-i18n-title="calendar.pickYearMonth">
+                        <span class="calendar-month-label"></span>
+                    </button>
                     <button id="calendar-next-btn" class="btn btn-sm" title="下個月" data-i18n-title="calendar.nextMonth">
                         <i class="fa fa-chevron-right"></i>
                     </button>
                     <button id="calendar-today-btn" class="btn btn-sm" data-i18n="calendar.today">今天</button>
                     <button id="calendar-add-btn" class="btn btn-sm btn-accent" data-i18n="calendar.addEvent">新增事件</button>
                 </div>
+                <div id="calendar-ym-picker" class="calendar-ym-picker" style="display: none;"></div>
                 <div class="calendar-body">
                     <div class="calendar-weekdays"></div>
                     <div class="calendar-grid"></div>

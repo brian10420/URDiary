@@ -34,7 +34,7 @@ importScripts('/js/sw_logic.js');
 // for everyone (cache-first below means a same-URL update otherwise sits
 // stale in the old cache until this name changes and the old cache gets
 // evicted by the activate handler's cleanup).
-const CACHE_VERSION = 'urdiary-shell-v1';
+const CACHE_VERSION = 'urdiary-shell-v2';
 
 // App shell: every file the running app actually loads. Keep this in sync
 // with index.html's <link>/<script> tags and manifest.webmanifest's icons —

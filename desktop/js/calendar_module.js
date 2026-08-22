@@ -114,17 +114,92 @@ const CalendarModule = (function() {
         return new Date(Number(dateMatch[1]), Number(dateMatch[2]) - 1, Number(dateMatch[3]), hour, minute, 0, 0);
     }
 
+    // "YYYY-MM-DD" ± n 天 → "YYYY-MM-DD"（本地，避開 toISOString 的 UTC 偏移）
+    function addDaysIso(dateIso, days) {
+        const d = new Date(`${dateIso}T00:00:00`);
+        return toIsoDate(new Date(d.getFullYear(), d.getMonth(), d.getDate() + days));
+    }
+
+    /**
+     * ★ 純函式：從 occurrence 陣列收集跨天事件（span_total > 1），依 event_id 去重
+     * @returns {Array<{eventId, title, category, color, start, end}>}
+     */
+    function collectSpanEvents(occurrences) {
+        const byId = new Map();
+        (Array.isArray(occurrences) ? occurrences : []).forEach(occ => {
+            if (!occ || !(occ.span_total > 1) || !occ.event_date || !occ.end_date) return;
+            if (byId.has(occ.event_id)) return;
+            byId.set(occ.event_id, {
+                eventId: occ.event_id, title: occ.title,
+                category: categoryOf(occ), color: occ.color || null,
+                start: occ.event_date, end: occ.end_date,
+            });
+        });
+        return Array.from(byId.values());
+    }
+
+    /**
+     * ★ 純函式：某一週（weekStartIso＝該週週一）的橫槓段落與溢出計數
+     *
+     * lane 分配（spec §4）：起日早者先佔上道，同起日依 eventId 小者先；
+     * 最多 2 條 lane，其餘進 overflow（date → 被藏起的條數），該格顯示 +N。
+     * 段落欄位 colStart/colEnd 為 1-based（1=週一格 … 7=週日格，含兩端）。
+     */
+    function computeWeekSegments(spanEvents, weekStartIso) {
+        const weekEndIso = addDaysIso(weekStartIso, 6);
+        const segments = [];
+        const overflow = new Map();
+        const laneEnds = [null, null];   // 每道目前佔用到的結束日
+
+        const sorted = (spanEvents || []).slice().sort((a, b) =>
+            a.start < b.start ? -1 : a.start > b.start ? 1 : (a.eventId - b.eventId));
+
+        sorted.forEach(ev => {
+            if (ev.end < weekStartIso || ev.start > weekEndIso) return;   // 與本週無交集
+
+            const segStart = ev.start > weekStartIso ? ev.start : weekStartIso;
+            const segEnd = ev.end < weekEndIso ? ev.end : weekEndIso;
+
+            let lane = -1;
+            for (let i = 0; i < laneEnds.length; i++) {
+                if (laneEnds[i] === null || laneEnds[i] < ev.start) { lane = i; break; }
+            }
+            if (lane === -1) {
+                // 兩道皆滿：整段每一天記一筆溢出
+                for (let d = segStart; d <= segEnd; d = addDaysIso(d, 1)) {
+                    overflow.set(d, (overflow.get(d) || 0) + 1);
+                }
+                return;
+            }
+            laneEnds[lane] = ev.end;
+
+            const dayDiff = (a, b) => Math.round(
+                (new Date(`${a}T00:00:00`) - new Date(`${b}T00:00:00`)) / 86400000);
+            segments.push({
+                eventId: ev.eventId, title: ev.title, category: ev.category,
+                color: ev.color, lane: lane,
+                colStart: dayDiff(segStart, weekStartIso) + 1,
+                colEnd: dayDiff(segEnd, weekStartIso) + 1,
+                roundLeft: ev.start >= weekStartIso,
+                roundRight: ev.end <= weekEndIso,
+                showTitle: ev.start >= weekStartIso,   // 標題只在含事件起日的那一段
+            });
+        });
+
+        return { segments: segments, overflow: overflow };
+    }
+
     // --- 狀態 -----------------------------------------------------------------
 
     let viewYear = 0;                       // 目前顯示的年
     let viewMonth = 0;                      // 目前顯示的月（0-based）
     let selectedDate = null;                // 目前選取日 "YYYY-MM-DD"
     let occurrencesByDate = new Map();      // "YYYY-MM-DD" → occurrence[]（**只**服務目前顯示的月份）
+    let dayNotesByDate = new Map();         // "YYYY-MM-DD" → note（v2.5 Spec A AI 日記印章；一天最多一筆）
     let todaysOccurrences = [];             // 「今天」的 occurrence 快照，專供提醒用
     let todaysSnapshotDate = null;          // 上面那份快照對應的日期，null = 尚未取得
     let isRefreshingToday = false;          // refreshTodaysOccurrences 的併發防護
     let editingEventId = null;              // 表單目前編輯中的事件 id（新增時為 null）
-    let loadedOnce = false;                 // 惰性首載旗標
     let isLoading = false;
     let listenersBound = false;             // init() 可重複呼叫（切換帳號時），監聽器只綁一次
     let reminderTimer = null;
@@ -201,8 +276,93 @@ const CalendarModule = (function() {
         bindClick('#calendar-today-btn', goToToday);
         bindClick('#calendar-add-btn', () => openEventForm(null, selectedDate));
 
-        // 格子點擊用事件委派：每次 renderGrid 重建 innerHTML 後不必重綁
+        // 「重複到」維持原生 date input：點欄位任意處直接開選擇器（原生只有
+        // 右緣小圖示會開日曆，幾乎不可發現）。showPicker 需 user gesture，click 符合。
+        (function() {
+            const input = document.getElementById('event-until');
+            if (input && typeof input.showPicker === 'function') {
+                input.addEventListener('click', () => {
+                    try { input.showPicker(); } catch (error) { /* 非手勢或選擇器已開啟：保留原生行為 */ }
+                });
+            }
+        })();
+
+        // 日期／結束日期改用自製區間選擇器（v2.5 驗收回饋：航空訂票式兩次點選）
+        ['event-date', 'event-end-date'].forEach(id => {
+            const input = document.getElementById(id);
+            if (input) input.addEventListener('click', openRangePicker);
+        });
+        const rangePickerEl = document.getElementById('event-range-picker');
+        if (rangePickerEl) {
+            rangePickerEl.addEventListener('click', function(event) {
+                const nav = event.target.closest('[data-range-nav]');
+                if (nav) {
+                    // renderRangePicker 會重建 innerHTML，讓 event.target 脫離文件；
+                    // 不擋掉冒泡的話，document 層的外點關閉會誤判（task 8 同款坑）
+                    event.stopPropagation();
+                    const delta = Number(nav.getAttribute('data-range-nav'));
+                    const d = new Date(rangePickerMonth.year, rangePickerMonth.month + delta, 1);
+                    rangePickerMonth = { year: d.getFullYear(), month: d.getMonth() };
+                    renderRangePicker();
+                    return;
+                }
+                const day = event.target.closest('[data-range-date]');
+                if (day) {
+                    event.stopPropagation();
+                    handleRangeDayClick(day.getAttribute('data-range-date'));
+                }
+            });
+            // 航空網站式範圍預覽：選了起點後，滑過任一天即高亮兩者之間的區間
+            rangePickerEl.addEventListener('mouseover', function(event) {
+                if (!rangeFirstIso) return;
+                const btn = event.target.closest('[data-range-date]');
+                if (!btn) return;
+                const hoverIso = btn.getAttribute('data-range-date');
+                const lo = rangeFirstIso < hoverIso ? rangeFirstIso : hoverIso;
+                const hi = rangeFirstIso < hoverIso ? hoverIso : rangeFirstIso;
+                rangePickerEl.querySelectorAll('[data-range-date]').forEach(b => {
+                    const d = b.getAttribute('data-range-date');
+                    b.classList.toggle('in-preview', d >= lo && d <= hi);
+                });
+            });
+        }
+        document.addEventListener('click', function(event) {
+            const picker = document.getElementById('event-range-picker');
+            if (!picker || picker.style.display === 'none') return;
+            if (picker.contains(event.target)) return;
+            const dateInput = document.getElementById('event-date');
+            const endInput = document.getElementById('event-end-date');
+            if ((dateInput && dateInput.contains(event.target)) ||
+                (endInput && endInput.contains(event.target))) return;
+            closeRangePicker();
+        });
+
+        bindClick('#calendar-ym-btn', toggleYmPicker);
+        document.addEventListener('click', function(event) {
+            const picker = document.getElementById('calendar-ym-picker');
+            const btn = document.getElementById('calendar-ym-btn');
+            if (!picker || picker.style.display === 'none') return;
+            if (picker.contains(event.target) || (btn && btn.contains(event.target))) return;
+            picker.style.display = 'none';
+        });
+        document.addEventListener('keydown', function(event) {
+            if (event.key === 'Escape') {
+                const picker = document.getElementById('calendar-ym-picker');
+                if (picker) picker.style.display = 'none';
+                closeRangePicker();
+            }
+        });
+
+        // 格子／跨天橫槓點擊皆用事件委派：每次 renderGrid 重建 innerHTML 後不必重綁；
+        // 橫槓優先於格子（橫槓疊在格子上方，點到橫槓開該事件編輯，不觸發選日）
         gridElement.addEventListener('click', function(event) {
+            const bar = event.target.closest('[data-span-event-id]');
+            if (bar && gridElement.contains(bar)) {
+                const id = bar.getAttribute('data-span-event-id');
+                const occurrence = flattenOccurrences().find(o => String(o.event_id) === String(id));
+                if (occurrence) openEventForm(occurrence, occurrence.date);
+                return;
+            }
             const cell = event.target.closest('[data-date]');
             if (cell && gridElement.contains(cell)) {
                 selectDate(cell.getAttribute('data-date'));
@@ -226,6 +386,11 @@ const CalendarModule = (function() {
         if (recurrenceInput) {
             recurrenceInput.addEventListener('change', syncRecurrenceState);
         }
+
+        const endDateInput = document.getElementById('event-end-date');
+        if (endDateInput) {
+            endDateInput.addEventListener('change', syncMultiDayState);
+        }
     }
 
     function bindClick(selector, handler) {
@@ -240,9 +405,10 @@ const CalendarModule = (function() {
     // 進入行事曆視圖（每次都會呼叫，不是只有第一次）
     function handleEnterCalendarView() {
         ensureNotificationPermission();
-        // loadedOnce 由 loadMonth 的**成功**路徑設定：首載失敗（例如後端還沒起來）
-        // 時它維持 false，使用者下次再切進來就會自動重試，不會卡在空月曆
-        if (!loadedOnce && !isLoading) {
+        // 每次切進行事曆都重新載入（v2.5 驗收回饋：日記結束後伺服器端剛蓋的
+        // AI 印章要即時出現，不能等重啟）。後端是本地 SQLite，重抓成本趨近零；
+        // isLoading 防止使用者快速切換視圖時重疊載入。
+        if (!isLoading) {
             loadMonth();
         }
     }
@@ -255,11 +421,17 @@ const CalendarModule = (function() {
 
         isLoading = true;
         try {
-            const response = await ApiService.getCalendarEvents(range.startIso, range.endIso);
+            const [response, notesResponse] = await Promise.all([
+                ApiService.getCalendarEvents(range.startIso, range.endIso),
+                (typeof ApiService.getDayNotes === 'function'
+                    ? ApiService.getDayNotes(range.startIso, range.endIso)
+                        .catch(err => { console.warn('載入 AI 印章失敗（不影響月曆）:', err); return null; })
+                    : Promise.resolve(null)),
+            ]);
             indexOccurrences(response && response.occurrences);
+            indexDayNotes(notesResponse && notesResponse.notes);
             // 這次載入的範圍涵蓋今天的話，順手更新提醒用的快照（免一次額外請求）
             applyTodaysSnapshot(range.startIso, range.endIso);
-            loadedOnce = true;
             renderGrid();
             renderDayPanel(selectedDate);
             scheduleReminders();
@@ -267,7 +439,7 @@ const CalendarModule = (function() {
             console.error('載入行事曆事件失敗:', error);
             // 載入失敗時不留舊月份的殘影，避免使用者誤以為新月份沒有事件。
             // 注意：**不動 todaysOccurrences** —— 提醒是背景功能，不該被某次
-            // 翻月的載入失敗連坐。loadedOnce 也維持原值，讓下次進視圖能重試。
+            // 翻月的載入失敗連坐。下次進視圖會自動重載重試。
             occurrencesByDate = new Map();
             renderGrid();
             renderDayPanel(selectedDate);
@@ -294,6 +466,29 @@ const CalendarModule = (function() {
         });
 
         occurrencesByDate.forEach(list => list.sort(compareOccurrences));
+    }
+
+    // 目前月份索引攤平回陣列（collectSpanEvents 的輸入）
+    function flattenOccurrences() {
+        const all = [];
+        occurrencesByDate.forEach(list => { all.push.apply(all, list); });
+        return all;
+    }
+
+    // 印章依日期建索引；一天最多一筆 (後端 UNIQUE)，直接覆蓋
+    function indexDayNotes(notes) {
+        dayNotesByDate = new Map();
+        if (!Array.isArray(notes)) return;
+        notes.forEach(n => {
+            if (n && typeof n.date === 'string' && n.stamp) dayNotesByDate.set(n.date, n);
+        });
+    }
+
+    // 月格 14px 印章徽章 (核可佈局 A)；tooltip = 小語全文
+    function renderCellStamp(note) {
+        if (!note || typeof MascotModule === 'undefined' || !MascotModule.stampIcon) return '';
+        return `<span class="cell-stamp" title="${escapeHtml(note.phrase || '')}">` +
+               `${MascotModule.stampIcon(note.stamp, 14)}</span>`;
     }
 
     /**
@@ -416,10 +611,42 @@ const CalendarModule = (function() {
             if (iso === selectedDate) classes.push('selected');
             if (cellDate.getDay() === 0 || cellDate.getDay() === 6) classes.push('weekend');
 
-            html += `<button type="button" class="${classes.join(' ')}" data-date="${escapeHtml(iso)}">` +
+            // 顯式定位（grid-row/grid-column）：.calendar-grid 沒有 grid-template-rows，
+            // 42 格與跨天橫槓／+N 溢出徽章都落在同一份隱式格線上。CSS Grid 的
+            // sparse 自動排列會先安置「兩軸皆定位」的顯式項目（橫槓／徽章），
+            // 再讓沒有定位的項目跳過已佔用格子依序排——一旦有橫槓，42 格就會
+            // 整批被擠位、列數從 6 長成 7（headless Chromium 對真樣式表實測
+            // 證實，jsdom 量不到）。把每一格也做成「兩軸皆定位」的顯式項目，
+            // 兩者就能在同一格自由疊放（橫槓既有的 z-index 負責疊放順序），
+            // 不再觸發自動排列的避讓規則。row/col 皆 1-based。
+            const gridRow = Math.floor(i / 7) + 1;
+            const gridCol = (i % 7) + 1;
+            html += `<button type="button" class="${classes.join(' ')}" data-date="${escapeHtml(iso)}"` +
+                    ` style="grid-row: ${gridRow}; grid-column: ${gridCol};">` +
                     `<span class="cell-day">${cellDate.getDate()}</span>` +
+                    renderCellStamp(dayNotesByDate.get(iso)) +
                     renderCellDots(occurrencesByDate.get(iso)) +
                     `</button>`;
+        }
+
+        // 跨天橫槓：顯式定位的 grid 子項（見 Task 6 渲染原理），附加在 cell 之後
+        const spanEvents = collectSpanEvents(flattenOccurrences());
+        for (let week = 0; week < 6; week++) {
+            const weekStartIso = toIsoDate(new Date(start.getFullYear(), start.getMonth(), start.getDate() + week * 7));
+            const out = computeWeekSegments(spanEvents, weekStartIso);
+            out.segments.forEach(seg => {
+                const cls = ['cal-span-bar', `lane-${seg.lane}`];
+                if (!seg.roundLeft) cls.push('no-round-left');
+                if (!seg.roundRight) cls.push('no-round-right');
+                const bg = seg.color ? escapeHtml(seg.color) : `var(--cat-${escapeHtml(seg.category)})`;
+                html += `<button type="button" class="${cls.join(' ')}" data-span-event-id="${escapeHtml(seg.eventId)}"` +
+                        ` style="grid-row: ${week + 1}; grid-column: ${seg.colStart} / ${seg.colEnd + 1}; background: ${bg};"` +
+                        ` title="${escapeHtml(seg.title)}">${seg.showTitle ? escapeHtml(seg.title) : ''}</button>`;
+            });
+            out.overflow.forEach((count, dateIso) => {
+                const col = Math.round((new Date(`${dateIso}T00:00:00`) - new Date(`${weekStartIso}T00:00:00`)) / 86400000) + 1;
+                html += `<span class="cell-span-more" style="grid-row: ${week + 1}; grid-column: ${col};">+${count}</span>`;
+            });
         }
 
         gridElement.innerHTML = html;
@@ -448,14 +675,9 @@ const CalendarModule = (function() {
         shown.forEach(occ => {
             const category = categoryOf(occ);
             const tip = `${I18N.t('category.' + category)}: ${occ.title}`;
-            // 吉祥物插圖（v2.4 spec③ task 7）：色點換成無臉 18px 圖標；title
-            // 內容與跳脫方式逐字沿用舊版 cat-dot，只是外包一層 span 承載。
-            // typeof guard 比照本檔 renderDayPanel 空分支既有慣例——
-            // calendar_helpers.test.js 會不帶 mascot.js 單獨載入本檔，
-            // 退路是原本的 cat-dot 色點，css 未刪。
-            html += (typeof MascotModule !== 'undefined')
-                ? `<span title="${escapeHtml(tip)}">${MascotModule.categoryIcon(category, 18)}</span>`
-                : `<span class="cat-dot cat-${escapeHtml(category)}" title="${escapeHtml(tip)}"></span>`;
+            // v2.5 驗收回饋：跨天橫槓會壓到 18px 吉祥物圖標，月格改回小色點
+            // 保持整潔；吉祥物圖標只留在右側日面板（renderDayPanel 24px 有臉）。
+            html += `<span class="cat-dot cat-${escapeHtml(category)}" title="${escapeHtml(tip)}"></span>`;
         });
         if (hiddenCount > 0) {
             html += `<span class="cell-more">+${hiddenCount}</span>`;
@@ -480,8 +702,23 @@ const CalendarModule = (function() {
 
         let html = `<div class="day-panel-header">
                 <h3 class="day-panel-title">${escapeHtml(heading)}</h3>
-                <button type="button" class="btn btn-sm" data-action="add">${escapeHtml(I18N.t('calendar.addEvent'))}</button>
             </div>`;
+
+        const note = dayNotesByDate.get(iso);
+        if (note && typeof MascotModule !== 'undefined' && MascotModule.stampIcon) {
+            const sourceBtn = note.source_diary_id
+                ? `<button type="button" class="btn btn-sm" data-action="open-diary">${escapeHtml(I18N.t('calendar.stampFromDiary'))}</button>`
+                : '';
+            html += `<div class="day-stamp-card">
+                    ${MascotModule.stampIcon(note.stamp, 40)}
+                    <div class="day-stamp-text">
+                        <p class="day-stamp-phrase">${escapeHtml(note.phrase || '')}</p>
+                        ${sourceBtn}
+                    </div>
+                    <button type="button" class="btn btn-sm day-stamp-delete" data-action="delete-note"
+                            title="${escapeHtml(I18N.t('calendar.stampDelete'))}"><i class="fa fa-trash"></i></button>
+                </div>`;
+        }
 
         if (list.length === 0) {
             // 吉祥物插圖（v2.4 spec③ task 4）：舉手看月曆姿勢＋i18n 文案取代純文字提示。
@@ -498,13 +735,23 @@ const CalendarModule = (function() {
             list.forEach(occ => {
                 const category = categoryOf(occ);
                 const timeLabel = occ.time ? occ.time : I18N.t('calendar.allDayLabel');
-                html += `<li class="day-event" data-event-id="${escapeHtml(occ.event_id)}">
+                // 跨天事件 (spec §4 日面板 item 2)：「第 N 天／共 M 天」徽章＋左緣
+                // 4px 色條。顏色規則與月曆橫槓 (renderGrid 內 seg.color) 同一條：
+                // color || 分類色，一樣 escapeHtml 兩者，不信任後端存的自選色格式。
+                const isSpan = occ.span_total > 1;
+                const spanBadge = isSpan
+                    ? `<span class="day-event-span-badge">${escapeHtml(
+                        I18N.t('calendar.spanDayBadge', { n: occ.span_day, m: occ.span_total }))}</span>`
+                    : '';
+                const edgeColor = occ.color ? escapeHtml(occ.color) : `var(--cat-${escapeHtml(category)})`;
+                const rowStyle = isSpan ? ` style="border-left: 4px solid ${edgeColor}; padding-left: 6px;"` : '';
+                html += `<li class="day-event" data-event-id="${escapeHtml(occ.event_id)}"${rowStyle}>
                         <span class="day-event-time">${escapeHtml(timeLabel)}</span>
                         ${(typeof MascotModule !== 'undefined')
                             ? MascotModule.categoryIcon(category, 24)
                             : `<span class="cat-dot cat-${escapeHtml(category)}"></span>`}
                         <span class="day-event-main">
-                            <span class="day-event-title">${escapeHtml(occ.title)}</span>
+                            <span class="day-event-title">${escapeHtml(occ.title)}${spanBadge}</span>
                             <span class="day-event-meta">${escapeHtml(I18N.t('category.' + category))}${
                                 occ.recurrence && occ.recurrence !== 'none'
                                     ? ' · ' + escapeHtml(I18N.t('recurrence.' + occ.recurrence))
@@ -537,8 +784,15 @@ const CalendarModule = (function() {
         if (!button || !dayPanelElement.contains(button)) return;
 
         const action = button.getAttribute('data-action');
-        if (action === 'add') {
-            openEventForm(null, selectedDate);
+        if (action === 'delete-note') {
+            deleteDayNoteFor(selectedDate);
+            return;
+        }
+        if (action === 'open-diary') {
+            // v1：跳到日記視圖（若 DiaryModule 未來提供 openDiary(id) 再深連結）
+            if (typeof UIManager !== 'undefined' && UIManager.handleNavigation) {
+                UIManager.handleNavigation('diary');
+            }
             return;
         }
 
@@ -592,6 +846,134 @@ const CalendarModule = (function() {
         loadMonth();
     }
 
+    // --- 年月 picker (v2.5 Spec A #9) ------------------------------------------
+
+    let pickerYear = null;   // picker 內暫選的年（尚未套用）
+
+    function toggleYmPicker() {
+        const picker = document.getElementById('calendar-ym-picker');
+        if (!picker) return;
+        if (picker.style.display !== 'none') { picker.style.display = 'none'; return; }
+        pickerYear = viewYear;
+        renderYmPicker();
+        picker.style.display = 'block';
+    }
+
+    function renderYmPicker() {
+        const picker = document.getElementById('calendar-ym-picker');
+        if (!picker) return;
+
+        let html = '<div class="ym-years">';
+        for (let y = viewYear - 10; y <= viewYear + 10; y++) {
+            html += `<button type="button" class="btn btn-sm${y === pickerYear ? ' active' : ''}" data-ym-year="${y}">${y}</button>`;
+        }
+        html += '</div><div class="ym-months">';
+        for (let m = 0; m < 12; m++) {
+            const label = new Date(2026, m, 1).toLocaleDateString(I18N.dateLocale(), { month: 'short' });
+            html += `<button type="button" class="btn btn-sm" data-ym-month="${m}">${escapeHtml(label)}</button>`;
+        }
+        html += '</div>';
+        picker.innerHTML = html;
+
+        // stopPropagation：renderYmPicker 用 innerHTML 整組重建，年按鈕點下去那一刻
+        // 自己就被換成新節點、從 picker 分離；click 事件的冒泡路徑卻是「事件開始
+        // 分派那一刻」就固定好的（DOM 事件規格），不會因中途換節點而改道，照樣會
+        // 冒泡到 bindListeners 掛在 document 上的「點外面關閉」監聽器。屆時
+        // event.target 已不是 picker 的子孫，picker.contains(event.target) 判斷
+        // 會誤判成「點在外面」而把 picker 關掉——選年應該只更新高亮、不關閉。
+        // 月按鈕本身會自己關閉 picker，理論上不受影響，但同樣是 renderYmPicker
+        // 重建出來的節點、同一個潛在陷阱，一併擋掉冒泡以保持兩者行為對稱。
+        picker.querySelectorAll('[data-ym-year]').forEach(btn => btn.addEventListener('click', (event) => {
+            event.stopPropagation();
+            pickerYear = Number(btn.getAttribute('data-ym-year'));
+            renderYmPicker();   // 更新 active 高亮，不關閉
+        }));
+        picker.querySelectorAll('[data-ym-month]').forEach(btn => btn.addEventListener('click', (event) => {
+            event.stopPropagation();
+            viewYear = pickerYear;
+            viewMonth = Number(btn.getAttribute('data-ym-month'));
+            picker.style.display = 'none';
+            renderMonthLabel();   // 先同步更新標籤（loadMonth 是 async，不 await——標籤不該等網路）
+            loadMonth();
+        }));
+    }
+
+    // --- 事件表單日期區間選擇器（v2.5 驗收回饋：航空訂票式兩次點選） ----------
+    // 點日期/結束日期欄開啟；第一次點選＝起點（標記並保持開啟），第二次點選
+    // 後依前後自動排序寫回兩欄（同一天點兩次＝單日，結束日清空）並關閉。
+
+    let rangePickerMonth = null;   // { year, month }：彈窗目前顯示的月份
+    let rangeFirstIso = null;      // 第一次點選的日期（null＝尚未選）
+
+    function openRangePicker() {
+        const picker = document.getElementById('event-range-picker');
+        if (!picker) return;
+        const startVal = getValue('event-date');
+        const base = startVal ? new Date(`${startVal}T00:00:00`) : new Date();
+        rangePickerMonth = { year: base.getFullYear(), month: base.getMonth() };
+        rangeFirstIso = null;
+        renderRangePicker();
+        picker.style.display = 'block';
+    }
+
+    function closeRangePicker() {
+        const picker = document.getElementById('event-range-picker');
+        if (picker) picker.style.display = 'none';
+        rangeFirstIso = null;
+    }
+
+    function renderRangePicker() {
+        const picker = document.getElementById('event-range-picker');
+        if (!picker || !rangePickerMonth) return;
+        const year = rangePickerMonth.year;
+        const month = rangePickerMonth.month;
+        const label = new Date(year, month, 1).toLocaleDateString(
+            I18N.dateLocale(), { year: 'numeric', month: 'long' });
+
+        let html = `<div class="range-picker-header">
+                <button type="button" class="btn btn-sm" data-range-nav="-1">&lsaquo;</button>
+                <span class="range-picker-label">${escapeHtml(label)}</span>
+                <button type="button" class="btn btn-sm" data-range-nav="1">&rsaquo;</button>
+            </div>
+            <p class="range-picker-hint">${escapeHtml(I18N.t('calendar.rangeHint'))}</p>`;
+
+        // 週標頭與主月曆同語系、同週一起始（2026-06-01 是週一）
+        html += '<div class="range-picker-week">';
+        for (let d = 0; d < 7; d++) {
+            const wd = new Date(2026, 5, 1 + d);
+            html += `<span>${escapeHtml(wd.toLocaleDateString(I18N.dateLocale(), { weekday: 'narrow' }))}</span>`;
+        }
+        html += '</div><div class="range-picker-days">';
+
+        const first = new Date(year, month, 1);
+        const mondayOffset = (first.getDay() + 6) % 7;
+        for (let i = 0; i < 42; i++) {
+            const d = new Date(year, month, 1 - mondayOffset + i);
+            const iso = toIsoDate(d);
+            const cls = ['range-day'];
+            if (d.getMonth() !== month) cls.push('other-month');
+            if (iso === rangeFirstIso) cls.push('range-selected');
+            html += `<button type="button" class="${cls.join(' ')}" data-range-date="${iso}">${d.getDate()}</button>`;
+        }
+        html += '</div>';
+        picker.innerHTML = html;
+    }
+
+    function handleRangeDayClick(iso) {
+        if (!rangeFirstIso) {
+            rangeFirstIso = iso;
+            renderRangePicker();   // 標記起點，保持開啟等第二次點選
+            return;
+        }
+        // 第二次點選：依日期前後自動決定起訖；同一天＝單日
+        const start = rangeFirstIso < iso ? rangeFirstIso : iso;
+        const end = rangeFirstIso < iso ? iso : rangeFirstIso;
+        setValue('event-date', start);
+        setValue('event-end-date', end > start ? end : '');
+        closeRangePicker();
+        syncMultiDayState();   // 跨天＝整天鎖定；單日＝解除鎖定
+    }
+
     // --- 事件表單 -------------------------------------------------------------
 
     // 提醒下拉選單的選項需要 {n} 代換，無法用 data-i18n 靜態翻譯，這裡動態建
@@ -635,7 +1017,9 @@ const CalendarModule = (function() {
             event_time: occurrence ? occurrence.time : null,
             recurrence: occurrence ? occurrence.recurrence : 'none',
             recurrence_until: occurrence ? occurrence.recurrence_until : null,
-            reminder_minutes: occurrence ? occurrence.reminder_minutes : null
+            reminder_minutes: occurrence ? occurrence.reminder_minutes : null,
+            end_date: (occurrence && occurrence.end_date) ? occurrence.end_date : null,
+            color: (occurrence && occurrence.color) ? occurrence.color : null
         };
     }
 
@@ -663,12 +1047,19 @@ const CalendarModule = (function() {
         setValue('event-until', values.recurrence_until || '');
         setValue('event-reminder', values.reminder_minutes === null || values.reminder_minutes === undefined
             ? '' : String(values.reminder_minutes));
+        setValue('event-end-date', values.end_date || '');
+        const colorRadio = document.querySelector(
+            `input[name="event-color"][value="${values.color || ''}"]`);
+        const defaultRadio = document.querySelector('input[name="event-color"][value=""]');
+        if (colorRadio) colorRadio.checked = true;
+        else if (defaultRadio) defaultRadio.checked = true;
 
         const allDayInput = document.getElementById('event-all-day');
         if (allDayInput) allDayInput.checked = !values.event_time;
 
         syncAllDayState();
         syncRecurrenceState();
+        syncMultiDayState();
         showFormError('');
 
         // 標題與刪除鈕依「新增 / 編輯」切換
@@ -715,6 +1106,31 @@ const CalendarModule = (function() {
         if (seriesHint) seriesHint.style.display = isRecurring ? '' : 'none';
     }
 
+    // 跨天（設了結束日）＝整天型鎖定：全天強制勾選並停用、時間/重複/提醒停用
+    // （與後端 schema/路由的 multi_day_invalid 不變量一致；readForm 對停用中的
+    // 重複選單一律輸出 'none'，比照「停用中的提醒＝未設提醒」的既有規則）
+    function syncMultiDayState() {
+        const endInput = document.getElementById('event-end-date');
+        if (!endInput) return;
+        const isMultiDay = !!endInput.value;
+
+        const allDayInput = document.getElementById('event-all-day');
+        if (allDayInput) {
+            if (isMultiDay) allDayInput.checked = true;
+            allDayInput.disabled = isMultiDay;
+        }
+        const recurrenceInput = document.getElementById('event-recurrence');
+        if (recurrenceInput) {
+            if (isMultiDay) recurrenceInput.value = 'none';
+            recurrenceInput.disabled = isMultiDay;
+        }
+        const hint = document.getElementById('event-multiday-hint');
+        if (hint) hint.style.display = isMultiDay ? 'block' : 'none';
+
+        syncAllDayState();
+        syncRecurrenceState();
+    }
+
     // 從表單讀出一份完整的事件欄位（值的形狀與後端 schema 一致）
     function readForm() {
         const allDay = document.getElementById('event-all-day');
@@ -725,6 +1141,8 @@ const CalendarModule = (function() {
         // 值，也一律視為未設提醒，不能把它當成使用者這次的選擇送出。
         const reminder = (reminderInput && reminderInput.disabled) ? '' : getValue('event-reminder');
         const note = (getValue('event-note') || '').trim();
+        const colorInput = document.querySelector('input[name="event-color"]:checked');
+        const endDate = getValue('event-end-date');
 
         return {
             title: (getValue('event-title') || '').trim(),
@@ -734,7 +1152,9 @@ const CalendarModule = (function() {
             event_time: (allDay && allDay.checked) ? null : (getValue('event-time') || null),
             recurrence: recurrence,
             recurrence_until: (recurrence === 'none' || !until) ? null : until,
-            reminder_minutes: reminder === '' ? null : Number(reminder)
+            reminder_minutes: reminder === '' ? null : Number(reminder),
+            end_date: endDate || null,
+            color: (colorInput && colorInput.value) ? colorInput.value : null
         };
     }
 
@@ -747,6 +1167,10 @@ const CalendarModule = (function() {
         }
         if (!payload.event_date) {
             showFormError(I18N.t('calendar.dateRequired'));
+            return;
+        }
+        if (payload.end_date && payload.end_date < payload.event_date) {
+            showFormError(I18N.t('calendar.endBeforeStart'));
             return;
         }
         showFormError('');
@@ -796,6 +1220,20 @@ const CalendarModule = (function() {
         } catch (error) {
             console.error('刪除行事曆事件失敗:', error);
             UIManager.showToast(I18N.t('calendar.deleteFailed'));
+        }
+    }
+
+    async function deleteDayNoteFor(dateIso) {
+        if (!dateIso || !dayNotesByDate.has(dateIso)) return;
+        if (!window.confirm(I18N.t('calendar.stampDeleteConfirm'))) return;
+        try {
+            await ApiService.deleteDayNote(dateIso);
+            dayNotesByDate.delete(dateIso);
+            renderGrid();
+            renderDayPanel(selectedDate);
+        } catch (error) {
+            console.error('刪除 AI 印章失敗:', error);
+            UIManager.showToast(I18N.t('calendar.stampDeleteFailed'));
         }
     }
 
@@ -903,11 +1341,11 @@ const CalendarModule = (function() {
         console.log('重置行事曆模塊');
 
         occurrencesByDate = new Map();
+        dayNotesByDate = new Map();
         // 提醒快照也要清 —— 換帳號後不能再拿前一個帳號的事件發通知
         todaysOccurrences = [];
         todaysSnapshotDate = null;
         selectedDate = toIsoDate(new Date());
-        loadedOnce = false;
         editingEventId = null;
 
         closeEventForm();
@@ -927,16 +1365,21 @@ const CalendarModule = (function() {
         refreshTodaysOccurrences: refreshTodaysOccurrences,
         // 提醒快照的現況，供 CDP 驗證與除錯（回複本，外部改不到內部狀態）
         getReminderSnapshot: () => ({ date: todaysSnapshotDate, occurrences: todaysOccurrences.slice() }),
-        // 以下五個是純函式，僅為 vitest 單元測試曝光，行為不變
+        // 以下七個是純函式，僅為 vitest 單元測試曝光，行為不變
         toIsoDate: toIsoDate,
         monthGridRange: monthGridRange,
         computeReminderTimes: computeReminderTimes,
         rangeCoversDate: rangeCoversDate,
         buildFormValues: buildFormValues,
+        // 跨天橫槓 lane 計算 (v2.5 Spec A task 6)
+        collectSpanEvents: collectSpanEvents,
+        computeWeekSegments: computeWeekSegments,
         // 同樣僅為 vitest 曝光：會讀/寫 DOM，但對缺失元素安全（不丟例外），
         // 用來回歸測試「全天事件連帶停用提醒欄位」與「停用中的提醒選單一律
         // 視為未設提醒」這條規則
         syncAllDayState: syncAllDayState,
-        readForm: readForm
+        readForm: readForm,
+        // 跨天結束日鎖定整天型 (v2.5 Spec A task 7)：同樣僅為 vitest 曝光
+        syncMultiDayState: syncMultiDayState
     };
 })();

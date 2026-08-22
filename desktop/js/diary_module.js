@@ -229,6 +229,11 @@ const DiaryModule = (function() {
                 listItem.className = 'diary-card';
                 listItem.setAttribute('data-id', diary.id);
                 
+                // 當日 AI 印章（v2.5 日記可愛化）：有章才顯示，guard 慣例沿用
+                const stampHtml = (diary.stamp && typeof MascotModule !== 'undefined' && MascotModule.stampIcon)
+                    ? `<span class="card-stamp" title="${escapeHtml(diary.stamp_phrase || '')}">${MascotModule.stampIcon(diary.stamp, 20)}</span>`
+                    : '';
+
                 // 設置HTML內容 (title/content 來自 AI 生成的日記，必須轉義)
                 listItem.innerHTML = `
                     <div class="card-header">
@@ -237,7 +242,7 @@ const DiaryModule = (function() {
                             ${escapeHtml(moodName)}
                         </div>
                     </div>
-                    <h3 class="card-title">${escapeHtml(diary.title || I18N.t('diary.untitled'))}</h3>
+                    <h3 class="card-title">${stampHtml}${escapeHtml(diary.title || I18N.t('diary.untitled'))}</h3>
                     <div class="card-excerpt">${escapeHtml(diary.summary || getExcerpt(diary.content, 80))}</div>
                 `;
                 
@@ -333,6 +338,22 @@ const DiaryModule = (function() {
             
             if (titleElement) titleElement.textContent = diary.title || I18N.t('diary.untitled');
             if (contentElement) contentElement.innerHTML = formatContent(diary.content || I18N.t('diary.noContent'));
+
+            // 當日 AI 印章卡（v2.5 日記可愛化）：40px 印章＋小語；無章隱藏。
+            // 只展示不提供刪除——印章管理集中在行事曆日面板。
+            const stampSlot = diaryDetailElement.querySelector('.diary-stamp-slot');
+            if (stampSlot) {
+                if (diary.stamp && typeof MascotModule !== 'undefined' && MascotModule.stampIcon) {
+                    stampSlot.innerHTML = `<div class="diary-stamp-card">
+                        ${MascotModule.stampIcon(diary.stamp, 40)}
+                        <p class="diary-stamp-phrase">${escapeHtml(diary.stamp_phrase || '')}</p>
+                    </div>`;
+                    stampSlot.style.display = '';
+                } else {
+                    stampSlot.innerHTML = '';
+                    stampSlot.style.display = 'none';
+                }
+            }
             if (dateElement) dateElement.textContent = formattedDate;
             if (moodElement) moodElement.textContent = getMoodName(diary.mood);
             
@@ -404,11 +425,31 @@ const DiaryModule = (function() {
     }
     
     // 格式化內容，處理換行和特殊標記
+    // 四段結構的標準標題（與 daily_note_prompt 兩語版本同步）——
+    // 新日記輸出純文字標題行，這裡整行精確比對後轉樣式化小標
+    const SECTION_TITLES = ['今日事件', '情緒與感受', '反思與洞察', '明日方向',
+                            'Today', 'Feelings', 'Reflections', 'Tomorrow'];
+
     function formatContent(content) {
         if (!content) return `<p>${I18N.t('diary.noContent')}</p>`;
 
-        // 日記內容由 AI 生成後寫入 innerHTML —— 必須先轉義再套用段落/換行標籤
-        let formatted = escapeHtml(content).replace(/\n\n/g, '</p><p>').replace(/\n/g, '<br>');
+        // 日記內容由 AI 生成後寫入 innerHTML —— 必須先轉義再套用段落/換行標籤。
+        // 段落小標（v2.5 日記可愛化）在轉義後逐行處理：
+        // 1) 舊日記的「## 1. 今日事件」markdown 行——去掉符號與編號、只留標題
+        //    文字（顯示端回溯美化，資料庫不動）
+        // 2) 新日記的純文字標題行（SECTION_TITLES 白名單）；模型寫出變體標題
+        //    時當一般文字顯示，無害降級
+        const lines = escapeHtml(content).split('\n').map(line => {
+            const legacy = line.match(/^##\s*\d*\.?\s*(.+?)\s*$/);
+            if (legacy) return `<span class="diary-section-title">${legacy[1]}</span>`;
+            if (SECTION_TITLES.includes(line.trim())) {
+                return `<span class="diary-section-title">${line.trim()}</span>`;
+            }
+            return line;
+        });
+        let formatted = lines.join('\n').replace(/\n\n/g, '</p><p>').replace(/\n/g, '<br>');
+        // 小標本身是 block，緊跟其後的斷行不再補 <br>（避免多一行空隙）
+        formatted = formatted.replace(/<\/span><br>/g, '</span>');
         
         // 確保有開始和結束標籤
         if (!formatted.startsWith('<p>')) {
@@ -505,6 +546,7 @@ const DiaryModule = (function() {
         loadDiaries: loadDiaries,
         showDiaryDetails: showDiaryDetails,
         // 純函式，僅為 vitest 單元測試曝光，行為不變
-        getExcerpt: getExcerpt
+        getExcerpt: getExcerpt,
+        formatContent: formatContent
     };
 })();

@@ -20,6 +20,7 @@ class UserDiaryCreate(BaseModel):
     user_id: Optional[str] = None  # 已忽略，身分取自 token
     numeric_user_id: Optional[int] = None  # 已忽略，身分取自 token
     exclude_interaction_notes: bool = False
+    enable_day_note: bool = True  # v2.5 Spec A：/chat/end 才會用；前端設定「AI 行事曆印章」開關
     model: Optional[str] = None  # 已忽略，模型取自 X-LLM-Model 標頭
 
 
@@ -28,6 +29,7 @@ class UserDiaryCreate(BaseModel):
 _CalendarCategory = Literal["work", "study", "health", "family", "anniversary", "travel", "other"]
 _CalendarRecurrence = Literal["none", "daily", "weekly", "monthly", "yearly"]
 _EVENT_TIME_PATTERN = r"^([01]\d|2[0-3]):[0-5]\d$"
+_COLOR_PATTERN = r"^#[0-9a-fA-F]{6}$"
 
 
 class CalendarEventCreate(BaseModel):
@@ -40,6 +42,8 @@ class CalendarEventCreate(BaseModel):
     recurrence: _CalendarRecurrence = "none"
     recurrence_until: Optional[date] = None
     reminder_minutes: Optional[int] = Field(default=None, ge=0, le=10080)
+    end_date: Optional[date] = None
+    color: Optional[str] = Field(default=None, pattern=_COLOR_PATTERN)
 
     @model_validator(mode="after")
     def _check_recurrence_until_not_before_event_date(self):
@@ -48,6 +52,20 @@ class CalendarEventCreate(BaseModel):
         看不到的事件。event_date 是必填欄位一定有值，只需檢查 recurrence_until。"""
         if self.recurrence_until is not None and self.recurrence_until < self.event_date:
             raise ValueError("recurrence_until must not be before event_date")
+        return self
+
+    @model_validator(mode="after")
+    def _check_multi_day_rules(self):
+        """跨天事件 (v2.5 Spec A) 是「整天型」專屬：帶 end_date 就不可帶
+        event_time，也不可與重複規則並用 (spec §1 非目標)。end_date 早於
+        event_date 的事件展開不出任何 occurrence，一併在入口擋下。"""
+        if self.end_date is not None:
+            if self.end_date < self.event_date:
+                raise ValueError("end_date must not be before event_date")
+            if self.event_time is not None:
+                raise ValueError("multi-day events must be all-day (event_time must be null)")
+            if self.recurrence != "none":
+                raise ValueError("multi-day events cannot repeat (recurrence must be 'none')")
         return self
 
 
@@ -77,6 +95,8 @@ class CalendarEventUpdate(BaseModel):
     recurrence: Optional[_CalendarRecurrence] = None
     recurrence_until: Optional[date] = None
     reminder_minutes: Optional[int] = Field(default=None, ge=0, le=10080)
+    end_date: Optional[date] = None
+    color: Optional[str] = Field(default=None, pattern=_COLOR_PATTERN)
 
     @model_validator(mode="after")
     def _check_recurrence_until_not_before_event_date(self):
@@ -91,6 +111,23 @@ class CalendarEventUpdate(BaseModel):
                 and self.event_date is not None and self.recurrence_until is not None
                 and self.recurrence_until < self.event_date):
             raise ValueError("recurrence_until must not be before event_date")
+        return self
+
+    @model_validator(mode="after")
+    def _check_multi_day_rules_partial(self):
+        """partial update：只有欄位真的出現在請求裡才驗得到 (exclude_unset 語意，
+        比照上面 recurrence_until 的已知限制)。跨庫存值的完整不變量由路由層
+        update_event 以「合併後狀態」檢查 (multi_day_invalid)，這裡只擋
+        「同一請求內自相矛盾」的組合。"""
+        fs = self.model_fields_set
+        if 'end_date' in fs and self.end_date is not None:
+            if ('event_date' in fs and self.event_date is not None
+                    and self.end_date < self.event_date):
+                raise ValueError("end_date must not be before event_date")
+            if 'event_time' in fs and self.event_time is not None:
+                raise ValueError("multi-day events must be all-day (event_time must be null)")
+            if 'recurrence' in fs and self.recurrence is not None and self.recurrence != "none":
+                raise ValueError("multi-day events cannot repeat (recurrence must be 'none')")
         return self
 
 

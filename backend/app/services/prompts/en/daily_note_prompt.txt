@@ -10,28 +10,19 @@ Based on today's conversation with the user, and the background from the interac
 Important: every item in the interaction notes carries a date tag. When writing today's diary, focus only on today's conversation and items dated today. Past-dated information is background only and must not be described as happening today.
 
 [Structure]
-Write the diary in these four parts:
+Write the diary in these four parts. Each part starts with its title on its own line, plain text only (Today / Feelings / Reflections / Tomorrow) — use no markdown symbols anywhere (no #, ##, *, -, or numbered lists) in titles or body; when you would list things, write them out as natural sentences instead.
 
-## 1. Today
+Today
 Describe the main events and activities of the user's day, concretely and briefly. Focus on what they invested emotion or time in. Use specific details and the user's own way of speaking. Include only events mentioned in today's conversation.
 
-## 2. Feelings
+Feelings
 Describe the user's emotional responses in depth — capture the layers and complexity. Tie each feeling to what triggered it. Use vivid, specific emotion words; avoid vague labels.
 
-## 3. Reflections
-From the user's perspective, make meaning of today. This may include:
-- Connections to past experiences (mark them clearly as connections to the past)
-- Patterns or themes they noticed
-- Values or priorities that became clearer
-- New understanding of their own reactions
+Reflections
+From the user's perspective, make meaning of today. This may include connections to past experiences (marked clearly as such), patterns or themes they noticed, values or priorities that became clearer, and new understanding of their own reactions.
 
-## 4. Tomorrow
-Offer 1-3 small, concrete, doable steps. They should:
-- Fit the user's capacity and current situation
-- Be small and specific enough to actually do
-- Connect directly to today's events or emotional needs
-- Provide gentle structure, not commands
-- End with one warm, genuine line of encouragement
+Tomorrow
+Offer 1-3 small, concrete, doable steps. They should fit the user's capacity and current situation, be small and specific enough to actually do, connect directly to today's events or emotional needs, and provide gentle structure rather than commands, ending with one warm, genuine line of encouragement.
 
 [Writing guide]
 - First person ("I"), in the user's voice
@@ -46,9 +37,17 @@ Offer 1-3 small, concrete, doable steps. They should:
 [Output format]
 Write the diary body first (four parts above). Then, on a new final line, output a single-line JSON object (no code fences, no extra text):
 
-{{"title": "diary title", "summary": "one-line summary", "valence": 0.7, "arousal": 0.3}}
+{{"title": "diary title", "summary": "one-line summary", "valence": 0.7, "arousal": 0.3, "stamp": "cake", "note": "a line for today"}}
 
 - title: within ~8 words, concrete and close to today's core event or feeling, so the user can recognize this day at a glance (e.g., "Finally submitted the midterm report")
 - summary: one line within ~25 words, covering today's main events and mood, for future search and recall
 - valence: 0-1 (pleasantness; 0 = very negative, 1 = very positive)
 - arousal: 0-1 (intensity; 0 = very calm, 1 = very intense)
+- stamp: pick one id from the catalog below that best captures today. Even an ordinary day deserves to be remembered — choose whichever feels closest to today's flavor
+- note: within ~15 words, one warm line for today, in the voice of a friend leaving a note on the calendar (e.g., "The day you turned love into action for your mom's birthday."). No lecturing, no overstatement.
+
+[Stamp catalog]
+cake Birthday Cake | gift Sweet Surprise | heart Full of Love | cheers Cheers Together | trophy Achievement | flag Milestone Flag | book Study Time | star Shining Day | plane Off We Go | camera Snapshot Day | ball Active Day | movie Movie Night | music Music Time | food Tasty Meal | coffee Little Break | flower Garden Walk | sun Sunny Spirit | umbrella Rainy Comfort | moon Quiet Night | rainbow After the Rain | sprout New Sprout | heal Self Care | paw Furry Moments | gradcap Exam Season
+
+[Stamp mood rule (important)]
+If valence is below 0.45 (today leans heavy): stamp must be chosen only from umbrella / moon / rainbow / sprout / heal, and note shifts to quiet companionship and encouragement — acknowledge the feeling, don't celebrate, don't demand cheering up (e.g., "Rough day. I'm here while you set it down.").

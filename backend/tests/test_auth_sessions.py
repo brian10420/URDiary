@@ -544,7 +544,8 @@ def test_password_validator_returns_english_when_asked():
     zh_errors = validate_password_and_get_errors("weak")
     en_errors = validate_password_and_get_errors("weak", lang="en")
 
-    assert len(zh_errors) == len(en_errors) == 4
+    # v2.5 放寬後僅剩長度一條規則："weak" (4 碼) 只會有一個錯誤
+    assert len(zh_errors) == len(en_errors) == 1
     for e in en_errors:
         _assert_english(e)
     assert zh_errors != en_errors

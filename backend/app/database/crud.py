@@ -410,8 +410,9 @@ def get_user_embeddings(db: Session, user_id: int, model: str):
 def create_calendar_event(db: Session, user_id: int, title: str, event_date, *,
                           note: Optional[str] = None, category: str = "other",
                           event_time: Optional[str] = None, recurrence: str = "none",
-                          recurrence_until=None, reminder_minutes: Optional[int] = None):
-    """新增一筆行事曆事件 (event_date/recurrence_until 一律傳 datetime.date 物件)"""
+                          recurrence_until=None, reminder_minutes: Optional[int] = None,
+                          end_date=None, color: Optional[str] = None):
+    """新增一筆行事曆事件 (event_date/recurrence_until/end_date 一律傳 datetime.date 物件)"""
     event = models.CalendarEvent(
         user_id=user_id,
         title=title,
@@ -422,6 +423,8 @@ def create_calendar_event(db: Session, user_id: int, title: str, event_date, *,
         recurrence=recurrence,
         recurrence_until=recurrence_until,
         reminder_minutes=reminder_minutes,
+        end_date=end_date,
+        color=color,
     )
     db.add(event)
     db.commit()
@@ -475,3 +478,63 @@ def delete_calendar_event(db: Session, event_id: int) -> bool:
     db.delete(event)
     db.commit()
     return True
+
+
+# DayNote CRUD operations (v2.5 Spec A：AI 日記印章＋小語)
+def upsert_day_note(db: Session, user_id: int, note_date, stamp: str, phrase: str, *,
+                    source_diary_id: Optional[int] = None):
+    """同 (user_id, note_date) 覆蓋更新；不存在則新增 (v2.5 Spec A)。"""
+    row = (db.query(models.DayNote)
+             .filter(models.DayNote.user_id == user_id,
+                     models.DayNote.note_date == note_date)
+             .first())
+    if row is None:
+        row = models.DayNote(user_id=user_id, note_date=note_date,
+                             stamp=stamp, phrase=phrase, source_diary_id=source_diary_id)
+        db.add(row)
+    else:
+        row.stamp = stamp
+        row.phrase = phrase
+        row.source_diary_id = source_diary_id
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+def get_day_notes(db: Session, user_id: int, start, end) -> List[models.DayNote]:
+    """取 [start, end] (含兩端) 的印章，依日期排序。"""
+    return (db.query(models.DayNote)
+              .filter(models.DayNote.user_id == user_id,
+                      models.DayNote.note_date >= start,
+                      models.DayNote.note_date <= end)
+              .order_by(models.DayNote.note_date)
+              .all())
+
+
+def delete_day_note(db: Session, user_id: int, note_date) -> bool:
+    """刪除某日印章；不存在回 False。"""
+    row = (db.query(models.DayNote)
+             .filter(models.DayNote.user_id == user_id,
+                     models.DayNote.note_date == note_date)
+             .first())
+    if row is None:
+        return False
+    db.delete(row)
+    db.commit()
+    return True
+
+
+def get_day_notes_by_diary_ids(db: Session, user_id: int, diary_ids) -> dict:
+    """依 source_diary_id 反查印章（日記區顯示用，v2.5 日記可愛化）。
+
+    回 {diary_id: DayNote}；未蓋章的日記不在字典裡。日記列表時間跨度任意，
+    所以走 diary_id 反查而不是 get_day_notes 的日期區間（有 63 天上限）。
+    """
+    ids = [i for i in diary_ids if i is not None]
+    if not ids:
+        return {}
+    rows = (db.query(models.DayNote)
+              .filter(models.DayNote.user_id == user_id,
+                      models.DayNote.source_diary_id.in_(ids))
+              .all())
+    return {r.source_diary_id: r for r in rows}

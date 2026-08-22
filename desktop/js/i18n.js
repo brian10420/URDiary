@@ -58,7 +58,7 @@ const I18N = (function() {
             'create.inviteCode': '邀請碼:',
             'create.inviteCodePlaceholder': '請輸入邀請碼',
             'create.inviteRequired': '請輸入邀請碼',
-            'create.passwordPlaceholder': '至少8字元，含大小寫字母、數字與特殊符號',
+            'create.passwordPlaceholder': '至少8字元，純數字也可以',
             'create.confirmPassword': '確認密碼:',
             'create.confirmPlaceholder': '請再次輸入密碼',
             'create.submit': '創建',
@@ -68,10 +68,6 @@ const I18N = (function() {
             'create.autoLoginFailed': '帳號已建立，但自動登入失敗，請手動登入',
 
             'password.tooShort': '密碼長度至少需要8個字符',
-            'password.needUpper': '密碼需要包含至少一個大寫字母',
-            'password.needLower': '密碼需要包含至少一個小寫字母',
-            'password.needDigit': '密碼需要包含至少一個數字',
-            'password.needSpecial': '密碼需要包含至少一個特殊字符',
 
             'settings.title': '設定',
             'settings.provider': 'AI 供應商:',
@@ -146,6 +142,7 @@ const I18N = (function() {
             'calendar.today': '今天',
             'calendar.prevMonth': '上個月',
             'calendar.nextMonth': '下個月',
+            'calendar.pickYearMonth': '選擇年月',
             'calendar.addEvent': '新增事件',
             'calendar.editEvent': '編輯事件',
             'calendar.deleteEvent': '刪除事件',
@@ -176,6 +173,17 @@ const I18N = (function() {
             'calendar.titleRequired': '請輸入事件標題',
             'calendar.dateRequired': '請選擇事件日期',
             'calendar.editSeriesHint': '重複事件的編輯會套用到整個系列',
+            'calendar.stampFromDiary': '來自這天的日記',
+            'calendar.stampDelete': '刪除這天的印章',
+            'calendar.stampDeleteConfirm': '要拿掉這天的印章與小語嗎？',
+            'calendar.stampDeleteFailed': '刪除印章失敗，請稍後再試',
+            'calendar.endDate': '結束日期（跨天活動，留空＝單日）:',
+            'calendar.multiDayHint': '跨天活動固定為整天型，時間／重複／提醒已停用',
+            'calendar.rangeHint': '點選開始日，再點選結束日；同一天點兩次＝單日',
+            'calendar.color': '顏色（跨天橫槓用）:',
+            'calendar.colorDefault': '分類色',
+            'calendar.endBeforeStart': '結束日期不可早於開始日期',
+            'calendar.spanDayBadge': '第 {n} 天／共 {m} 天',
 
             'category.work': '工作',
             'category.study': '學業',
@@ -281,9 +289,20 @@ const I18N = (function() {
             'voice.voiceId': '朗讀語音（進階，留空＝預設）',
             'voice.keyNote': '語音功能使用 xAI (Grok) 金鑰——桌面版用已存的 Grok 金鑰；手機版需在伺服器端存 Grok 憑證。',
 
+            'stampSet.sectionTitle': 'AI 行事曆印章',
+            'stampSet.enable': '日記完成後，自動在行事曆那天蓋上印章與小語',
+
             'mascot.emptyDiary': '還沒有日記——跟我聊聊今天吧',
             'mascot.emptyCalendar': '這週還空空的，要記點什麼嗎？',
-            'mascot.emptyGeneric': '這裡還沒有東西耶'
+            'mascot.emptyGeneric': '這裡還沒有東西耶',
+            'stamp.cake': '生日蛋糕', 'stamp.gift': '驚喜禮物', 'stamp.heart': '愛心滿滿',
+            'stamp.cheers': '聚會乾杯', 'stamp.trophy': '成就獎盃', 'stamp.flag': '里程碑小旗',
+            'stamp.book': '讀書進修', 'stamp.star': '閃耀的一天', 'stamp.plane': '出發遠行',
+            'stamp.camera': '出遊留影', 'stamp.ball': '活力運動', 'stamp.movie': '看場電影',
+            'stamp.music': '音樂時光', 'stamp.food': '美味一餐', 'stamp.coffee': '小歇片刻',
+            'stamp.flower': '花草散步', 'stamp.sun': '晴朗有勁', 'stamp.umbrella': '雨天安好',
+            'stamp.moon': '靜靜的夜', 'stamp.rainbow': '雨過天晴', 'stamp.sprout': '新芽成長',
+            'stamp.heal': '照顧自己', 'stamp.paw': '毛孩時光', 'stamp.gradcap': '考試學業'
         },
 
         'en': {
@@ -329,7 +348,7 @@ const I18N = (function() {
             'create.inviteCode': 'Invite code:',
             'create.inviteCodePlaceholder': 'Enter invite code',
             'create.inviteRequired': 'Please enter the invite code',
-            'create.passwordPlaceholder': 'At least 8 characters, with upper & lower case, a number and a symbol',
+            'create.passwordPlaceholder': 'At least 8 characters (digits alone are fine)',
             'create.confirmPassword': 'Confirm password:',
             'create.confirmPlaceholder': 'Re-enter password',
             'create.submit': 'Create',
@@ -339,10 +358,6 @@ const I18N = (function() {
             'create.autoLoginFailed': 'Account created, but automatic sign-in failed — please sign in manually',
 
             'password.tooShort': 'Password must be at least 8 characters',
-            'password.needUpper': 'Password needs at least one uppercase letter',
-            'password.needLower': 'Password needs at least one lowercase letter',
-            'password.needDigit': 'Password needs at least one number',
-            'password.needSpecial': 'Password needs at least one special character',
 
             'settings.title': 'Settings',
             'settings.provider': 'AI provider:',
@@ -417,6 +432,7 @@ const I18N = (function() {
             'calendar.today': 'Today',
             'calendar.prevMonth': 'Previous month',
             'calendar.nextMonth': 'Next month',
+            'calendar.pickYearMonth': 'Pick year & month',
             'calendar.addEvent': 'New event',
             'calendar.editEvent': 'Edit event',
             'calendar.deleteEvent': 'Delete event',
@@ -447,6 +463,17 @@ const I18N = (function() {
             'calendar.titleRequired': 'Please enter an event title',
             'calendar.dateRequired': 'Please pick an event date',
             'calendar.editSeriesHint': 'Edits to a repeating event apply to the whole series',
+            'calendar.stampFromDiary': "From this day's diary",
+            'calendar.stampDelete': 'Remove this stamp',
+            'calendar.stampDeleteConfirm': 'Remove the stamp and note for this day?',
+            'calendar.stampDeleteFailed': 'Failed to remove the stamp, please try again',
+            'calendar.endDate': 'End date (multi-day, leave empty for single day):',
+            'calendar.multiDayHint': 'Multi-day events are all-day; time, repeat and reminder are disabled',
+            'calendar.rangeHint': 'Pick a start day, then an end day; tap the same day twice for a single day',
+            'calendar.color': 'Color (for the multi-day bar):',
+            'calendar.colorDefault': 'Category color',
+            'calendar.endBeforeStart': 'End date must not be before the start date',
+            'calendar.spanDayBadge': 'Day {n} of {m}',
 
             'category.work': 'Work',
             'category.study': 'Study',
@@ -552,9 +579,20 @@ const I18N = (function() {
             'voice.voiceId': 'Voice (advanced, empty = default)',
             'voice.keyNote': 'Voice features use your xAI (Grok) key — desktop uses the stored Grok key; on mobile store a Grok credential server-side.',
 
+            'stampSet.sectionTitle': 'AI Calendar Stamps',
+            'stampSet.enable': 'After each diary, stamp that day on the calendar with a little note',
+
             'mascot.emptyDiary': 'No diaries yet — come tell me about your day',
             'mascot.emptyCalendar': 'This week is wide open — want to note something?',
-            'mascot.emptyGeneric': 'Nothing here yet'
+            'mascot.emptyGeneric': 'Nothing here yet',
+            'stamp.cake': 'Birthday Cake', 'stamp.gift': 'Sweet Surprise', 'stamp.heart': 'Full of Love',
+            'stamp.cheers': 'Cheers Together', 'stamp.trophy': 'Achievement', 'stamp.flag': 'Milestone Flag',
+            'stamp.book': 'Study Time', 'stamp.star': 'Shining Day', 'stamp.plane': 'Off We Go',
+            'stamp.camera': 'Snapshot Day', 'stamp.ball': 'Active Day', 'stamp.movie': 'Movie Night',
+            'stamp.music': 'Music Time', 'stamp.food': 'Tasty Meal', 'stamp.coffee': 'Little Break',
+            'stamp.flower': 'Garden Walk', 'stamp.sun': 'Sunny Spirit', 'stamp.umbrella': 'Rainy Comfort',
+            'stamp.moon': 'Quiet Night', 'stamp.rainbow': 'After the Rain', 'stamp.sprout': 'New Sprout',
+            'stamp.heal': 'Self Care', 'stamp.paw': 'Furry Moments', 'stamp.gradcap': 'Exam Season'
         }
     };
 

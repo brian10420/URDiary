@@ -1,63 +1,49 @@
-"""鎖定 utils/password_validator.py 的密碼強度規則。
+"""鎖定 utils/password_validator.py 的密碼規則。
 
-弱/強密碼案例清單搬自已刪除的 utils/test_password_strength.py (原本是會炸
-pytest 收集的 print 腳本)；錯誤訊息斷言以現行程式碼實際回傳的字串為準。
+v2.5 放寬（使用者要求「密碼僅要求數字即可，簡單就好」）：唯一規則＝長度
+至少 8 字元，純數字、純字母都可以；大小寫/數字/特殊字符不再強制。
 """
 import pytest
 
 from utils.password_validator import is_strong_password, validate_password_and_get_errors
 
-# 搬自舊腳本的弱密碼案例 (應該全部被拒)
-WEAK_PASSWORDS = [
-    "password",   # 無大寫、數字、特殊字符 (長度剛好 8，不觸發長度錯誤)
-    "Password",   # 無數字、特殊字符
-    "Password1",  # 無特殊字符
-    "Pass!",      # 長度不足 (且缺數字)
+# 應被拒：只剩長度一種可能
+TOO_SHORT_PASSWORDS = [
+    "1234567",   # 7 碼純數字
+    "Pass!",     # 5 碼
+    "",          # 空字串
 ]
 
-# 搬自舊腳本的強密碼案例 (應該全部通過)
-STRONG_PASSWORDS = [
-    "Password1!",
+# 應通過：長度到了就好（純數字是本次放寬的核心案例）
+ACCEPTED_PASSWORDS = [
+    "12345678",        # 純數字 8 碼（使用者要的最簡情境）
+    "abcdefgh",        # 純小寫字母
+    "Password1!",      # 舊強密碼仍然通過
     "StrongP@ssw0rd",
     "C0mpl3x!P@ss",
 ]
 
 
-@pytest.mark.parametrize("password", WEAK_PASSWORDS)
-def test_weak_passwords_rejected(password):
-    assert is_strong_password(password) is False, f"'{password}' 不應被判定為強密碼"
+@pytest.mark.parametrize("password", TOO_SHORT_PASSWORDS)
+def test_short_passwords_rejected(password):
+    assert is_strong_password(password) is False, f"'{password}' 長度不足應被拒"
 
 
-@pytest.mark.parametrize("password", STRONG_PASSWORDS)
-def test_strong_passwords_accepted(password):
-    assert is_strong_password(password) is True, f"'{password}' 應被判定為強密碼"
+@pytest.mark.parametrize("password", ACCEPTED_PASSWORDS)
+def test_length_only_passwords_accepted(password):
+    assert is_strong_password(password) is True, f"'{password}' 長度足夠應通過"
 
 
-def test_weak_password_missing_upper_digit_special_errors():
-    errors = validate_password_and_get_errors("password")
-    assert "密碼需要包含至少一個大寫字母" in errors
-    assert "密碼需要包含至少一個數字" in errors
-    assert "密碼需要包含至少一個特殊字符" in errors
-    # 長度剛好 8，不應該有長度錯誤
-    assert "密碼長度至少需要8個字符" not in errors
-    assert len(errors) == 3
+def test_short_password_gets_only_length_error():
+    errors = validate_password_and_get_errors("1234567")
+    assert errors == ["密碼長度至少需要8個字符"]
 
 
-def test_weak_password_missing_digit_special_errors():
-    errors = validate_password_and_get_errors("Password")
-    assert errors == ["密碼需要包含至少一個數字", "密碼需要包含至少一個特殊字符"]
+def test_short_password_english_error():
+    errors = validate_password_and_get_errors("1234567", lang="en")
+    assert errors == ["Password must be at least 8 characters"]
 
 
-def test_weak_password_missing_special_only():
-    errors = validate_password_and_get_errors("Password1")
-    assert errors == ["密碼需要包含至少一個特殊字符"]
-
-
-def test_weak_password_too_short_and_missing_digit():
-    errors = validate_password_and_get_errors("Pass!")
-    assert errors == ["密碼長度至少需要8個字符", "密碼需要包含至少一個數字"]
-
-
-@pytest.mark.parametrize("password", STRONG_PASSWORDS)
-def test_strong_passwords_have_no_errors(password):
+@pytest.mark.parametrize("password", ACCEPTED_PASSWORDS)
+def test_accepted_passwords_have_no_errors(password):
     assert validate_password_and_get_errors(password) == []

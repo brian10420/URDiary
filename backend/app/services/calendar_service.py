@@ -41,7 +41,8 @@ NO_EVENTS_PLACEHOLDER = {
 # 不必區分「還在 session 內的 ORM 物件」或「session 已關閉的純資料」。
 EventSnapshot = namedtuple(
     "EventSnapshot",
-    "id title note category event_date event_time recurrence recurrence_until reminder_minutes",
+    "id title note category event_date event_time recurrence recurrence_until reminder_minutes end_date color",
+    defaults=(None, None),
 )
 
 _CATEGORY_LABELS_ZH = {
@@ -71,6 +72,7 @@ def snapshot_event(ev) -> EventSnapshot:
         event_date=ev.event_date, event_time=ev.event_time,
         recurrence=ev.recurrence, recurrence_until=ev.recurrence_until,
         reminder_minutes=ev.reminder_minutes,
+        end_date=getattr(ev, "end_date", None), color=getattr(ev, "color", None),
     )
 
 
@@ -84,7 +86,8 @@ def expand_occurrences(events, range_start, range_end, cap=MAX_OCCURRENCES) -> l
     (EventSnapshot 或 models.CalendarEvent 皆可)。
 
     規則：
-    - recurrence="none"：event_date 落在範圍內才出現
+    - recurrence="none"：event_date 落在範圍內才出現；若帶 end_date (v2.5 跨天
+      事件，僅 recurrence="none" 適用) 則逐日展開，裁剪到查詢範圍
     - daily/weekly：從 event_date 起算，步進 1 天 / 7 天
     - monthly：每月同「日」；短月沒有該日 (29/30/31) 則該月跳過，不順延
     - yearly：每年同月日；2/29 只在閏年出現
@@ -99,7 +102,10 @@ def expand_occurrences(events, range_start, range_end, cap=MAX_OCCURRENCES) -> l
     "HH:MM"), recurrence, event_date:"YYYY-MM-DD" (系列錨定日——同一系列
     展開出的每個 occurrence 都相同，跟 date 不是同一件事；供前端編輯表單
     預填，讓「編輯」動到的是整個系列而不是被點開的那一次發生日),
-    recurrence_until:"YYYY-MM-DD" 或 None (系列結束日), reminder_minutes}
+    recurrence_until:"YYYY-MM-DD" 或 None (系列結束日), reminder_minutes,
+    end_date:"YYYY-MM-DD" 或 None (v2.5 跨天事件結束日；None=單日), color
+    (自選色 "#rrggbb" 或 None), span_day (此 occurrence 是跨天事件的第幾天，
+    1-indexed；單日事件為 None), span_total (跨天事件總天數；單日事件恆為 1)}
     """
     occurrences = []
     for ev in events:
@@ -118,7 +124,19 @@ def _expand_one(ev, range_start, range_end) -> list:
         return []
 
     if recurrence == "none":
-        dates = [event_date] if range_start <= event_date <= range_end else []
+        end_date = getattr(ev, "end_date", None)
+        if end_date is not None and end_date >= event_date:
+            # 跨天事件：逐日展開 (裁剪到查詢範圍)；span 欄位由 _occurrence_dict 依
+            # 事件自身起訖算，不受查詢窗影響
+            first = max(event_date, range_start)
+            last = min(end_date, range_end)
+            dates = []
+            current = first
+            while current <= last:
+                dates.append(current)
+                current += timedelta(days=1)
+        else:
+            dates = [event_date] if range_start <= event_date <= range_end else []
     elif recurrence in _STEP_DAYS:
         dates = _step_dates(event_date, until, range_start, range_end, _STEP_DAYS[recurrence])
     elif recurrence == "monthly":
@@ -211,6 +229,13 @@ def _sort_key(occ: dict):
 
 
 def _occurrence_dict(ev, d: date) -> dict:
+    end_date = getattr(ev, "end_date", None)
+    color = getattr(ev, "color", None)
+    span_total = 1
+    span_day = None
+    if end_date is not None and ev.recurrence == "none" and end_date >= ev.event_date:
+        span_total = (end_date - ev.event_date).days + 1
+        span_day = (d - ev.event_date).days + 1
     return {
         "event_id": ev.id,
         "title": ev.title,
@@ -225,6 +250,12 @@ def _occurrence_dict(ev, d: date) -> dict:
         "event_date": ev.event_date.isoformat(),
         "recurrence_until": ev.recurrence_until.isoformat() if ev.recurrence_until else None,
         "reminder_minutes": ev.reminder_minutes,
+        # v2.5 Spec A：跨天欄位。單日事件 span_day=None、span_total=1；
+        # 前端以 span_total > 1 判斷要不要畫橫槓。
+        "end_date": end_date.isoformat() if end_date else None,
+        "color": color,
+        "span_day": span_day,
+        "span_total": span_total,
     }
 
 

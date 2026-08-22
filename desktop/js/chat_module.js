@@ -10,6 +10,9 @@ const ChatModule = (function() {
     // 語音輸入（v2.4 spec②）：麥克風鍵是否正在錄音中
     let recording = false;
 
+    // v2.5 Spec A：「AI 行事曆印章」開關（預設開；'0' 才是關）
+    const DAY_NOTE_KEY = 'urdiary_day_note_enabled';
+
     // DOM元素
     let chatContainer, chatMessagesContainer, userInputElement, 
         sendButtonElement, endChatBtnElement, clearChatBtnElement, modelSelectorElement;
@@ -963,7 +966,7 @@ const ChatModule = (function() {
             }
 
             // 調用API服務結束聊天（供應商/模型由 fetchAPI 統一附上）
-            const response = await ApiService.endChat();
+            const response = await ApiService.endChat(null, isDayNoteEnabled());
             
             // 處理響應
             console.log('結束聊天API響應:', response);
@@ -1048,18 +1051,22 @@ const ChatModule = (function() {
         if (confirm(I18N.t('chat.confirmClear'))) {
             // 清空聊天歷史
             chatHistory = [];
-            
+
             // 保存空的聊天歷史
             saveChatHistory();
-            
+
             // 清空聊天界面
             chatMessagesContainer.innerHTML = '';
-            
+
             // 添加新的歡迎消息
             addSystemMessage(WELCOME_MESSAGE_TEXT());
         }
     }
-    
+
+    // v2.5 Spec A：「AI 行事曆印章」開關（預設開；'0' 才是關）
+    function isDayNoteEnabled() { return localStorage.getItem(DAY_NOTE_KEY) !== '0'; }
+    function setDayNoteEnabled(on) { localStorage.setItem(DAY_NOTE_KEY, on ? '1' : '0'); }
+
     // 保存聊天歷史
     function saveChatHistory() {
         try {
@@ -1160,6 +1167,8 @@ const ChatModule = (function() {
         sendMessage: sendMessage,
         clearHistory: clearChat,
         endChat: endChat,
+        isDayNoteEnabled: isDayNoteEnabled,
+        setDayNoteEnabled: setDayNoteEnabled,
         // 純函式，僅為 vitest 單元測試曝光，行為不變
         diaryDayString: diaryDayString,
         applyCompanionTitle: applyCompanionTitle,

@@ -468,6 +468,64 @@ def test_delete_own_event_then_get_range_excludes_it(client, auth_header):
     assert event_id not in ids
 
 
+# --- 跨天事件 (v2.5 Spec A) ---------------------------------------------------
+
+def test_create_multi_day_event_roundtrip(client, auth_header):
+    headers, _ = auth_header
+    resp = _create_event(client, headers, title="台南旅行",
+                         event_date="2026-09-01", end_date="2026-09-03",
+                         color="#8f62c9")
+    assert resp.status_code in (200, 201)
+    event = resp.json()["event"]
+    assert event["end_date"] == "2026-09-03"
+    assert event["color"] == "#8f62c9"
+
+
+def test_create_multi_day_rejects_end_before_start(client, auth_header):
+    headers, _ = auth_header
+    resp = _create_event(client, headers, event_date="2026-09-03", end_date="2026-09-01")
+    assert resp.status_code == 422
+
+
+def test_create_multi_day_rejects_event_time(client, auth_header):
+    headers, _ = auth_header
+    resp = _create_event(client, headers, event_date="2026-09-01",
+                         end_date="2026-09-02", event_time="09:00")
+    assert resp.status_code == 422
+
+
+def test_create_multi_day_rejects_recurrence(client, auth_header):
+    headers, _ = auth_header
+    resp = _create_event(client, headers, event_date="2026-09-01",
+                         end_date="2026-09-02", recurrence="weekly")
+    assert resp.status_code == 422
+
+
+def test_create_rejects_bad_color(client, auth_header):
+    headers, _ = auth_header
+    resp = _create_event(client, headers, color="red")
+    assert resp.status_code == 422
+
+
+def test_update_timed_event_to_multi_day_rejected(client, auth_header):
+    """PUT 只送 end_date、庫內事件帶時間：schema 驗不到，路由層合併後必須擋 400。"""
+    headers, _ = auth_header
+    created = _create_event(client, headers, event_time="14:00").json()["event"]
+    resp = client.put(f"/calendar/events/{created['event_id']}",
+                      json={"end_date": "2026-08-06"}, headers=headers)
+    assert resp.status_code == 400
+
+
+def test_update_can_clear_end_date(client, auth_header):
+    headers, _ = auth_header
+    created = _create_event(client, headers, event_date="2026-09-01",
+                            end_date="2026-09-03").json()["event"]
+    resp = client.put(f"/calendar/events/{created['event_id']}",
+                      json={"end_date": None}, headers=headers)
+    assert resp.status_code == 200
+    assert resp.json()["event"]["end_date"] is None
+
+
 # --- 未帶 token -------------------------------------------------------------------
 
 def test_all_endpoints_without_token_return_401(client):

@@ -126,6 +126,18 @@ MESSAGES = {
         "zh-TW": "行事曆事件已刪除",
         "en": "Calendar event deleted",
     },
+    "multi_day_invalid": {
+        "zh-TW": "跨天事件必須是整天、不可重複，且結束日不可早於開始日",
+        "en": "Multi-day events must be all-day, non-repeating, and end on or after the start date",
+    },
+    "day_note_deleted": {
+        "zh-TW": "這天的印章已刪除",
+        "en": "The stamp for this day has been removed",
+    },
+    "day_note_not_found": {
+        "zh-TW": "這天沒有印章",
+        "en": "No stamp on this day",
+    },
 
     # --- 語音功能 (services/voice_service.py, api/routes/voice.py) ---
     "voice_key_missing": {
@@ -232,22 +244,6 @@ MESSAGES = {
     "password_min_length": {
         "zh-TW": "密碼長度至少需要8個字符",
         "en": "Password must be at least 8 characters",
-    },
-    "password_need_upper": {
-        "zh-TW": "密碼需要包含至少一個大寫字母",
-        "en": "Password needs at least one uppercase letter",
-    },
-    "password_need_lower": {
-        "zh-TW": "密碼需要包含至少一個小寫字母",
-        "en": "Password needs at least one lowercase letter",
-    },
-    "password_need_digit": {
-        "zh-TW": "密碼需要包含至少一個數字",
-        "en": "Password needs at least one digit",
-    },
-    "password_need_special": {
-        "zh-TW": "密碼需要包含至少一個特殊字符",
-        "en": "Password needs at least one special character",
     },
 }
 

@@ -278,4 +278,17 @@ describe('mascot chat integration：生成日記等待的 DOM 接線', () => {
         expect(document.querySelector('.chat-messages').textContent)
             .toContain(I18N.t('chat.diaryError', { error: '網路錯誤' }));
     });
+
+    test('endChat 依設定帶 enable_day_note', async () => {
+        localStorage.setItem('urdiary_day_note_enabled', '0');
+        window.ApiService = {
+            endChat: vi.fn(async (model, enableDayNote) => Promise.resolve({
+                message: '對話已結束並生成摘要',
+                diary: { diary_id: 6, title: 't', summary: 's', content: 'c', valence: 0.8, arousal: 0.6 }
+            }))
+        };
+        await ChatModule.endChat();
+        const call = window.ApiService.endChat.mock.calls.at(-1);
+        expect(call[1]).toBe(false);
+    });
 });
