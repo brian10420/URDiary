@@ -78,3 +78,14 @@ def test_backfill_fills_missing(client, auth_header):
     diary_fts.backfill()
     with db_session() as db:
         assert diary_fts.search(db, uid, ["登山日"])
+
+
+def test_search_survives_metacharacter_terms(client, auth_header):
+    """jieba 斷出的子詞可能含 FTS5 語法字元 (日期的 -、縮寫的 '、保留字等)；
+    未跳脫時整條 MATCH 會 fts5 syntax error，還會拖累同批次其他乾淨的 term
+    一起變成空結果 (v2.5 Spec C Task 9 fix round 1)。"""
+    _h, uid = auth_header
+    with db_session() as db:
+        crud.create_diary(db, uid, "今天去爬山，很累但值得", title="t", summary="s")
+        hits = diary_fts.search(db, uid, ["爬山", "check-in", "2026-08-23", "don't"])
+    assert hits  # 爬山 命中不該被同批次裡的髒 term 拖累成空

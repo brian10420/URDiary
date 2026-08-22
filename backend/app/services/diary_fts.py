@@ -93,16 +93,25 @@ def search(db, user_id: int, terms, limit: int = 50):
     「內容」單獨飄出去命中不相干的文件)；只在最後一個子詞加 `*` 前綴，
     容許 jieba 把詞尾與後面的字黏成一塊的斷詞誤差 (例如「牛肉湯」在某些
     上下文被切成「牛肉」+「湯大勝利」，仍要能命中)。多個 term 之間 OR。
+    每個子詞個別加雙引號包成 FTS5 短語 (內部 `"` 轉義成 `""`)，`*` 前綴
+    放在收尾引號外——子詞來自 jieba 未經清洗，日期/英文縮寫/半形符號等
+    都可能單獨成詞 (例如 "2026-08-23" 斷成 2026/-/08/-/23)，裸字組
+    match 字串會被當成 FTS5 查詢語法解析、任何一個子詞撞到語法字元
+    (括號、冒號、單引號、`*`、保留字 AND/OR/NOT…) 就整條 MATCH 直接
+    fts5 syntax error；短語引號讓這些內容一律被當成純文字丟給
+    tokenizer，不會被解析成運算子，且不影響比對結果 (已實測與未跳脫
+    的裸字版本分數一致)。切勿為了「精簡」拿掉這層引號。
     """
     if not _available or not terms:
         return []
     clauses = []
     for t in terms:
-        subtokens = [tok for tok in _segment(t).replace('"', "").split() if tok]
+        subtokens = [tok for tok in _segment(t).split() if tok]
         if not subtokens:
             continue
-        subtokens[-1] = subtokens[-1] + "*"
-        clauses.append("(" + " AND ".join(subtokens) + ")")
+        escaped = ['"' + tok.replace('"', '""') + '"' for tok in subtokens]
+        escaped[-1] = escaped[-1] + "*"
+        clauses.append("(" + " AND ".join(escaped) + ")")
     if not clauses:
         return []
     match = " OR ".join(clauses)
