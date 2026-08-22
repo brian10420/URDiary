@@ -196,6 +196,20 @@ const ApiService = (function() {
                     if (getRefreshToken() === storedRefreshToken) {
                         console.warn('刷新令牌已失效，需要重新登入');
                         clearAuthToken();
+                        // session 真死必須立刻帶使用者回登入畫面。少了這步，
+                        // 後續請求因 accessToken 已清空而走不進 fetchAPI 的
+                        // 強制登出分支（`&& accessToken` guard），使用者只會
+                        // 看到一個默默 401 的空殼 UI——行事曆被錯誤路徑清空，
+                        // 看起來像「資料不見了」（2026-08-22 實際事故）。
+                        if (typeof UIManager !== 'undefined' && UIManager.showToast && typeof I18N !== 'undefined') {
+                            UIManager.showToast(I18N.t('errors.authFailed'));
+                        }
+                        try {
+                            window.dispatchEvent(new CustomEvent('urdiary:auth-expired',
+                                { detail: { endpoint: '/users/token/refresh' } }));
+                        } catch (dispatchError) {
+                            console.warn('無法發送認證失效事件 (refresh):', dispatchError);
+                        }
                     } else {
                         console.warn('刷新令牌已被其他分頁換新，保留較新的令牌');
                     }
