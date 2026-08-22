@@ -281,3 +281,163 @@ def ingest_diary(user_id: int, diary_id: int, cfg, lang: str = "zh-TW") -> Revie
     return run_review_pass(user_id, cfg, lang=lang, source="diary_ingest",
                            chat_history=None, diary_content=content,
                            diary_id=diary_id, valence=valence)
+
+
+# --- 治理操作 (設定頁 API 的服務層；全部自管短交易、回純 dict) ------------------
+
+def _op_result(ok: bool, status: Optional[str] = None, error: Optional[str] = None) -> dict:
+    return {"ok": ok, "status": status, "error": error}
+
+
+def _load_content(db, user_id: int, file_key: str) -> str:
+    row = crud.get_memory_file(db, user_id, file_key)
+    return row.content if row else ""
+
+
+def _mark(db, op, status: str, error: Optional[str] = None):
+    from datetime import datetime
+    op.status = status
+    if error:
+        op.error = error
+    op.decided_at = datetime.utcnow()
+    db.commit()
+
+
+def approve_op(user_id: int, op_id: int) -> dict:
+    """核可一筆 pending：以「當下」檔案重驗套用；target 比不到→stale；套用後超標→拒絕核可。"""
+    with db_session() as db:
+        op = crud.get_memory_op(db, user_id, op_id)
+        if op is None:
+            return _op_result(False, error="not_found")
+        if op.status != "pending":
+            return _op_result(False, status=op.status, error="not_pending")
+        content = _load_content(db, user_id, op.file_key)
+        applied = memory_files.apply_op(op.file_key, content, op.action,
+                                        section=op.section, target=op.target_text,
+                                        text=op.new_text)
+        if not applied.ok:
+            _mark(db, op, "stale", applied.error)
+            return _op_result(False, status="stale", error=applied.error)
+        if memory_files.over_limit(op.file_key, applied.content):
+            return _op_result(False, status="pending", error="over_budget")
+        if op.action == "remove" and not op.section:
+            op.section = memory_files.find_section_of(content, op.target_text or "")
+        crud.upsert_memory_file(db, user_id, op.file_key, applied.content)
+        _mark(db, op, "applied")
+        return _op_result(True, status="applied")
+
+
+def reject_op(user_id: int, op_id: int) -> dict:
+    with db_session() as db:
+        op = crud.get_memory_op(db, user_id, op_id)
+        if op is None:
+            return _op_result(False, error="not_found")
+        if op.status != "pending":
+            return _op_result(False, status=op.status, error="not_pending")
+        _mark(db, op, "rejected")
+        return _op_result(True, status="rejected")
+
+
+def undo_op(user_id: int, op_id: int) -> dict:
+    """撤銷一筆 applied：反向 op (add→remove new_text / remove→補回 target / replace→反向替換)。"""
+    with db_session() as db:
+        op = crud.get_memory_op(db, user_id, op_id)
+        if op is None:
+            return _op_result(False, error="not_found")
+        if op.status != "applied" or op.action == "user_edit":
+            return _op_result(False, status=op.status, error="not_undoable")
+        content = _load_content(db, user_id, op.file_key)
+        if op.action == "add":
+            reverse = memory_files.apply_op(op.file_key, content, "remove", target=op.new_text)
+        elif op.action == "remove":
+            reverse = memory_files.apply_op(op.file_key, content, "add",
+                                            section=op.section or memory_files.SECTIONS[op.file_key][0],
+                                            text=op.target_text)
+        else:  # replace
+            reverse = memory_files.apply_op(op.file_key, content, "replace",
+                                            target=op.new_text, text=op.target_text)
+        if not reverse.ok:
+            return _op_result(False, status="applied", error=reverse.error)
+        if memory_files.over_limit(op.file_key, reverse.content):
+            return _op_result(False, status="applied", error="over_budget")
+        crud.upsert_memory_file(db, user_id, op.file_key, reverse.content)
+        _mark(db, op, "undone")
+        return _op_result(True, status="undone")
+
+
+def approve_batch(user_id: int, batch_id: str) -> dict:
+    with db_session() as db:
+        pending_ids = [o.id for o in crud.get_ops_by_batch(db, user_id, batch_id)
+                       if o.status == "pending"]
+    applied = stale = 0
+    for op_id in pending_ids:  # 逐筆走 approve_op：每筆各自短交易、依序套用
+        r = approve_op(user_id, op_id)
+        if r["ok"]:
+            applied += 1
+        elif r.get("status") == "stale":
+            stale += 1
+    return {"ok": True, "applied": applied, "stale": stale}
+
+
+def reject_batch(user_id: int, batch_id: str) -> dict:
+    rejected = 0
+    with db_session() as db:
+        for op in crud.get_ops_by_batch(db, user_id, batch_id):
+            if op.status == "pending":
+                _mark(db, op, "rejected")
+                rejected += 1
+    return {"ok": True, "rejected": rejected}
+
+
+def save_user_edit(user_id: int, file_key: str, content: str) -> dict:
+    """設定頁全文編輯：上限強制；帳本記 user_edit；指向舊文字的 pending 標 stale。"""
+    import uuid as _uuid
+    if file_key not in memory_files.FILE_KEYS:
+        return {"ok": False, "error": "bad_file"}
+    if memory_files.over_limit(file_key, content):
+        return {"ok": False, "error": "over_limit"}
+    stale_count = 0
+    with db_session() as db:
+        crud.upsert_memory_file(db, user_id, file_key, content)
+        for op in crud.get_pending_ops(db, user_id):
+            if op.file_key == file_key and op.target_text and op.target_text not in content:
+                _mark(db, op, "stale", "user_edited")
+                stale_count += 1
+        crud.create_memory_ops(db, [{
+            "user_id": user_id, "file_key": file_key, "batch_id": str(_uuid.uuid4()),
+            "action": "user_edit", "section": None, "target_text": None,
+            "new_text": content, "status": "applied", "source": "user_edit",
+            "source_diary_id": None, "error": None}])
+    return {"ok": True, "stale_count": stale_count}
+
+
+def set_write_mode(user_id: int, mode: str) -> dict:
+    if mode not in ("auto", "approval"):
+        return {"ok": False, "error": "bad_mode"}
+    with db_session() as db:
+        user = crud.get_user(db, user_id)
+        if user is None:
+            return {"ok": False, "error": "not_found"}
+        user.memory_write_mode = None if mode == "auto" else "approval"
+        db.commit()
+    return {"ok": True}
+
+
+def get_memory_overview(user_id: int) -> dict:
+    with db_session() as db:
+        files = crud.get_memory_files(db, user_id)
+        user = crud.get_user(db, user_id)
+        pending = crud.count_pending_ops(db, user_id)
+        payload = {}
+        for key in memory_files.FILE_KEYS:
+            row = files.get(key)
+            payload[key] = {
+                "content": row.content if row else "",
+                "limit": memory_files.FILE_LIMITS[key],
+                "updated_at": row.updated_at.isoformat() if row else None,
+            }
+        return {
+            "files": payload,
+            "write_mode": "approval" if (user and user.memory_write_mode == "approval") else "auto",
+            "pending_count": pending,
+        }
