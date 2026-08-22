@@ -200,7 +200,6 @@ const CalendarModule = (function() {
     let todaysSnapshotDate = null;          // 上面那份快照對應的日期，null = 尚未取得
     let isRefreshingToday = false;          // refreshTodaysOccurrences 的併發防護
     let editingEventId = null;              // 表單目前編輯中的事件 id（新增時為 null）
-    let loadedOnce = false;                 // 惰性首載旗標
     let isLoading = false;
     let listenersBound = false;             // init() 可重複呼叫（切換帳號時），監聽器只綁一次
     let reminderTimer = null;
@@ -406,9 +405,10 @@ const CalendarModule = (function() {
     // 進入行事曆視圖（每次都會呼叫，不是只有第一次）
     function handleEnterCalendarView() {
         ensureNotificationPermission();
-        // loadedOnce 由 loadMonth 的**成功**路徑設定：首載失敗（例如後端還沒起來）
-        // 時它維持 false，使用者下次再切進來就會自動重試，不會卡在空月曆
-        if (!loadedOnce && !isLoading) {
+        // 每次切進行事曆都重新載入（v2.5 驗收回饋：日記結束後伺服器端剛蓋的
+        // AI 印章要即時出現，不能等重啟）。後端是本地 SQLite，重抓成本趨近零；
+        // isLoading 防止使用者快速切換視圖時重疊載入。
+        if (!isLoading) {
             loadMonth();
         }
     }
@@ -432,7 +432,6 @@ const CalendarModule = (function() {
             indexDayNotes(notesResponse && notesResponse.notes);
             // 這次載入的範圍涵蓋今天的話，順手更新提醒用的快照（免一次額外請求）
             applyTodaysSnapshot(range.startIso, range.endIso);
-            loadedOnce = true;
             renderGrid();
             renderDayPanel(selectedDate);
             scheduleReminders();
@@ -440,7 +439,7 @@ const CalendarModule = (function() {
             console.error('載入行事曆事件失敗:', error);
             // 載入失敗時不留舊月份的殘影，避免使用者誤以為新月份沒有事件。
             // 注意：**不動 todaysOccurrences** —— 提醒是背景功能，不該被某次
-            // 翻月的載入失敗連坐。loadedOnce 也維持原值，讓下次進視圖能重試。
+            // 翻月的載入失敗連坐。下次進視圖會自動重載重試。
             occurrencesByDate = new Map();
             renderGrid();
             renderDayPanel(selectedDate);
@@ -1347,7 +1346,6 @@ const CalendarModule = (function() {
         todaysOccurrences = [];
         todaysSnapshotDate = null;
         selectedDate = toIsoDate(new Date());
-        loadedOnce = false;
         editingEventId = null;
 
         closeEventForm();
