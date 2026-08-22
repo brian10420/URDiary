@@ -1299,6 +1299,41 @@ const ApiService = (function() {
         return await fetchAPI(`/calendar/day-notes/${encodeURIComponent(dateIso)}`, { method: 'DELETE' });
     }
 
+    // v2.5 Spec C：記憶管理 API
+    async function getMemory() {
+        return fetchAPI('/users/me/memory');
+    }
+
+    async function saveMemoryFile(fileKey, content) {
+        // 注意：body 傳純物件，不要自行 JSON.stringify —— fetchAPI 內部已對
+        // 非 FormData 的 body 統一做一次 JSON.stringify（見該函式），這裡若
+        // 再字串化一次會造成雙重編碼（後端收到的 content 會是一個 JSON
+        // 字串常量，而不是 { content } 物件）。
+        return fetchAPI(`/users/me/memory/files/${encodeURIComponent(fileKey)}`, {
+            method: 'PUT',
+            body: { content }
+        });
+    }
+
+    async function saveMemorySettings(writeMode) {
+        return fetchAPI('/users/me/memory/settings', {
+            method: 'PUT',
+            body: { write_mode: writeMode }
+        });
+    }
+
+    async function getMemoryOps(limit = 100, offset = 0) {
+        return fetchAPI(`/users/me/memory/ops?limit=${limit}&offset=${offset}`);
+    }
+
+    async function memoryOpAction(opId, action) {
+        return fetchAPI(`/users/me/memory/ops/${opId}/${action}`, { method: 'POST' });
+    }
+
+    async function memoryBatchAction(batchId, action) {
+        return fetchAPI(`/users/me/memory/batches/${encodeURIComponent(batchId)}/${action}`, { method: 'POST' });
+    }
+
     /**
      * 推導日記標題
      * 後端 diaries 表沒有 title 欄位，若不推導，每篇日記都會顯示「無標題日記」。
@@ -1600,6 +1635,12 @@ const ApiService = (function() {
         getLlmCredential: getLlmCredential,
         saveLlmCredential: saveLlmCredential,
         deleteLlmCredential: deleteLlmCredential,
+        getMemory: getMemory,
+        saveMemoryFile: saveMemoryFile,
+        saveMemorySettings: saveMemorySettings,
+        getMemoryOps: getMemoryOps,
+        memoryOpAction: memoryOpAction,
+        memoryBatchAction: memoryBatchAction,
         // 「還握有可用的憑證」：訪問令牌未過期，或還有刷新令牌可以換一張。
         // 不能再用 60 分鐘當門檻 —— 訪問令牌只有 30 分鐘，那樣永遠是 false。
         isAuthenticated: () => (!!accessToken && !isTokenExpiringSoon(0)) || !!getRefreshToken(),
