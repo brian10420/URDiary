@@ -8,7 +8,7 @@
 【陪伴者筆記（怎麼陪他）｜目前 {companion_notes_count} 字／上限 {companion_notes_limit} 字】
 {companion_notes_content}
 
-{near_limit_hint}{legacy_note_block}{over_budget_feedback}【近期對話】
+{near_limit_hint}{legacy_note_block}{onboarding_block}{over_budget_feedback}【近期對話】
 {chat_history}
 
 【今日日記】

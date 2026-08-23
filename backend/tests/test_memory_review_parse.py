@@ -6,7 +6,7 @@ _SMOKE_KWARGS = dict(
     today_date="2026-08-23",
     user_profile_content="## 稱呼與身分", user_profile_count=8, user_profile_limit=800,
     companion_notes_content="## 有效的支持方式", companion_notes_count=9, companion_notes_limit=600,
-    near_limit_hint="", legacy_note_block="", over_budget_feedback="",
+    near_limit_hint="", legacy_note_block="", onboarding_block="", over_budget_feedback="",
     chat_history="使用者: 嗨", todays_diary="今天很平常。",
     mood_hint="情緒平穩", day_notes_trail="（近兩週沒有印章）",
 )

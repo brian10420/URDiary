@@ -77,6 +77,23 @@ def test_complete_idempotent_and_state(client, auth_header, mock_llm):
     assert client.get("/users/onboarding/state", headers=headers).json()["completed"] is True
 
 
+def test_complete_twice_does_not_re_ingest(client, auth_header, mock_llm):
+    """收納成功會戳記素材：重按一次 complete 已無待收納答案，不再打第二次 LLM。"""
+    headers, _uid = auth_header
+    client.post("/users/onboarding/answer", headers=headers,
+                json={"question_key": "name", "answer_text": "小明"})
+    mock_llm.respond(OPS_REPLY)
+    first = client.post("/users/onboarding/complete",
+                        headers={**headers, **LLM_HEADERS})
+    assert first.status_code == 200 and first.json()["completed"] is True
+    assert len(mock_llm.calls) == 1
+    second = client.post("/users/onboarding/complete",
+                         headers={**headers, **LLM_HEADERS})
+    assert second.status_code == 200 and second.json()["completed"] is True
+    assert len(mock_llm.calls) == 1  # 素材已戳記：第二次沒有新的 LLM 呼叫
+    assert second.json()["memory_review"] is None
+
+
 def test_complete_triggers_ingestion_pass(client, auth_header, mock_llm):
     headers, _uid = auth_header
     client.post("/users/onboarding/answer", headers=headers,
