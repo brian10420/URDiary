@@ -87,6 +87,25 @@ describe('MemoryModule 帳本', () => {
         expect(document.getElementById('memory-approval-banner').style.display).not.toBe('none');
     });
 
+    it('source=onboarding 的批次標題顯示「來自初次見面」', async () => {
+        stubApi([
+            { id: 20, file_key: 'user_profile', batch_id: 'b3', action: 'add', section: '基本資料',
+              target_text: null, new_text: '- 職業：研究生', status: 'applied', source: 'onboarding',
+              source_diary_id: null, source_diary_title: null, error: null,
+              created_at: '2026-08-24T10:00:00', decided_at: null },
+        ]);
+        mountDom();
+        loadScript('js/memory_module.js');
+        window.MemoryModule.init();
+        await window.MemoryModule.open();
+        window.MemoryModule.showTab('ledger');
+        await vi.waitFor(() => {
+            const header = document.querySelector('.memory-batch-header');
+            expect(header).toBeTruthy();
+            expect(header.textContent).toBe('2026-08-24・' + I18N.t('memory.fromOnboarding'));
+        });
+    });
+
     it('pending op 有核可/拒絕鈕；點核可打 API 後重載', async () => {
         await window.MemoryModule.open();
         window.MemoryModule.showTab('ledger');
