@@ -72,7 +72,7 @@ describe('ApiService onboarding wrappers', () => {
         expect(calls[0].options.headers['X-LLM-Api-Key']).toBe('xai-test-key');
     });
 
-    it('state/answer 不是 LLM 端點：即使有金鑰也不附 X-LLM 標頭', async () => {
+    it('state/answer 都不是 LLM 端點：即使有金鑰也不附 X-LLM 標頭', async () => {
         SecureStore.isAvailable = () => true;
         SecureStore.getKey = () => 'xai-test-key';
         window.SettingsModule = {
@@ -80,6 +80,8 @@ describe('ApiService onboarding wrappers', () => {
         };
         const calls = installFetch();
         await ApiService.getOnboardingState();
+        await ApiService.saveOnboardingAnswer('favorite_food', '牛肉湯');
         expect(calls[0].options.headers['X-LLM-Provider']).toBeUndefined();
+        expect(calls[1].options.headers['X-LLM-Provider']).toBeUndefined();
     });
 });
