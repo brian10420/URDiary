@@ -7,6 +7,10 @@ OPS_REPLY = json.dumps({"ops": [{
     "action": "add", "file": "user_profile",
     "section": "稱呼與身分", "text": "- 叫他小明 (2026-08-24)"}]})
 
+# 唯一的 op 指向不存在的檔案＝整批全 failed：走完寫階段但什麼都沒收納
+BAD_REPLY = json.dumps({"ops": [{"action": "add", "file": "no_such_file",
+                                 "section": "x", "text": "- y"}]})
+
 
 def _seed(uid, key, text):
     with db_session() as db:
@@ -74,6 +78,32 @@ def test_parse_failure_does_not_stamp(client, auth_header, mock_llm):
     assert _uningested(uid) == ["name"]
 
 
+def test_all_ops_failed_does_not_stamp(client, auth_header, mock_llm):
+    """所有 ops 無效＝什麼都沒收納：不戳記（釘住 result.applied 護欄本身）。
+
+    這條走完整個寫階段（不像空 ops／解析失敗那樣早退），因此唯一擋住戳記的
+    就是 `if onboarding_ids and result.applied:` 的 result.applied 那一半。
+    """
+    _h, uid = auth_header
+    _seed(uid, "name", "小明")
+    result = _run(uid, mock_llm, reply=BAD_REPLY)
+    assert result.applied == 0 and result.failed == 1
+    assert _uningested(uid) == ["name"]
+
+
+def test_over_budget_does_not_stamp(client, auth_header, mock_llm):
+    """整批超標遭拒＝檔案沒動：不戳記，素材下輪重現（天然重試）。"""
+    _h, uid = auth_header
+    _seed(uid, "name", "小明")
+    big = json.dumps({"ops": [{"action": "add", "file": "user_profile",
+                               "section": "稱呼與身分", "text": "- " + "長" * 900}]})
+    mock_llm.respond(big)
+    mock_llm.respond(big)  # 初次 ＋ 超標 retry 各吃一次
+    result = _run(uid, mock_llm)
+    assert result.error == "over_budget"
+    assert _uningested(uid) == ["name"]
+
+
 def test_approval_mode_pending_stamps(client, auth_header, mock_llm):
     """核可制：ops 進 pending 也算收納成功（素材不重複產 pending）。"""
     _h, uid = auth_header
@@ -85,6 +115,19 @@ def test_approval_mode_pending_stamps(client, auth_header, mock_llm):
     result = _run(uid, mock_llm, reply=OPS_REPLY)
     assert result.pending == 1 and result.applied == 0
     assert _uningested(uid) == []
+
+
+def test_approval_mode_all_ops_failed_does_not_stamp(client, auth_header, mock_llm):
+    """核可制的同一條護欄：沒有任何 op 進 pending＝沒收納，不戳記。"""
+    _h, uid = auth_header
+    with db_session() as db:
+        user = crud.get_user(db, uid)
+        user.memory_write_mode = "approval"
+        db.commit()
+    _seed(uid, "name", "小明")
+    result = _run(uid, mock_llm, reply=BAD_REPLY)
+    assert result.pending == 0 and result.failed == 1
+    assert _uningested(uid) == ["name"]
 
 
 def test_ledger_source_is_onboarding(client, auth_header, mock_llm):
