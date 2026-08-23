@@ -74,15 +74,23 @@ const OnboardingModule = (function () {
         return I18N.t(ACK_KEYS[Math.floor(Math.random() * ACK_KEYS.length)]);
     }
 
-    /** 使用者打字送出（由 ChatModule.sendMessage 攔截轉來）。 */
+    /**
+     * 使用者打字送出（由 ChatModule.sendMessage 攔截轉來）。
+     *
+     * 回傳「這次送出有沒有被當成答案收下」：false 代表現在還沒有題目可答
+     * （active 但 currentKey 還是 null——自我介紹的假思考延遲那 1–3 秒就是這個
+     * 狀態），呼叫端據此**不要清空輸入框**，使用者打的字才不會被無聲吃掉；
+     * 他下一次按 Enter 就會拿去回答取名題。
+     */
     function handleAnswer(text) {
-        if (!active || !currentKey) return;
+        if (!active || !currentKey) return false;
         ChatModule.addEphemeralUserMessage(text);
         hideChips();
-        if (currentKey === NAMING_KEY) { handleNamingAnswer(text); return; }
+        if (currentKey === NAMING_KEY) { handleNamingAnswer(text); return true; }
         saveAnswer(currentKey, text);
         answered.add(currentKey);
         askNext(true);
+        return true;
     }
 
     /** 取名分支：原文一律 upsert（含超長，供續跑判斷）；≤12 字才寫 companion_name。 */
@@ -165,6 +173,11 @@ const OnboardingModule = (function () {
         if (!container) return;
         container.appendChild(ensureChips());  // append＝移到最新訊息之後
         chipsEl.style.display = '';
+        // appendChatMessage 的 scrollToBottom() 發生在 chips 掛上「之前」，所以
+        // 訊息捲到底之後 chips 又長出一截高度——對話一超過一個螢幕（七題流程
+        // 必然會超過，手機更早），兩顆逃生口就掉到摺線下面了。這裡補捲一次，
+        // 維持 spec §4「常駐 chips 全程掛著」。
+        container.scrollTop = container.scrollHeight;
     }
 
     function hideChips() {

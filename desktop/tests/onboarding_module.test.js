@@ -31,7 +31,11 @@ function installApi(state) {
         isAuthenticated: () => true,
         getOnboardingState: async () => state,
         saveOnboardingAnswer: async (key, text) => { calls.answers.push([key, text]); return { saved: true }; },
-        completeOnboarding: async () => { calls.complete += 1; return { completed: true }; },
+        // complete 之後狀態要翻成 completed:true——真實後端寫了
+        // onboarding_completed_at 之後絕不會再回 completed:false。stub 若永遠回
+        // false，「完成後不重演」這件事就沒有任何測試觀察得到（抑制 check-in 的
+        // 斷言會被「重新啟動的 onboarding 同樣抑制 check-in」給假綠掉）。
+        completeOnboarding: async () => { calls.complete += 1; state.completed = true; return { completed: true }; },
         checkIn: async () => { calls.checkin += 1; return { checkin: false }; },
         fetchAPI: async (endpoint, options) => {
             if (endpoint === '/users/me/companion') calls.companionPuts.push(options.body);
@@ -79,9 +83,14 @@ describe('觸發與抑制', () => {
         expect(messagesText()).toContain(I18N.t('onboarding.naming'));
         // chips 掛著
         expect(document.querySelector('.onboarding-chips')).not.toBeNull();
-        // 不進聊天持久層
+        // 不進聊天持久層。localStorage 這條只驗到下游——onboarding 流程本來就
+        // 沒有任何路徑會走到 saveChatHistory()，就算腳本訊息改接會持久化的
+        // addSystemMessage，這個 filter 一樣是空的。真正要觀察的是「有沒有進
+        // 記憶體裡的 chatHistory」：一旦進去，outro 之後的第一則真實聊天訊息
+        // 就會把整段 onboarding 一起存進去、重載時整條重演。
         const keys = Object.keys(localStorage).filter(k => k.includes(CONFIG.STORAGE.CHAT_HISTORY));
         expect(keys.length).toBe(0);
+        expect(ChatModule._test.chatHistoryLength()).toBe(0);
     });
 });
 
@@ -180,9 +189,11 @@ describe('sendMessage 攔截與同 session 抑制', () => {
         expect(lastApiCalls().answers).toContainEqual(['name', '小明']);
         expect(window.ApiService.sendChatMessage).not.toHaveBeenCalled();
         expect(document.getElementById('user-input').value).toBe('');
-        // 答案氣泡是 ephemeral：不進持久層
+        // 答案氣泡是 ephemeral：不進持久層（chatHistoryLength 才是真的在觀察
+        // 這條保證本身，理由同上面「不進聊天持久層」的註解）
         const keys = Object.keys(localStorage).filter(k => k.includes(CONFIG.STORAGE.CHAT_HISTORY));
         expect(keys.length).toBe(0);
+        expect(ChatModule._test.chatHistoryLength()).toBe(0);
     });
 
     it('完成後同一 session 再 init 不補發 check-in；maybeStart 回 true', async () => {
@@ -194,6 +205,62 @@ describe('sendMessage 攔截與同 session 抑制', () => {
         ChatModule.init();   // init 可能被重複呼叫（main.js 兩處）
         await flush();
         expect(calls.checkin).toBe(0);
+        // 而且不是「onboarding 整段重演」換來的 checkin:0——第二次 init() 之後
+        // 畫面上不該再出現一次自我介紹（completedThisSession 要擋在最前面，
+        // 連狀態查詢都不必發）
+        expect(messagesText()).not.toContain(I18N.t('onboarding.intro'));
+        expect(OnboardingModule.isActive()).toBe(false);
+    });
+});
+
+describe('腳本延遲期間的輸入保護與 chips 可見性', () => {
+    it('自我介紹的假思考延遲期間送出：文字留在輸入框，稍後同一段字成為取名答案', async () => {
+        const calls = installApi({ completed: false, answered_keys: [] });
+        // 撐開「active 為 true、但 currentKey 還是 null」的那個窗口
+        // （正式碼是 1000–3000ms，使用者完全來得及打完一句話按 Enter）
+        ChatModule.setScriptDelayRange(30, 30);
+        ChatModule.init();
+        await new Promise(r => setTimeout(r, 0));  // maybeStart 跑完，intro 還在思考泡泡裡
+        expect(OnboardingModule.isActive()).toBe(true);
+
+        const input = document.getElementById('user-input');
+        input.value = '我打太快了';
+        ChatModule.sendMessage();
+        // 還沒有題目可答 → 這次不算答案，文字必須原封不動留著（不得無聲吃掉）
+        expect(input.value).toBe('我打太快了');
+        expect(calls.answers).toEqual([]);
+
+        // 腳本追上（intro → 取名邀請）後，同一段文字再送一次就被收下
+        await new Promise(r => setTimeout(r, 120));
+        await flush();
+        ChatModule.sendMessage();
+        await flush();
+        expect(input.value).toBe('');
+        expect(calls.answers).toContainEqual(['companion_naming', '我打太快了']);
+    });
+
+    it('chips 掛上之後把容器捲到底（不會掉到摺線下）', async () => {
+        installApi({ completed: false, answered_keys: [] });
+        const container = document.querySelector('.chat-messages');
+        // jsdom 不做版面計算：scrollHeight 恆為 0、scrollTop 也不會保留寫入值，
+        // 直接斷言等於白寫。這裡在 instance 上遮蔽這兩個屬性來模擬「chips 掛上
+        // 之後容器才變高」——scrollHeight 只有在 chips 真的可見時才回較大值。
+        // 於是 appendChatMessage 內的 scrollToBottom()（發生在 chips 掛上之前）
+        // 只會捲到 500，唯有 showChips() 自己補捲那一下才會到 999。
+        // 注意：這觀察的是「有沒有補捲這個行為」，不是真實的視覺位置。
+        Object.defineProperty(container, 'scrollHeight', {
+            get() {
+                const chips = container.querySelector('.onboarding-chips');
+                return (chips && chips.style.display !== 'none') ? 999 : 500;
+            },
+            configurable: true,
+        });
+        Object.defineProperty(container, 'scrollTop', { value: 0, writable: true, configurable: true });
+
+        ChatModule.init();
+        await flush();
+        expect(document.querySelector('.onboarding-chips')).not.toBeNull();
+        expect(container.scrollTop).toBe(999);
     });
 });
 

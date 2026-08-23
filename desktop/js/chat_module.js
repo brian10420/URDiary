@@ -443,8 +443,12 @@ const ChatModule = (function() {
             OnboardingModule.isActive()) {
             const answerText = userInputElement.value.trim();
             if (!answerText) return;
-            userInputElement.value = '';
-            OnboardingModule.handleAnswer(answerText);
+            // 只有真的被收下當答案才清空輸入框：自我介紹的假思考延遲期間
+            // （active 但還沒問到題目）handleAnswer 會回 false，此時文字必須
+            // 留在輸入框裡，否則使用者打的字會被無聲吃掉、無從復原。
+            if (OnboardingModule.handleAnswer(answerText)) {
+                userInputElement.value = '';
+            }
             return;
         }
 
