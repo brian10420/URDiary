@@ -120,4 +120,28 @@ describe('MemoryModule：兩檔編輯＋模式開關', () => {
         expect(badge.style.display).not.toBe('none');
         expect(badge.textContent).toBe('3');
     });
+
+    it('存檔失敗依 HTTP 狀態碼分流訊息：422→太長，其餘→一般失敗附訊息 (P6)', async () => {
+        const toast = vi.fn();
+        window.UIManager = { showToast: toast };
+        const tooLongErr = new Error('API_ERROR:422');
+        tooLongErr.status = 422;
+        const serverErr = new Error('伺服器出了點問題');
+        serverErr.status = 500;
+        stubApi({ saveMemoryFile: vi.fn()
+            .mockRejectedValueOnce(tooLongErr)
+            .mockRejectedValueOnce(serverErr) });
+        await window.MemoryModule.open();
+
+        document.getElementById('memory-profile-save').click();
+        await vi.waitFor(() => {
+            expect(toast).toHaveBeenCalledWith(I18N.t('memory.tooLong'));
+        });
+
+        toast.mockClear();
+        document.getElementById('memory-profile-save').click();
+        await vi.waitFor(() => {
+            expect(toast).toHaveBeenCalledWith(I18N.t('memory.actionFailed', { error: '伺服器出了點問題' }));
+        });
+    });
 });

@@ -1316,6 +1316,10 @@ const ApiService = (function() {
     }
 
     async function saveMemorySettings(writeMode) {
+        // 注意：body 傳純物件，不要自行 JSON.stringify —— fetchAPI 內部已對
+        // 非 FormData 的 body 統一做一次 JSON.stringify（見該函式），這裡若
+        // 再字串化一次會造成雙重編碼（後端收到的 write_mode 會是一個 JSON
+        // 字串常量，而不是 { write_mode } 物件）。
         return fetchAPI('/users/me/memory/settings', {
             method: 'PUT',
             body: { write_mode: writeMode }

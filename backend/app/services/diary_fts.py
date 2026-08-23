@@ -73,6 +73,10 @@ def index_diary(db, diary) -> None:
         db.commit()
     except Exception as e:
         logger.warning(f"FTS 索引失敗 (diary_id={getattr(diary, 'id', '?')}): {e}")
+        try:
+            db.rollback()
+        except Exception:
+            pass  # rollback 本身失敗也不該再往外炸——這裡只是盡力清理
 
 
 def remove_diary(db, diary_id: int) -> None:
@@ -83,6 +87,10 @@ def remove_diary(db, diary_id: int) -> None:
         db.commit()
     except Exception as e:
         logger.warning(f"FTS 移除失敗 (diary_id={diary_id}): {e}")
+        try:
+            db.rollback()
+        except Exception:
+            pass  # rollback 本身失敗也不該再往外炸——這裡只是盡力清理
 
 
 def search(db, user_id: int, terms, limit: int = 50):

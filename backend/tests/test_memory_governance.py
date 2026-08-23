@@ -1,4 +1,6 @@
 """治理操作：核可/拒絕/撤銷/直接編輯/總覽 (v2.5 Spec C Task 5)。"""
+import json
+
 from database import db_session, crud
 from services import memory_files as mf
 from services import memory_review as mr
@@ -133,6 +135,30 @@ def test_save_user_edit_caps_ledger_and_stale(client, auth_header):
         assert crud.get_memory_op(db, uid, keep).status == "pending"  # add 無 target 不受影響
         ops = crud.get_memory_ops(db, uid)
         assert ops[0].action == "user_edit" and ops[0].status == "applied" and ops[0].source == "user_edit"
+
+
+def test_undo_after_padded_add_from_review_pass(client, auth_header, mock_llm):
+    """P2：review pass 產生的 add 若 text 頭尾帶空白，套用進檔案時會被
+    apply_op strip 掉；帳本若留著沒 strip 的原文，undo 拿它當 target 反查
+    檔案內容會因為空白對不上而 target_not_found。_op_rows 要存 strip 過的值。
+    """
+    _h, uid = auth_header
+    from providers.base import LLMConfig
+    padded_reply = json.dumps({"ops": [
+        {"action": "add", "file": "user_profile", "section": "情緒模式",
+         "text": "  - 有前後空白的一筆 (2026-08-23)  "},
+    ]}, ensure_ascii=False)
+    mock_llm.respond(padded_reply)
+    cfg = LLMConfig(provider="claude", model="m", api_key="k", base_url=None)
+    result = mr.run_review_pass(uid, cfg, lang="zh-TW", chat_history=None,
+                                diary_content="測試 padded text", diary_id=None, valence=0.5)
+    assert result.applied == 1 and result.error is None
+    with db_session() as db:
+        op_id = crud.get_memory_ops(db, uid)[0].id
+    r = mr.undo_op(uid, op_id)
+    assert r["ok"] and r["status"] == "undone"
+    with db_session() as db:
+        assert "有前後空白的一筆" not in crud.get_memory_files(db, uid)["user_profile"].content
 
 
 def test_overview_and_write_mode(client, auth_header):

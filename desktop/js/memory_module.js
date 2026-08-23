@@ -105,7 +105,17 @@ const MemoryModule = (function() {
             refreshBadge(); // user_edit 可能讓 pending 失效
         } catch (e) {
             if (typeof UIManager !== 'undefined' && UIManager.showToast) {
-                UIManager.showToast(I18N.t('memory.tooLong'));
+                // fetchAPI 對 HTTP 錯誤會把數字狀態碼掛在 e.status (見
+                // api_service.js fetchAPI 的 catch 區塊：apiFailure.status =
+                // httpStatus ? parseInt(httpStatus, 10) : null，從
+                // "API_ERROR:xxx" 這類內部訊息碼解析出來)。後端超過字數上限時
+                // 回 422 (routes/memory.py put_memory_file)，只有這個狀態碼
+                // 才代表「太長」；網路/認證/伺服器等其餘錯誤維持一般失敗訊息，
+                // 不該被籠統地誤標成太長。
+                const message = (e && e.status === 422)
+                    ? I18N.t('memory.tooLong')
+                    : I18N.t('memory.actionFailed', { error: e.message || e });
+                UIManager.showToast(message);
             }
         }
     }
@@ -234,6 +244,11 @@ const MemoryModule = (function() {
             }
         }
         await refreshBadge();
+        // 核可/撤銷可能改了檔案內容——refreshBadge 已重抓 overview，順便重填
+        // 兩個文字框，使用者不必關閉再重開 modal 才看得到新內容 (P1)。
+        // refreshBadge 若安靜失敗，overview 會停在舊快照；guard 一下避免
+        // overview 從沒抓成功過 (仍是 null) 時 fillFiles 出錯。
+        if (overview) fillFiles();
         await renderLedger();
     }
 
@@ -246,6 +261,8 @@ const MemoryModule = (function() {
             }
         }
         await refreshBadge();
+        // 同 opAction：批次核可/拒絕後也要重填文字框 (P1)。
+        if (overview) fillFiles();
         await renderLedger();
     }
 

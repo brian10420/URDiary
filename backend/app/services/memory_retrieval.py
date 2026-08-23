@@ -158,6 +158,8 @@ def _keyword_hits_like(user_id: int, terms: list, today) -> list:
 
 def _keyword_hits_fts(user_id: int, terms: list, today) -> list:
     """FTS 候選 → Python 重排 (bm25 相關度 × 新近度 × 情緒強度)。"""
+    # 留在函式內 (非頂層 import)：diary_fts._segment 會反向 import 本模組
+    # 的 _get_jieba，頂層互相 import 會形成循環匯入。
     from services import diary_fts
     with db_session() as db:
         pairs = diary_fts.search(db, user_id, terms, limit=CANDIDATE_LIMIT)
@@ -176,6 +178,8 @@ def _keyword_hits(user_id: int, terms: list, today) -> list:
     """關鍵字軌入口：FTS 可用走 bm25，否則降級原 LIKE 路徑。"""
     if not terms:
         return []
+    # 留在函式內 (非頂層 import)：diary_fts._segment 會反向 import 本模組
+    # 的 _get_jieba，頂層互相 import 會形成循環匯入。
     from services import diary_fts
     if diary_fts.available():
         return _keyword_hits_fts(user_id, terms, today)

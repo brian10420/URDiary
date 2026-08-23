@@ -124,4 +124,32 @@ describe('MemoryModule 帳本', () => {
             expect(document.getElementById('memory-ledger-list').textContent.length).toBeGreaterThan(0);
         });
     });
+
+    it('核可後不必關閉重開 modal：兩個文字框跟著重新填入 (P1)', async () => {
+        let call = 0;
+        stubApi(OPS, {
+            // 第一次 (open() 當下) 回舊內容；核可觸發的 refreshBadge() 是第二次
+            // getMemory 呼叫，回「已套用新句」的內容——驗證 opAction 在
+            // refreshBadge() 之後也重填了文字框，不必使用者關閉再重開 modal。
+            getMemory: vi.fn(async () => {
+                call += 1;
+                const content = call === 1 ? '' : '- [2026-08-23] 模型收斂';
+                return {
+                    files: { user_profile: { content, limit: 800, updated_at: null },
+                             companion_notes: { content: '', limit: 600, updated_at: null } },
+                    write_mode: 'approval', pending_count: call === 1 ? 2 : 1,
+                };
+            }),
+        });
+        await window.MemoryModule.open();
+        window.MemoryModule.showTab('ledger');
+        await vi.waitFor(() => {
+            expect(document.querySelector('[data-op-approve="11"]')).toBeTruthy();
+        });
+        expect(document.getElementById('memory-profile-text').value).not.toContain('模型收斂');
+        document.querySelector('[data-op-approve="11"]').click();
+        await vi.waitFor(() => {
+            expect(document.getElementById('memory-profile-text').value).toContain('模型收斂');
+        });
+    });
 });

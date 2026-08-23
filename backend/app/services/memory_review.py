@@ -117,12 +117,13 @@ def _build_prompt(snapshot: dict, lang: str, *, chat_text: str, diary_content: s
                             "\n(Notes from the old system: sort what still matters into the two files above; a larger ops batch is expected this time.)\n\n")
     else:
         legacy_block = ""
+    empty_marker = "（還是空的）" if lang != "en" else "(still empty)"
     return load_prompt("memory_review_prompt.txt", lang).format(
         today_date=today,
-        user_profile_content=snapshot["user_profile"] or "（還是空的）",
+        user_profile_content=snapshot["user_profile"] or empty_marker,
         user_profile_count=memory_files.char_count(snapshot["user_profile"]),
         user_profile_limit=memory_files.FILE_LIMITS["user_profile"],
-        companion_notes_content=snapshot["companion_notes"] or "（還是空的）",
+        companion_notes_content=snapshot["companion_notes"] or empty_marker,
         companion_notes_count=memory_files.char_count(snapshot["companion_notes"]),
         companion_notes_limit=memory_files.FILE_LIMITS["companion_notes"],
         near_limit_hint=_near_limit_hint(snapshot, lang),
@@ -163,21 +164,32 @@ def _validate_and_apply(ops: list, snapshot: dict):
 
 
 def _op_rows(user_id, batch_id, source, diary_id, results, status_map=None) -> list:
-    """把套用結果轉成 crud.create_memory_ops 的 dict 列。status_map 可整批覆寫。"""
+    """把套用結果轉成 crud.create_memory_ops 的 dict 列。status_map 可整批覆寫。
+
+    file_key/action 存 LLM 原始字串值 (截斷到欄位長度防呆)，只有非字串/缺漏
+    才落回預設值——保留稽核真相，帳本上看得出模型當初到底送了什麼壞資料。
+    target_text/new_text 存 strip 過的版本 (None-safe)：apply_op 套用進檔案
+    時一律 text.strip()，帳本若留著沒 strip 的原文，undo 拿它當 target 反查
+    檔案內容會因為頭尾空白對不上而 target_not_found。
+    """
     rows = []
     for item in results:
         op = item["op"]
         status = item["status"]
         if status_map is not None:
             status = status_map.get(item["status"], item["status"])
+        raw_file = op.get("file")
+        raw_action = op.get("action")
+        target_text = op.get("target")
+        new_text = op.get("text")
         rows.append({
             "user_id": user_id,
-            "file_key": op.get("file") if op.get("file") in memory_files.FILE_KEYS else "user_profile",
+            "file_key": raw_file[:16] if isinstance(raw_file, str) else "user_profile",
             "batch_id": batch_id,
-            "action": op.get("action") if op.get("action") in ("add", "replace", "remove") else "add",
+            "action": raw_action[:12] if isinstance(raw_action, str) else "add",
             "section": op.get("section"),
-            "target_text": op.get("target"),
-            "new_text": op.get("text"),
+            "target_text": target_text.strip() if isinstance(target_text, str) else target_text,
+            "new_text": new_text.strip() if isinstance(new_text, str) else new_text,
             "status": status,
             "source": source,
             "source_diary_id": diary_id,
@@ -248,6 +260,8 @@ def run_review_pass(user_id: int, cfg, lang: str = "zh-TW", *,
     # --- 寫階段 (第二個短交易) ---
     with db_session() as db:
         if contents is None:  # 整批超標拒絕：檔案不動
+            logger.warning(f"記憶 review 整批超標遭拒 (user_id={user_id})，"
+                           f"超標檔案={over}，字數={counts}")
             rows = _op_rows(user_id, batch_id, source, diary_id, results)
             crud.create_memory_ops(db, rows)
             result.failed = len(rows)
