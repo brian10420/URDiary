@@ -23,6 +23,7 @@ class User(Base):
     style_emoji = Column(String(10), nullable=True)         # none / low / high
     style_formality = Column(String(10), nullable=True)     # casual / polite
     memory_write_mode = Column(String(10), nullable=True)  # NULL=auto / "approval" (v2.5 Spec C 治理)
+    onboarding_completed_at = Column(DateTime, nullable=True)  # 初次見面完成戳記 (v2.5 Spec B)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     diaries = relationship("Diary", back_populates="user")
@@ -259,3 +260,29 @@ class MemoryOp(Base):
     error = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     decided_at = Column(DateTime, nullable=True)
+
+
+# onboarding 題目白名單 (v2.5 Spec B)：tuple 順序＝raw 區塊與收納素材的渲染順序。
+# companion_naming 是「幫陪伴者取名」——不是使用者資料，注入與收納一律排除。
+ONBOARDING_QUESTION_KEYS = (
+    "companion_naming", "name", "location", "favorite_food",
+    "important_people", "hobbies", "strengths", "self_view",
+)
+
+
+class OnboardingAnswer(Base):
+    """初次見面的答案原文 (v2.5 Spec B)。一使用者一題一列 (upsert 覆蓋，為未來重跑留路)。
+
+    answer_text 空字串＝跳過（answered_keys 因此含它、續跑不重問；注入渲染時濾掉）。
+    ingested_at：memory review pass 收納戳記（spec §7-3 懶收納）——NULL＝尚未收納，
+    會出現在 raw 注入區塊與 review pass 素材；成功套用後戳記，區塊自然消失。
+    """
+    __tablename__ = "onboarding_answers"
+    __table_args__ = (UniqueConstraint("user_id", "question_key", name="uq_onboarding_user_key"),)
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    question_key = Column(String(32), nullable=False)
+    answer_text = Column(Text, nullable=False, default="")
+    answered_at = Column(DateTime, default=datetime.utcnow)
+    ingested_at = Column(DateTime, nullable=True)
