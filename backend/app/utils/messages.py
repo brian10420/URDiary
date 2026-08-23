@@ -64,6 +64,25 @@ MESSAGES = {
         "zh-TW": "尚未有互動筆記",
         "en": "No interaction note yet",
     },
+
+    # --- 記憶治理 (api/routes/memory.py，v2.5 Spec C Task 8) ---
+    "memory_file_not_found": {
+        "zh-TW": "沒有這份記憶檔",
+        "en": "No such memory file",
+    },
+    "memory_file_too_long": {
+        "zh-TW": "超過字數上限（{limit} 字），請精簡後再儲存",
+        "en": "Over the {limit}-character limit — please trim before saving",
+    },
+    "memory_op_not_found": {
+        "zh-TW": "找不到這筆記憶紀錄",
+        "en": "Memory record not found",
+    },
+    "memory_op_conflict": {
+        "zh-TW": "這筆紀錄目前無法執行此操作：{reason}",
+        "en": "This record cannot take that action right now: {reason}",
+    },
+
     "no_update_data": {
         "zh-TW": "未提供任何更新數據",
         "en": "No update data provided",

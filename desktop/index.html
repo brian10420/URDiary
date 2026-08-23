@@ -31,6 +31,7 @@
     <script src="js/error_logger.js"></script>
     <script src="js/secure_store.js"></script>
     <script src="js/api_service.js"></script>
+    <script src="js/memory_module.js"></script>
     <script src="js/settings_module.js"></script>
 
     <!-- 2. UI和錯誤處理 -->
@@ -225,6 +226,20 @@
                             以語意相似度尋找相關的過往日記（例如「上班的事」能對到「工作」）。需先在後端安裝 fastembed。
                         </small>
                     </div>
+                    <div class="form-group memory-settings-group">
+                        <div style="font-weight: 700; margin-bottom: 8px;" data-i18n="memory.title">記憶</div>
+                        <label style="display: flex; align-items: center; gap: 8px;">
+                            <input type="checkbox" id="settings-memory-askfirst" style="width: auto;">
+                            <span data-i18n="memory.askFirst">記下關於你的事之前，先問過你</span>
+                        </label>
+                        <small style="display: block; margin-top: 4px; color: #888;" data-i18n="memory.askFirstNote"></small>
+                        <div style="display: flex; align-items: center; gap: 10px; margin-top: 10px;">
+                            <button id="settings-memory-manage" class="btn btn-primary">
+                                <span data-i18n="memory.manage">管理記憶</span>
+                                <span id="settings-memory-badge" class="memory-badge" style="display: none;"></span>
+                            </button>
+                        </div>
+                    </div>
                     <hr style="margin: 14px 0;">
                     <h4 data-i18n="companion.sectionTitle">陪伴者</h4>
                     <div class="form-group">
@@ -306,6 +321,54 @@
                         <div class="form-actions" style="margin-top: 10px;">
                             <button id="settings-logout" class="btn" data-i18n="auth.logout">登出這台裝置</button>
                         </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div id="memory-dialog" class="modal" style="display: none;">
+            <div class="modal-content memory-modal-content">
+                <div class="modal-header">
+                    <h3 data-i18n="memory.title">記憶</h3>
+                    <button class="btn-close" id="memory-dialog-close">&times;</button>
+                </div>
+                <div class="memory-tabs">
+                    <button id="memory-tab-profile" class="memory-tab active" data-i18n="memory.tabProfile">使用者檔案</button>
+                    <button id="memory-tab-companion" class="memory-tab" data-i18n="memory.tabCompanion">陪伴者筆記</button>
+                    <button id="memory-tab-ledger" class="memory-tab">
+                        <span data-i18n="memory.tabLedger">記憶帳本</span>
+                        <span id="memory-ledger-badge" class="memory-badge" style="display: none;"></span>
+                    </button>
+                </div>
+                <div class="modal-body">
+                    <div id="memory-pane-profile" class="memory-pane">
+                        <div class="memory-hint" data-i18n="memory.profileHint"></div>
+                        <textarea id="memory-profile-text" class="form-control memory-textarea"></textarea>
+                        <div class="memory-meta-row">
+                            <span id="memory-profile-nearlimit" class="memory-nearlimit" style="display: none;" data-i18n="memory.nearLimit"></span>
+                            <span id="memory-profile-count" class="memory-count"></span>
+                        </div>
+                        <div class="form-actions">
+                            <button id="memory-profile-revert" class="btn" data-i18n="memory.revert">還原</button>
+                            <button id="memory-profile-save" class="btn btn-primary" data-i18n="memory.save">儲存</button>
+                        </div>
+                    </div>
+                    <div id="memory-pane-companion" class="memory-pane" style="display: none;">
+                        <div class="memory-hint" data-i18n="memory.companionHint"></div>
+                        <textarea id="memory-companion-text" class="form-control memory-textarea"></textarea>
+                        <div class="memory-meta-row">
+                            <span id="memory-companion-nearlimit" class="memory-nearlimit" style="display: none;" data-i18n="memory.nearLimit"></span>
+                            <span id="memory-companion-count" class="memory-count"></span>
+                        </div>
+                        <div class="form-actions">
+                            <button id="memory-companion-revert" class="btn" data-i18n="memory.revert">還原</button>
+                            <button id="memory-companion-save" class="btn btn-primary" data-i18n="memory.save">儲存</button>
+                        </div>
+                    </div>
+                    <div id="memory-pane-ledger" class="memory-pane" style="display: none;">
+                        <div class="memory-hint" data-i18n="memory.ledgerHint"></div>
+                        <div id="memory-approval-banner" class="memory-approval-banner" style="display: none;" data-i18n="memory.approvalBanner"></div>
+                        <div id="memory-ledger-list"></div>
                     </div>
                 </div>
             </div>

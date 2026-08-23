@@ -1,8 +1,10 @@
 """記憶檢索管線：依當前訊息撈出「相關的過往日記」注入聊天 system prompt。
 
 雙軌設計：
-- 關鍵字軌 (預設)：jieba 中文分詞 + 英文切詞 → SQL OR-LIKE 撈候選 →
-  Python 計分 (匹配度 × 新近度 × 情緒強度)。零重依賴、全離線、毫秒級。
+- 關鍵字軌 (預設)：jieba 中文分詞 + 英文切詞 → 候選撈取後 Python 計分
+  (匹配度/bm25 相關度 × 新近度 × 情緒強度)。零重依賴、全離線、毫秒級。
+  候選撈取本身分兩階：FTS5 可用時走 diary_fts bm25 查詢，不可用時
+  (罕見自編譯 SQLite) 降級回 SQL OR-LIKE 撈候選。
 - 語意軌 (選配)：fastembed ONNX 多語模型 (multilingual-e5-small)。
   未安裝 fastembed 時整軌靜默停用，絕不影響主流程。
   embedding 於日記存檔時在背景執行緒生成 (crud.create_diary 觸發)。
@@ -135,7 +137,7 @@ def _keyword_match_score(diary, terms: list) -> int:
     return score
 
 
-def _keyword_hits(user_id: int, terms: list, today) -> list:
+def _keyword_hits_like(user_id: int, terms: list, today) -> list:
     """回傳 [(snapshot, score)]，分數由高至低。"""
     if not terms:
         return []
@@ -152,6 +154,36 @@ def _keyword_hits(user_id: int, terms: list, today) -> list:
             scored.append((_snapshot(diary), match * _recency_emotion_factor(diary)))
         scored.sort(key=lambda pair: -pair[1])
         return scored[:TOP_N]
+
+
+def _keyword_hits_fts(user_id: int, terms: list, today) -> list:
+    """FTS 候選 → Python 重排 (bm25 相關度 × 新近度 × 情緒強度)。"""
+    # 留在函式內 (非頂層 import)：diary_fts._segment 會反向 import 本模組
+    # 的 _get_jieba，頂層互相 import 會形成循環匯入。
+    from services import diary_fts
+    with db_session() as db:
+        pairs = diary_fts.search(db, user_id, terms, limit=CANDIDATE_LIMIT)
+        diaries = crud.get_diaries_by_ids(db, user_id, [p[0] for p in pairs])
+        scored = []
+        for diary_id, relevance in pairs:
+            diary = diaries.get(diary_id)
+            if diary is None or diary.diary_date.date() == today:
+                continue
+            scored.append((_snapshot(diary), relevance * _recency_emotion_factor(diary)))
+        scored.sort(key=lambda pair: -pair[1])
+        return scored[:TOP_N]
+
+
+def _keyword_hits(user_id: int, terms: list, today) -> list:
+    """關鍵字軌入口：FTS 可用走 bm25，否則降級原 LIKE 路徑。"""
+    if not terms:
+        return []
+    # 留在函式內 (非頂層 import)：diary_fts._segment 會反向 import 本模組
+    # 的 _get_jieba，頂層互相 import 會形成循環匯入。
+    from services import diary_fts
+    if diary_fts.available():
+        return _keyword_hits_fts(user_id, terms, today)
+    return _keyword_hits_like(user_id, terms, today)
 
 
 # --- 語意軌 (選配) -----------------------------------------------------------

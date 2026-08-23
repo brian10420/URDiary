@@ -15,10 +15,7 @@ from utils.error_codes import ErrorCode
 from utils.logger import api_logger, log_error
 from database import crud
 from services.diary_service import save_diary_for_user, run_end_of_chat_pipeline
-from services.interaction_service import (
-    process_interaction_note_update,
-    get_latest_interaction_note
-)
+from services.interaction_service import get_latest_interaction_note
 from services.analytics_service import analyze_emotion_trends
 
 router = APIRouter()
@@ -294,10 +291,10 @@ def generate_enhanced_diary_api(user_input: UserDiaryCreate,
 
     api_logger.info(f"增強版日記生成成功: user_id={user_id}, diary_id={result['diary']['diary_id']}")
     return {
-        "message": "增強版日記生成成功" if result["interaction_note_error"] is None else "日記已生成，但互動筆記更新失敗",
+        "message": "增強版日記生成成功" if result["memory_review_error"] is None else "日記已生成，但記憶更新失敗",
         "diary": result["diary"],
-        "interaction_note": result["interaction_note"],
-        "interaction_note_error": result["interaction_note_error"]
+        "memory_review": result["memory_review"],
+        "memory_review_error": result["memory_review_error"]
     }
 
 @router.get("/interaction-notes/{user_id}", response_model=Dict[str, Any],
@@ -335,47 +332,33 @@ def get_interaction_note(user_id: int, db: Session = Depends(get_db),
     }
 
 @router.post("/interaction-notes/update", response_model=Dict[str, Any],
-            summary="更新互動筆記",
-            description="根據今日日記更新互動筆記")
+            summary="更新記憶",
+            description="根據今日日記執行記憶 review pass")
 def update_interaction_notes(user_input: UserDiaryCreate,
                              current_user: User = Depends(get_current_user),
                              llm_config: Optional[LLMConfig] = Depends(get_llm_config),
                              lang: str = Depends(get_language),
                              _rate_limit: None = Depends(enforce_llm_rate_limit)):
-    """根據今日日記更新互動筆記"""
-    # 身分由 token 導出，不信任 body
+    """根據今日日記執行記憶 review pass"""
     user_id = str(current_user.id)
     numeric_user_id = current_user.id
-    api_logger.info(f"開始更新互動筆記: user_id={user_id}")
-
+    api_logger.info(f"開始更新記憶: user_id={user_id}")
     try:
-        # 先生成今日日記
-        diary_result = save_diary_for_user(user_id, numeric_user_id, llm_config, lang=lang)
-
-        # 基於今日日記更新互動筆記
-        note_result = process_interaction_note_update(
-            user_id,
-            numeric_user_id,
-            diary_result["content"],
-            llm_config,
-            lang=lang
+        cfg = llm.resolve_config(llm_config)
+        diary_result = save_diary_for_user(user_id, numeric_user_id, cfg, lang=lang)
+        from services.memory_review import run_review_pass
+        from memory_manager import get_chat_history
+        review = run_review_pass(
+            numeric_user_id, cfg, lang=lang,
+            chat_history=get_chat_history(user_id),
+            diary_content=diary_result["content"],
+            diary_id=diary_result["diary_id"],
+            valence=diary_result["valence"],
         )
-
-        api_logger.info(f"互動筆記更新成功: user_id={user_id}")
-        return {
-            "message": "互動筆記更新成功",
-            "diary": diary_result,
-            "interaction_note": note_result
-        }
+        return {"message": "記憶已更新", "diary": diary_result, "memory_review": review.as_dict()}
     except LLMError as e:
         log_error(e, {"user_id": user_id, "action": "update_interaction_notes"})
         raise ServiceUnavailableError(
             error_code=ErrorCode.CHAT_SERVICE_UNAVAILABLE,
             detail=msg("note_unavailable", lang, error=e)
-        )
-    except Exception as e:
-        log_error(e, {"user_id": user_id, "action": "update_interaction_notes"})
-        raise ServerError(
-            error_code=ErrorCode.NOTE_UPDATE_FAILED,
-            detail=msg("note_update_failed", lang, error=str(e))
         )

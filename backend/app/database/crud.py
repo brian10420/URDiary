@@ -305,6 +305,12 @@ def create_diary(db: Session, user_id: int, content: str,
     except Exception:
         pass
 
+    try:
+        from services.diary_fts import index_diary
+        index_diary(db, diary)
+    except Exception:
+        pass
+
     return diary
 
 def get_diary(db: Session, diary_id: int):
@@ -329,6 +335,13 @@ def update_diary(db: Session, diary_id: int, **kwargs):
             
     db.commit()
     db.refresh(diary)
+
+    try:
+        from services.diary_fts import index_diary
+        index_diary(db, diary)
+    except Exception:
+        pass
+
     return diary
 
 def delete_diary(db: Session, diary_id: int):
@@ -337,8 +350,16 @@ def delete_diary(db: Session, diary_id: int):
     if not diary:
         return False
 
+    diary_id = diary.id
     db.delete(diary)
     db.commit()
+
+    try:
+        from services.diary_fts import remove_diary
+        remove_diary(db, diary_id)
+    except Exception:
+        pass
+
     return True
 
 def search_diaries_by_terms(db: Session, user_id: int, terms: List[str],
@@ -498,6 +519,16 @@ def upsert_day_note(db: Session, user_id: int, note_date, stamp: str, phrase: st
         row.source_diary_id = source_diary_id
     db.commit()
     db.refresh(row)
+
+    if source_diary_id:
+        try:
+            from services.diary_fts import index_diary
+            diary = get_diary(db, source_diary_id)
+            if diary is not None:
+                index_diary(db, diary)  # 小語併入該篇日記的索引列
+        except Exception:
+            pass
+
     return row
 
 
@@ -538,3 +569,92 @@ def get_day_notes_by_diary_ids(db: Session, user_id: int, diary_ids) -> dict:
                       models.DayNote.source_diary_id.in_(ids))
               .all())
     return {r.source_diary_id: r for r in rows}
+
+
+# MemoryFile / MemoryOp CRUD operations (v2.5 Spec C)
+def get_memory_file(db: Session, user_id: int, file_key: str):
+    return (db.query(models.MemoryFile)
+              .filter(models.MemoryFile.user_id == user_id,
+                      models.MemoryFile.file_key == file_key)
+              .first())
+
+
+def get_memory_files(db: Session, user_id: int) -> dict:
+    """回 {file_key: MemoryFile}；沒建立的檔不在字典裡 (懶建立語意)。"""
+    rows = (db.query(models.MemoryFile)
+              .filter(models.MemoryFile.user_id == user_id)
+              .all())
+    return {r.file_key: r for r in rows}
+
+
+def upsert_memory_file(db: Session, user_id: int, file_key: str, content: str):
+    row = get_memory_file(db, user_id, file_key)
+    if row is None:
+        row = models.MemoryFile(user_id=user_id, file_key=file_key, content=content)
+        db.add(row)
+    else:
+        row.content = content
+        row.updated_at = datetime.utcnow()
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+def create_memory_ops(db: Session, ops_dicts: List[dict]) -> List[models.MemoryOp]:
+    """一批 ops 一次 commit (一次 review pass = 一個 batch)。"""
+    rows = [models.MemoryOp(**d) for d in ops_dicts]
+    db.add_all(rows)
+    db.commit()
+    for r in rows:
+        db.refresh(r)
+    return rows
+
+
+def get_memory_ops(db: Session, user_id: int, limit: int = 100, offset: int = 0):
+    return (db.query(models.MemoryOp)
+              .filter(models.MemoryOp.user_id == user_id)
+              .order_by(models.MemoryOp.id.desc())
+              .offset(offset).limit(limit).all())
+
+
+def get_memory_op(db: Session, user_id: int, op_id: int):
+    return (db.query(models.MemoryOp)
+              .filter(models.MemoryOp.user_id == user_id,
+                      models.MemoryOp.id == op_id)
+              .first())
+
+
+def get_pending_ops(db: Session, user_id: int):
+    """核可制的待決清單，最舊在前 (套用順序)。"""
+    return (db.query(models.MemoryOp)
+              .filter(models.MemoryOp.user_id == user_id,
+                      models.MemoryOp.status == "pending")
+              .order_by(models.MemoryOp.id)
+              .all())
+
+
+def count_pending_ops(db: Session, user_id: int) -> int:
+    return (db.query(models.MemoryOp)
+              .filter(models.MemoryOp.user_id == user_id,
+                      models.MemoryOp.status == "pending")
+              .count())
+
+
+def get_ops_by_batch(db: Session, user_id: int, batch_id: str):
+    return (db.query(models.MemoryOp)
+              .filter(models.MemoryOp.user_id == user_id,
+                      models.MemoryOp.batch_id == batch_id)
+              .order_by(models.MemoryOp.id)
+              .all())
+
+
+def get_diaries_by_ids(db: Session, user_id: int, ids) -> dict:
+    """FTS 候選回撈 (帶 user_id 過濾雙保險)；回 {diary_id: Diary}。"""
+    ids = [i for i in ids if i is not None]
+    if not ids:
+        return {}
+    rows = (db.query(models.Diary)
+              .filter(models.Diary.user_id == user_id,
+                      models.Diary.id.in_(ids))
+              .all())
+    return {r.id: r for r in rows}

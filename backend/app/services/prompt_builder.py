@@ -5,6 +5,7 @@
 check-in 開場共用同一份人格核心，確保「同一個陪伴者」的一致性。
 """
 import logging
+import re
 from typing import Optional
 
 from services.calendar_service import NO_EVENTS_PLACEHOLDER
@@ -96,7 +97,8 @@ def build_companion_block(lang: str, settings: "Optional[CompanionSettings]") ->
     return header + "\n" + "\n".join(lines) + "\n" + footer
 
 
-def build_conversation_system(lang: str, interaction_note: str,
+def build_conversation_system(lang: str, user_profile_block: str,
+                              companion_notes_block: str,
                               relevant_memories: str, today_date: str,
                               calendar_context: Optional[str] = None,
                               crisis: bool = False,
@@ -114,11 +116,13 @@ def build_conversation_system(lang: str, interaction_note: str,
         persona = persona + "\n\n" + companion_block
     system = load_prompt("conversation_prompt.txt", lang).format(
         persona_core=persona,
-        interaction_note=interaction_note,
+        user_profile_block=user_profile_block,
+        companion_notes_block=companion_notes_block,
         relevant_memories=relevant_memories,
         today_date=today_date,
         calendar_context=_calendar_or_placeholder(calendar_context, lang),
     )
+    system = re.sub(r"\n{3,}", "\n\n", system)
     if crisis:
         system += "\n\n" + load_prompt("crisis_mode.txt", lang)
     return system

@@ -27,9 +27,11 @@ def test_partial_settings_only_mention_set_fields():
 
 def test_conversation_system_appends_block_after_persona():
     s = CompanionSettings(name="小澄")
-    base = build_conversation_system(lang="zh-TW", interaction_note="無",
+    base = build_conversation_system(lang="zh-TW", user_profile_block="無",
+                                     companion_notes_block="",
                                      relevant_memories="無", today_date="2026-08-14")
-    with_c = build_conversation_system(lang="zh-TW", interaction_note="無",
+    with_c = build_conversation_system(lang="zh-TW", user_profile_block="無",
+                                       companion_notes_block="",
                                        relevant_memories="無",
                                        today_date="2026-08-14", companion=s)
     assert "小澄" in with_c and "小澄" not in base
@@ -38,8 +40,8 @@ def test_conversation_system_appends_block_after_persona():
 
 
 def test_conversation_system_empty_companion_identical_to_none():
-    kwargs = dict(lang="zh-TW", interaction_note="無", relevant_memories="無",
-                  today_date="2026-08-14")
+    kwargs = dict(lang="zh-TW", user_profile_block="無", companion_notes_block="",
+                  relevant_memories="無", today_date="2026-08-14")
     assert build_conversation_system(**kwargs) == \
         build_conversation_system(**kwargs, companion=EMPTY_COMPANION)
 
