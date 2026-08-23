@@ -525,7 +525,7 @@ const ApiService = (function() {
             // 存在伺服器上，硬送標頭只會讓後端改用「這台手機的 localStorage 偏好」
             // ——例如 local 供應商的 http://localhost:11434 在手機上指的是手機自己，
             // 不是跑後端的那台機器，送出去只會壞掉。
-            const LLM_ENDPOINT_PATTERNS = ['/chat/', '/generate', '/interaction-notes/update', '/analytics/emotion/'];
+            const LLM_ENDPOINT_PATTERNS = ['/chat/', '/generate', '/interaction-notes/update', '/analytics/emotion/', '/onboarding/complete'];
             const hasSecureStore = (typeof SecureStore !== 'undefined') && SecureStore.isAvailable();
             if (hasSecureStore && LLM_ENDPOINT_PATTERNS.some(p => endpoint.includes(p))) {
                 try {
@@ -1611,6 +1611,27 @@ const ApiService = (function() {
         return await fetchAPI('/users/me/llm', { method: 'DELETE' });
     }
 
+    // --- Onboarding 初次見面 (v2.5 Spec B) ---
+
+    /** 查詢 onboarding 狀態（completed 與已作答的題目 key，含空字串跳過者）。 */
+    async function getOnboardingState() {
+        return await fetchAPI('/users/onboarding/state', { method: 'GET' });
+    }
+
+    /** 逐題儲存答案（空字串＝跳過；body 交給 fetchAPI 統一 JSON 化，不要先 stringify）。 */
+    async function saveOnboardingAnswer(questionKey, answerText) {
+        return await fetchAPI('/users/onboarding/answer', {
+            method: 'POST',
+            body: { question_key: questionKey, answer_text: answerText },
+        });
+    }
+
+    /** 完成 onboarding（冪等）。屬 LLM_ENDPOINT_PATTERNS：桌面版附 X-LLM-* 標頭，
+     *  後端會 best-effort 把答案收納進長期記憶（無金鑰時後端靜默跳過）。 */
+    async function completeOnboarding() {
+        return await fetchAPI('/users/onboarding/complete', { method: 'POST' });
+    }
+
     // 導出API
     return {
         init,
@@ -1645,6 +1666,9 @@ const ApiService = (function() {
         getMemoryOps: getMemoryOps,
         memoryOpAction: memoryOpAction,
         memoryBatchAction: memoryBatchAction,
+        getOnboardingState: getOnboardingState,
+        saveOnboardingAnswer: saveOnboardingAnswer,
+        completeOnboarding: completeOnboarding,
         // 「還握有可用的憑證」：訪問令牌未過期，或還有刷新令牌可以換一張。
         // 不能再用 60 分鐘當門檻 —— 訪問令牌只有 30 分鐘，那樣永遠是 false。
         isAuthenticated: () => (!!accessToken && !isTokenExpiringSoon(0)) || !!getRefreshToken(),
