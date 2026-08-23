@@ -70,6 +70,22 @@ def test_fewshot_has_contrast_pair_and_four_scenes():
         assert marker in en
 
 
+def test_fewshot_has_anti_overfitting_frame():
+    """釘住段首／段尾的「手感示範不是模板」框架句 (反過擬合鐵律，見 Global Constraints)。
+
+    v2 的教訓：few-shot 範例如果沒有頭尾框架句提醒「這是手感不是模板」，模型會
+    把例句的措辭當成可以逐字套用的樣板照抄。這兩句框架句是本段唯一擋過擬合的
+    機制——上面幾個測試都沒鎖住它們，刪掉也不會讓其他測試失敗，所以必須單獨
+    釘住：少了任一句，few-shot 就退化成「照抄範本」。
+    """
+    zh = _fewshot_section("zh-TW")
+    en = _fewshot_section("en")
+    assert "不是模板" in zh, "zh few-shot 缺段首反過擬合框架句"
+    assert "以上只是分量與姿態的參考" in zh, "zh few-shot 缺段尾反過擬合框架句"
+    assert "not the sentences" in en, "en few-shot missing opening anti-overfitting frame"
+    assert "weight-and-stance references only" in en, "en few-shot missing closing anti-overfitting frame"
+
+
 def test_conversation_format_smoke_both_langs():
     from services.prompt_loader import load_prompt
     for lang, marker in (("zh-TW", ZH_MARKER), ("en", EN_MARKER)):
