@@ -6,7 +6,7 @@ calendar.py 一個 router 使用，仍放在這裡集中管理 request schema。
 """
 from datetime import date
 from typing import Literal, Optional
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 class UserDiaryCreate(BaseModel):
@@ -156,3 +156,21 @@ class CompanionSettingsIn(BaseModel):
     style_reply_length: Optional[_StyleReplyLength] = None
     style_emoji: Optional[_StyleEmoji] = None
     style_formality: Optional[_StyleFormality] = None
+
+
+class OnboardingAnswerIn(BaseModel):
+    """POST /users/onboarding/answer 的請求 body (v2.5 Spec B)。
+
+    空字串是合法值（跳過語義——answered_keys 因此包含該題，續跑不重問）。
+    白名單與 500 字上限都在 schema 層擋（422），不需要雙語訊息鍵。
+    """
+    question_key: str
+    answer_text: str = Field(default="", max_length=500)
+
+    @field_validator("question_key")
+    @classmethod
+    def _key_in_whitelist(cls, v: str) -> str:
+        from database.models import ONBOARDING_QUESTION_KEYS
+        if v not in ONBOARDING_QUESTION_KEYS:
+            raise ValueError(f"unknown question_key: {v}")
+        return v

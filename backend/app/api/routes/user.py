@@ -25,19 +25,21 @@ from typing import List, Dict, Any, Optional
 from pydantic import BaseModel, Field
 from datetime import datetime, timedelta
 
+import logging
 import uuid
 
-from api.deps import get_db, get_current_user, get_current_token_data, get_language
-from api.schemas import CompanionSettingsIn
+from api.deps import get_db, get_current_user, get_current_token_data, get_language, get_llm_config
+from api.schemas import CompanionSettingsIn, OnboardingAnswerIn
 from middleware import rate_limit
 from utils.api_exceptions import BadRequestError, NotFoundError, UnauthorizedError, ForbiddenError
 from utils.error_codes import ErrorCode
 from utils.messages import msg
 from utils.password_validator import validate_password_and_get_errors
 from utils.invite_codes import hash_invite_code
-from database import crud
+from database import crud, db_session
 from database.models import User
 from providers.factory import KNOWN_PROVIDERS
+from providers.base import LLMConfig
 from services import llm_credential_service
 from utils.security import (
     TokenData,
@@ -55,6 +57,7 @@ from config import ACCESS_TOKEN_MINUTES, REFRESH_TOKEN_DAYS
 import config
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 class UserCreate(BaseModel):
     username: str
@@ -481,6 +484,59 @@ def put_my_companion(payload: CompanionSettingsIn,
             setattr(user, column, value)
     db.commit()
     return {"message": msg("companion_saved", lang), **_companion_payload(user)}
+
+
+# --- Onboarding 初次見面 (v2.5 Spec B) ---
+# 註冊順序同樣要在 /{user_id} 之前 (見上面 /sessions 的說明——"onboarding"
+# 會被 /{user_id} 的 int 轉型接走然後 422)。
+
+@router.get("/onboarding/state", response_model=Dict[str, Any],
+            summary="查詢 onboarding 狀態",
+            description="回報是否已完成初次見面，以及已作答（含空字串跳過）的題目 key")
+def get_onboarding_state(current_user: User = Depends(get_current_user),
+                         db: Session = Depends(get_db)):
+    answers = crud.get_onboarding_answers(db, current_user.id)
+    return {"completed": current_user.onboarding_completed_at is not None,
+            "answered_keys": [a.question_key for a in answers]}
+
+
+@router.post("/onboarding/answer", response_model=Dict[str, Any],
+             summary="儲存一題 onboarding 答案",
+             description="逐題 upsert；空字串＝跳過（續跑不重問）。白名單外或超長回 422")
+def save_onboarding_answer(payload: OnboardingAnswerIn,
+                           current_user: User = Depends(get_current_user),
+                           db: Session = Depends(get_db)):
+    row = crud.upsert_onboarding_answer(db, current_user.id,
+                                        payload.question_key, payload.answer_text)
+    return {"saved": True, "question_key": row.question_key}
+
+
+@router.post("/onboarding/complete", response_model=Dict[str, Any],
+             summary="完成 onboarding",
+             description="設完成戳記（冪等），並盡力把答案收納進長期記憶（無金鑰時靜默跳過）")
+def complete_onboarding(current_user: User = Depends(get_current_user),
+                        llm_config: Optional[LLMConfig] = Depends(get_llm_config),
+                        lang: str = Depends(get_language)):
+    """連線紀律比照 diary.py 的 update_interaction_notes：本路由不掛 get_db，
+    寫入走自己的短交易，LLM 呼叫期間不持有工作用 session。"""
+    with db_session() as db:
+        user = crud.get_user(db, current_user.id)
+        if user.onboarding_completed_at is None:
+            user.onboarding_completed_at = datetime.utcnow()
+            db.commit()
+        has_material = bool(crud.get_uningested_onboarding_answers(db, current_user.id))
+
+    review = None
+    if has_material:
+        try:
+            from services.memory_review import run_review_pass
+            review = run_review_pass(current_user.id, llm_config, lang=lang,
+                                     source="onboarding")
+        except Exception as e:  # 收納是 best-effort：任何失敗都不擋 complete
+            logger.warning(f"onboarding 收納略過 (user_id={current_user.id}): {e}")
+
+    return {"completed": True,
+            "memory_review": review.as_dict() if review else None}
 
 
 # --- 個人 LLM 金鑰 (v2.3 task 1.6：手機瀏覽器沒有 safeStorage，金鑰改存伺服器) ---
