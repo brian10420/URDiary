@@ -31,6 +31,7 @@ import uuid
 from api.deps import get_db, get_current_user, get_current_token_data, get_language, get_llm_config
 from api.schemas import CompanionSettingsIn, OnboardingAnswerIn
 from middleware import rate_limit
+from middleware.rate_limit import enforce_llm_rate_limit
 from utils.api_exceptions import BadRequestError, NotFoundError, UnauthorizedError, ForbiddenError
 from utils.error_codes import ErrorCode
 from utils.messages import msg
@@ -516,7 +517,8 @@ def save_onboarding_answer(payload: OnboardingAnswerIn,
              description="設完成戳記（冪等），並盡力把答案收納進長期記憶（無金鑰時靜默跳過）")
 def complete_onboarding(current_user: User = Depends(get_current_user),
                         llm_config: Optional[LLMConfig] = Depends(get_llm_config),
-                        lang: str = Depends(get_language)):
+                        lang: str = Depends(get_language),
+                        _rate_limit: None = Depends(enforce_llm_rate_limit)):
     """連線紀律比照 diary.py 的 update_interaction_notes：本路由不掛 get_db，
     寫入走自己的短交易，LLM 呼叫期間不持有工作用 session。"""
     with db_session() as db:
