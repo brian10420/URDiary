@@ -1237,6 +1237,17 @@ const ChatModule = (function() {
         // 換帳號後新的工作階段可以再提示一次慢速模型建議
         slowModelHintShown = false;
 
+        // onboarding 狀態同樣歸零（v2.5 Spec B）：main.js 的 loginUser() 每次
+        // 登入都跑 reset() → init() 且不重整頁面，OnboardingModule 又是活在整個
+        // 分頁生命週期的 IIFE 單例——不歸零的話，前一個帳號的「本 session 已
+        // 完成」會讓下一個帳號的初次見面永遠不啟動（連每日問候也一併被抑制＝
+        // 空白對話頁）；前一個帳號若停在進行中，下一位使用者打的字還會被
+        // sendMessage 攔截、以舊題目 key 存進他自己的帳號。理由與上面
+        // slowModelHintShown 同一類。typeof 防禦同本檔其餘可選依賴。
+        if (typeof OnboardingModule !== 'undefined' && OnboardingModule.reset) {
+            OnboardingModule.reset();
+        }
+
         // 麥克風鍵不在 chatMessagesContainer 底下，上面的 innerHTML 清空不會
         // 動到它——錄音狀態旗標另外歸零，避免殘留的 recording=true 讓下一次
         // 點擊誤判成「正在錄音、要停止」（此時 VoiceModule 內部其實早已沒有

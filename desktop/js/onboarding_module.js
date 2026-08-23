@@ -176,21 +176,37 @@ const OnboardingModule = (function () {
         chipsEl = null;
     }
 
+    /**
+     * 歸零模組狀態——換帳號時由 ChatModule.reset() 呼叫。
+     *
+     * 本模組是 IIFE 單例，狀態活在整個分頁的生命週期裡；而 main.js 的
+     * loginUser() 每次登入都跑 reset() → init() 且「不重整頁面」（全檔唯一的
+     * location.reload() 是 service worker 更新路徑），所以同一個分頁換帳號是
+     * 真實情境。不歸零會外洩兩種狀態：
+     *   (1) completedThisSession：前一個帳號完成過，下一個帳號的 maybeStart()
+     *       會直接 return true，初次見面永遠不啟動，連每日問候也一併被抑制
+     *       ——下一位使用者看到的是空白對話頁。
+     *   (2) active/currentKey：前一個帳號停在進行中，下一位使用者打的字會被
+     *       sendMessage 攔截，以「上一個帳號當前題目」的 key 存進他自己的帳號。
+     * 比照 ChatModule.reset() 既有的 slowModelHintShown 歸零（同一個理由）。
+     */
+    function reset() {
+        active = false;
+        completedThisSession = false;
+        answered = new Set();
+        currentKey = null;
+        namingRetried = false;
+        removeChips();
+    }
+
     return {
         maybeStart: maybeStart,
         isActive: isActive,
         handleAnswer: handleAnswer,
         handleSkip: handleSkip,
-        // 僅為 vitest 曝光：重置模組狀態（IIFE 單例跨測試共用）
-        _test: {
-            reset: function () {
-                active = false;
-                completedThisSession = false;
-                answered = new Set();
-                currentKey = null;
-                namingRetried = false;
-                removeChips();
-            },
-        },
+        reset: reset,
+        // 僅為 vitest 曝光（IIFE 單例跨測試共用）：與正式 reset 同一份實作，
+        // 不另外複製一份，避免兩邊日後各自漂移
+        _test: { reset: reset },
     };
 })();

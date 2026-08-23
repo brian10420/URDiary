@@ -197,6 +197,55 @@ describe('sendMessage 攔截與同 session 抑制', () => {
     });
 });
 
+describe('換帳號（reset 生命週期）', () => {
+    /**
+     * main.js 的 loginUser() 每次登入都跑 ChatModule.reset() → ChatModule.init()
+     * 且不重整頁面（js/main.js 全檔唯一的 location.reload() 是 service worker
+     * 更新路徑），所以「同一個分頁換帳號」是真實情境。OnboardingModule 是活在
+     * 整個分頁生命週期的 IIFE 單例，兩個旗標會各自獨立外洩到下一個帳號，
+     * 因此兩條路徑分開釘。
+     */
+    it('A 停在 onboarding 進行中就換帳號：B 拿到自己的初次見面，不是空白對話頁', async () => {
+        installApi({ completed: false, answered_keys: [] });
+        ChatModule.init();
+        await flush();
+        expect(OnboardingModule.isActive()).toBe(true);   // A 停在取名題
+
+        // 換帳號：B 是另一個同樣還沒完成 onboarding 的帳號
+        const bCalls = installApi({ completed: false, answered_keys: [] });
+        ChatModule.reset();
+        ChatModule.init();
+        await flush();
+
+        // active 沒歸零的話 maybeStart() 會在第一行就 return true（不查 B 的
+        // 狀態、不發任何腳本訊息），而 reset()/init() 已經清空畫面＝空白對話頁
+        expect(messagesText()).toContain(I18N.t('onboarding.intro'));
+        expect(messagesText()).toContain(I18N.t('onboarding.naming'));
+        expect(OnboardingModule.isActive()).toBe(true);
+        expect(bCalls.checkin).toBe(0);
+    });
+
+    it('A 完成後換帳號：B 不被 A 的「本 session 已完成」抑制掉', async () => {
+        installApi({ completed: false, answered_keys: [] });
+        ChatModule.init();
+        await flush();
+        document.querySelector('[data-onboarding-start-chat]').click();
+        await flush();
+        expect(OnboardingModule.isActive()).toBe(false);  // A 已收束
+
+        const bCalls = installApi({ completed: false, answered_keys: [] });
+        ChatModule.reset();
+        ChatModule.init();
+        await flush();
+
+        // completedThisSession 沒歸零的話 B 既拿不到初次見面、也不會有每日
+        // 問候（maybeStart 回 true＝抑制 check-in）＝空白對話頁
+        expect(OnboardingModule.isActive()).toBe(true);
+        expect(messagesText()).toContain(I18N.t('onboarding.intro'));
+        expect(bCalls.checkin).toBe(0);
+    });
+});
+
 describe('安全：轉義與注入面', () => {
     it('答案含 HTML 時以純文字渲染、不產生節點（XSS，走既有 escape 管線）', async () => {
         installApi({ completed: false, answered_keys: ['companion_naming'] });
