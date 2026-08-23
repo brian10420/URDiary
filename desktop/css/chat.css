@@ -490,3 +490,20 @@
         height: 36px;
     }
 }
+
+/* Onboarding 常駐 chips（v2.5 Spec B）：貼最新腳本訊息下方的逃生口 */
+.onboarding-chips {
+    display: flex;
+    gap: 8px;
+    margin: 4px 0 12px 52px; /* 與訊息氣泡左緣對齊（頭像寬＋間距） */
+}
+.onboarding-chip {
+    border: 1px solid var(--border-color, #d0d0d0);
+    background: var(--card-bg, transparent);
+    color: inherit;
+    border-radius: 16px;
+    padding: 6px 14px;
+    font-size: 0.85rem;
+    cursor: pointer;
+}
+.onboarding-chip:hover { filter: brightness(0.95); }

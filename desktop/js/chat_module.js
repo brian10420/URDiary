@@ -321,9 +321,10 @@ const ChatModule = (function() {
                 chatMessagesContainer.innerHTML = '';
             }
 
-            // 每日 check-in：今日首次開啟時由 AI 主動問候（依昨日日記與時段）。
-            // 後端為準：已問候過/未設金鑰時回 checkin:false，畫面空著才補靜態歡迎詞。
-            requestDailyCheckin(renderedToday);
+            // 開場 gate（v2.5 Spec B）：onboarding 未完成者先走初次見面（自我介紹
+            // 就是問候，該次不發 check-in；完成後同一 session 也不補發）；
+            // 其餘照舊由後端決定每日問候。
+            startConversationOpening(renderedToday);
         } catch (error) {
             console.error('載入聊天歷史失敗:', error);
             chatHistory = [];
@@ -334,6 +335,21 @@ const ChatModule = (function() {
 
     // 每日問候只發一次（init 可能被重複呼叫，兩個非同步請求賽跑會加出兩句歡迎詞）
     let checkinInFlight = false;
+
+    // onboarding gate：只有「沒啟動 onboarding」才走每日 check-in
+    async function startConversationOpening(renderedToday) {
+        let onboardingStarted = false;
+        if (typeof OnboardingModule !== 'undefined' && OnboardingModule.maybeStart) {
+            try {
+                onboardingStarted = await OnboardingModule.maybeStart();
+            } catch (e) {
+                console.warn('onboarding 啟動檢查失敗，回退每日問候:', e);
+            }
+        }
+        if (!onboardingStarted) {
+            requestDailyCheckin(renderedToday);
+        }
+    }
 
     // 向後端請求每日開場問候
     async function requestDailyCheckin(hasRenderedHistory) {
@@ -421,6 +437,17 @@ const ChatModule = (function() {
     // 揭曉），(2) 萬一送出失敗，原始文字存在該則氣泡的 dataset 上，附一顆
     // 「點擊重試」，不必使用者重新輸入（見 attemptSend/markSendFailed）。
     async function sendMessage() {
+        // onboarding 進行中（v2.5 Spec B）：打字送出＝回答當前題，不走一般聊天。
+        // typeof 防禦比照本檔其餘可選依賴（部分測試不載入 onboarding_module.js）。
+        if (typeof OnboardingModule !== 'undefined' && OnboardingModule.isActive &&
+            OnboardingModule.isActive()) {
+            const answerText = userInputElement.value.trim();
+            if (!answerText) return;
+            userInputElement.value = '';
+            OnboardingModule.handleAnswer(answerText);
+            return;
+        }
+
         // 獲取用戶輸入
         const userInput = userInputElement.value.trim();
 
