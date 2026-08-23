@@ -1240,6 +1240,16 @@ const ChatModule = (function() {
         addEphemeralUserMessage: addEphemeralUserMessage,
         withThinkingDelay: withThinkingDelay,
         setScriptDelayRange: setScriptDelayRange,
-        _test: { handleTranscript: handleTranscript }
+        _test: {
+            handleTranscript: handleTranscript,
+            // v2.5 Spec B fix round 1（code review finding 1/2）：純測試觀察
+            // 鉤子，不改變任何正式行為。讓測試能直接讀「陣列層保證本身」與
+            // 「從未被覆寫過的出廠預設值」，而不是只驗證下游、可能沒被真的
+            // 觸發到的副作用（例如 localStorage 持久層——沒有任何直接呼叫
+            // 路徑會從 ephemeral 函式一路走到 saveChatHistory()，就算 guard
+            // 被拿掉，那個斷言本來就不會發現）。
+            chatHistoryLength: function () { return chatHistory.length; },
+            getScriptDelayRange: function () { return scriptDelayRange; }
+        }
     };
 })();
