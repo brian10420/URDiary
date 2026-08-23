@@ -182,3 +182,33 @@ def get_user_profile_block(user_id: int, lang: str) -> str
 - `git diff --numstat` 驗兩語提示詞加法零刪改（僅聲明過的新段/新行）。
 - 兩語同步檢查（zh-TW/en 每處增補成對）。
 - sw `CACHE_VERSION` bump（PWA 拿到新前端）。
+
+## §7 接縫重審補記（2026-08-24，C 落地後逐節重審定案）
+
+Spec C（記憶 2.0）已先於 B 合併 main@2c346fe。逐節重審結論：§1–§4、§6 照舊；
+§5 接縫敘述按現碼微調如下，B 實作以本節與實作計畫
+（`docs/superpowers/plans/2026-08-24-conversation-experience.md`）為準，其餘設計不重開：
+
+1. **承載函式**：`services/user_profile.py` 已由 C 建立；conversation 與 check-in 兩個
+   呼叫端實際呼叫的是 `get_memory_context()`（`interaction_service.py:56`、`:234`；
+   `get_user_profile_block()` 是它的薄包裝、生產路徑無人直呼）。B 的
+   【他初次見面時告訴你的】渲染加在 **`get_memory_context()` 內部**——兩個呼叫端與
+   包裝函式全部零改動，比原文更徹底做到「呼叫端不動」。
+2. **注入點 1、2 已由 C 完成**（conversation 雙 placeholder＋builder format key；
+   check-in 的 profile_block＋companion_block 合成與「還不熟」fallback）。B 唯一的
+   行為差異：有未收納答案時 `has_any=True`（自然由第 1 點達成）。
+3. **「Spec C 到來時」段反轉為收納（ingestion）**（2026-08-24 使用者裁決：
+   complete 一次＋懶收納素材）：`onboarding_answers` 加 `ingested_at`（nullable）；
+   complete 端點 best-effort 呼叫 `run_review_pass(source="onboarding")`（無金鑰／失敗
+   靜默跳過、絕不擋 complete）；另比照 C 的 `legacy_note_block` 懶遷移模式，review pass
+   讀階段把未收納答案渲染成【初次見面他告訴你的（收納素材）】注入
+   `memory_review_prompt` 新 placeholder `{onboarding_block}`——零金鑰走完 onboarding
+   的人，首篇日記後的 review pass 自然補收。成功套用（applied>0 或 approval 模式
+   pending>0）才戳記 `ingested_at`；收納後 raw 區塊自然消失。空 ops／解析失敗／超標
+   整批拒絕都不戳記（素材下輪重現＝天然重試）。
+4. **raw 答案同步進 `diary_context`**（2026-08-24 使用者裁決：成本低、體驗優先）——
+   日記生成當天即知道名字與喜好；收納後改經 user_profile 檔自然到位。
+5. 「加法零刪改＋numstat」鐵律的適用範圍＝`persona_core.txt` 與
+   `conversation_prompt.txt` 兩檔（語氣調校資產）；`memory_review_prompt.txt` 的
+   `{onboarding_block}` placeholder 插入是 C 檔案的必要修改（僅素材鏈那一行），
+   不在此鐵律內。
