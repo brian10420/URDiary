@@ -910,6 +910,40 @@ const ChatModule = (function() {
         return appendChatMessage('user', content, true, false, undefined, true);
     }
 
+    /**
+     * v2.5 Spec C：核可制下有待核可記憶 → 溫暖邀請（整顆泡泡可點 → 記憶 modal）。
+     *
+     * 兩個呼叫端共用同一份實作：endChat 的成功路徑（日記生成完）、以及
+     * OnboardingModule.finish()（初次見面的答案也會產生 pending ops，見
+     * user.py 的 /onboarding/complete 回傳 memory_review）。原本這段只寫在
+     * endChat 裡，onboarding 那條路產生的待核可項目因此從來不會被告知。
+     *
+     * opts.ephemeral：onboarding 呼叫時傳 true——初次見面全程「不進持久層」
+     * （spec §4 鐵律：重載不重演），這則通知緊接在 ephemeral 的 outro 之後，
+     * 若走一般 addSystemMessage 就會混進記憶體裡的 chatHistory，被使用者
+     * 之後第一則真實訊息的 saveChatHistory() 一起存下來、重載時單獨浮出來
+     * （outro 早已消失）。文案／點擊接線／refreshBadge 三件事兩邊完全一致，
+     * 只有「進不進 chatHistory」不同。
+     * 回傳訊息節點；review 缺席或 pending<=0 回 null（呼叫端不必自己判斷）。
+     */
+    function showMemoryPendingNotice(review, opts) {
+        if (!review || !(review.pending > 0)) return null;
+        // spec §5 裁決（fix wave）：泡泡需要看得見的「去看看」文字提示，
+        // 不能只靠純滑鼠游標樣式暗示可點——兩把 i18n 鑰匙用最小拼接組成
+        // 訊息文字，不新增 HTML 機關。
+        const noticeText = `${I18N.t('memory.pendingNotice')} ${I18N.t('memory.goSee')}`;
+        const noticeElement = (opts && opts.ephemeral)
+            ? addEphemeralSystemMessage(noticeText)
+            : addSystemMessage(noticeText);
+        const noticeBubble = noticeElement && noticeElement.querySelector('.message-bubble');
+        if (noticeBubble && typeof MemoryModule !== 'undefined') {
+            noticeBubble.style.cursor = 'pointer';
+            noticeBubble.addEventListener('click', () => MemoryModule.open());
+        }
+        if (typeof MemoryModule !== 'undefined') MemoryModule.refreshBadge();
+        return noticeElement;
+    }
+
     // 添加"思考中"消息
     // v2.4 spec③：泡泡內文優先用 MascotModule.thinkingBubbleHtml()（搖擺吉祥物
     // ＋三點動畫）。typeof 防禦比照下面 appendChatMessage 對 VoiceModule 的
@@ -1056,20 +1090,7 @@ const ChatModule = (function() {
             // 早於這整段執行，成功路徑之後不再呼叫 saveChatHistory()，所以
             // 這裡沿用預設參數（捲動到通知是正確的 UX）即可，訊息不會落盤，
             // 與上面的 diaryMessage 本身同構（見該處）。
-            // spec §5 裁決（fix wave）：泡泡需要看得見的「去看看」文字提示，
-            // 不能只靠純滑鼠游標樣式暗示可點——兩把 i18n 鑰匙用最小拼接組成
-            // 訊息文字，不新增 HTML 機關；整顆泡泡仍然可點擊 → MemoryModule.open()。
-            const review = response.memory_review;
-            if (review && review.pending > 0) {
-                const noticeText = `${I18N.t('memory.pendingNotice')} ${I18N.t('memory.goSee')}`;
-                const noticeElement = addSystemMessage(noticeText);
-                const noticeBubble = noticeElement && noticeElement.querySelector('.message-bubble');
-                if (noticeBubble && typeof MemoryModule !== 'undefined') {
-                    noticeBubble.style.cursor = 'pointer';
-                    noticeBubble.addEventListener('click', () => MemoryModule.open());
-                }
-                if (typeof MemoryModule !== 'undefined') MemoryModule.refreshBadge();
-            }
+            showMemoryPendingNotice(response.memory_review);
 
             // v2.4 spec ③：存日記彩蛋。只綁這個操作事件；negative valence → 安靜略過。
             if (typeof MascotModule !== 'undefined') {
@@ -1276,12 +1297,14 @@ const ChatModule = (function() {
         diaryDayString: diaryDayString,
         applyCompanionTitle: applyCompanionTitle,
         maybeShowSlowModelHint: maybeShowSlowModelHint,
-        // v2.5 Spec B：onboarding 腳本訊息基礎設施
-        addThinkingMessage: addThinkingMessage,
+        // v2.5 Spec B：onboarding 腳本訊息基礎設施（假思考泡泡本身不外曝——
+        // 腳本訊息一律走 withThinkingDelay，它內部才呼叫 addThinkingMessage）
         addEphemeralSystemMessage: addEphemeralSystemMessage,
         addEphemeralUserMessage: addEphemeralUserMessage,
         withThinkingDelay: withThinkingDelay,
         setScriptDelayRange: setScriptDelayRange,
+        // v2.5 Spec C 通知：endChat 與 onboarding 收束共用（見該函式說明）
+        showMemoryPendingNotice: showMemoryPendingNotice,
         _test: {
             handleTranscript: handleTranscript,
             // v2.5 Spec B fix round 1（code review finding 1/2）：純測試觀察

@@ -22,6 +22,7 @@ const OnboardingModule = (function () {
     let answered = new Set();
     let currentKey = null;             // NAMING_KEY | QUESTION_KEYS 之一 | null
     let namingRetried = false;
+    let scriptInFlight = false;        // 腳本訊息還在假思考泡泡裡（見 script()／handleAnswer）
     let chipsEl = null;
 
     function isActive() { return active; }
@@ -74,16 +75,30 @@ const OnboardingModule = (function () {
         return I18N.t(ACK_KEYS[Math.floor(Math.random() * ACK_KEYS.length)]);
     }
 
+    /** 換行／tab 壓成空白、其餘控制字元刪掉，再 trim（後端 pattern 的鏡像）。 */
+    function sanitizeName(text) {
+        return String(text)
+            .replace(/[\r\n\t\v\f]+/g, ' ')
+            .replace(/[\x00-\x08\x0e-\x1f\x7f]/g, '')
+            .trim();
+    }
+
     /**
      * 使用者打字送出（由 ChatModule.sendMessage 攔截轉來）。
      *
-     * 回傳「這次送出有沒有被當成答案收下」：false 代表現在還沒有題目可答
-     * （active 但 currentKey 還是 null——自我介紹的假思考延遲那 1–3 秒就是這個
-     * 狀態），呼叫端據此**不要清空輸入框**，使用者打的字才不會被無聲吃掉；
-     * 他下一次按 Enter 就會拿去回答取名題。
+     * 回傳「這次送出有沒有被當成答案收下」：false 代表現在**還沒有題目可答**，
+     * 呼叫端據此**不要清空輸入框**，使用者打的字才不會被無聲吃掉或誤記；
+     * 等題目真的現身之後他再按一次 Enter 就會被收下。兩個窗口都算：
+     *   (1) currentKey 還是 null——自我介紹（intro/resume）的假思考延遲；
+     *   (2) scriptInFlight——askNext() 是**同步**把 currentKey 指到下一題的，
+     *       但那題的文字要等 script() 的 1–3 秒假思考結束才會出現在畫面上。
+     *       這段空窗期若照收，使用者補在上一題後面的話（「啊對了 我姓陳」）
+     *       會被存成他根本還沒看到的那題（住哪個城市）的答案——文字被吃掉
+     *       又存錯格，比 (1) 更糟。namingTooLong 的重試分支同理（currentKey
+     *       停在取名題，但「名字太長了」那句話還沒出現）。
      */
     function handleAnswer(text) {
-        if (!active || !currentKey) return false;
+        if (!active || scriptInFlight || !currentKey) return false;
         ChatModule.addEphemeralUserMessage(text);
         hideChips();
         if (currentKey === NAMING_KEY) { handleNamingAnswer(text); return true; }
@@ -93,15 +108,25 @@ const OnboardingModule = (function () {
         return true;
     }
 
-    /** 取名分支：原文一律 upsert（含超長，供續跑判斷）；≤12 字才寫 companion_name。 */
+    /**
+     * 取名分支：原文一律 upsert（含超長，供續跑判斷）；≤12 字才寫 companion_name。
+     *
+     * 送去伺服器與拿來自稱的名字先洗掉控制字元：輸入框是 <textarea>，
+     * Shift+Enter 就會插進一個換行，而後端 CompanionSettingsIn.companion_name
+     * 帶 pattern=_NO_CTRL_PATTERN（那段文字會進 system prompt），含換行一律
+     * 422；422 被下面的 .catch 吞掉之後 namingAck 照樣說「從現在起我就是X了」
+     * ——陪伴者頂著一個伺服器根本沒收下的名字。長度也改量洗過的字數（那才是
+     * 真正會被存起來的東西）。入庫的 saveAnswer 仍是原文（spec §4 答案原文入庫）。
+     */
     function handleNamingAnswer(text) {
         saveAnswer(NAMING_KEY, text);
         answered.add(NAMING_KEY);
-        if (Array.from(text).length <= NAME_MAX_CHARS) {
+        const name = sanitizeName(text);
+        if (name && Array.from(name).length <= NAME_MAX_CHARS) {
             ApiService.fetchAPI('/users/me/companion', {
-                method: 'PUT', body: { companion_name: text },
+                method: 'PUT', body: { companion_name: name },
             }).catch(function (e) { console.warn('陪伴者名字儲存失敗（流程照常）:', e); });
-            script(I18N.t('onboarding.namingAck', { name: text }), function () { askNext(false); });
+            script(I18N.t('onboarding.namingAck', { name: name }), function () { askNext(false); });
         } else if (!namingRetried) {
             namingRetried = true;
             answered.delete(NAMING_KEY);   // 重試一次：取名還沒定案，currentKey 停在原地
@@ -120,16 +145,36 @@ const OnboardingModule = (function () {
         askNext(true);
     }
 
-    /** 收束（walked＝走完七題；early＝「直接開始聊天」）。已答部分早已逐題入庫。 */
+    /**
+     * 收束（walked＝走完七題；early＝「直接開始聊天」）。已答部分早已逐題入庫。
+     *
+     * /onboarding/complete 會順手跑一次記憶收納 pass 並回傳 memory_review：
+     * 核可制下這批答案會變成「待核可」ops，檔案這時還是空的。原本這裡把
+     * 回應整個丟掉，而 Spec C 的待核可通知只掛在 endChat 那條路上——使用者
+     * 因此完全不知道有東西等著他核可（帳本徽章也沒刷新）。這裡改成等結果
+     * 回來、沿用 ChatModule 既有的通知路徑（不另造一套）。
+     *
+     * 兩件事都不能破：
+     *   (1) 失敗不擋主流程——.catch 吞掉並回 null，outro 照樣先出現；
+     *   (2) 通知要排在 outro「之後」——outro 自己還壓著 1–3 秒假思考，
+     *       所以掛在 script() 的 andThen 裡等兩邊都到齊才顯示。
+     */
     function finish(early) {
         currentKey = null;
         active = false;
         completedThisSession = true;
         removeChips();
-        script(I18N.t(early ? 'onboarding.outroEarly' : 'onboarding.outro'), null, { last: true });
-        ApiService.completeOnboarding().catch(function (e) {
+        const completing = ApiService.completeOnboarding().catch(function (e) {
             console.warn('onboarding complete 送出失敗:', e);
+            return null;
         });
+        script(I18N.t(early ? 'onboarding.outroEarly' : 'onboarding.outro'), function () {
+            completing.then(function (res) {
+                if (typeof ChatModule.showMemoryPendingNotice !== 'function') return;
+                // ephemeral：初次見面全程不進持久層，這則通知同理（見該函式說明）
+                ChatModule.showMemoryPendingNotice(res && res.memory_review, { ephemeral: true });
+            });
+        }, { last: true });
     }
 
     function saveAnswer(key, text) {
@@ -138,10 +183,18 @@ const OnboardingModule = (function () {
         });
     }
 
-    /** 每則腳本訊息：藏 chips → 假思考 → 訊息與 chips 同時現身 → andThen()。 */
+    /**
+     * 每則腳本訊息：藏 chips → 假思考 → 訊息與 chips 同時現身 → andThen()。
+     *
+     * scriptInFlight 標記整段假思考延遲（見 handleAnswer）：在回呼「最前面」
+     * 歸零，因為 andThen() 往往會再叫一次 script()（askNext → 下一題），
+     * 那次自己會把旗標重新舉起來——放到回呼尾端清就會把它誤清掉。
+     */
     function script(text, andThen, opts) {
         hideChips();
+        scriptInFlight = true;
         ChatModule.withThinkingDelay(function () {
+            scriptInFlight = false;
             ChatModule.addEphemeralSystemMessage(text);
             if (active && (!opts || !opts.last)) showChips();
             if (andThen) andThen();
@@ -209,6 +262,7 @@ const OnboardingModule = (function () {
         answered = new Set();
         currentKey = null;
         namingRetried = false;
+        scriptInFlight = false;
         removeChips();
     }
 
