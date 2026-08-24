@@ -8,6 +8,7 @@ check-in／get_user_profile_block 呼叫端零改動（spec §7-1）。
 皆無 → 「還不熟」佔位（只有未收納答案時 → raw 區塊獨挑）。注入值永遠非空
 (profile) 或整塊消失 (companion)。
 """
+import re
 from dataclasses import dataclass
 
 from database import db_session, crud
@@ -29,7 +30,13 @@ _EMPTY_PLACEHOLDER = {
 _EMPTY_DIARY_CONTEXT = {"zh-TW": "尚無互動筆記記錄。", "en": "No interaction notes yet."}
 
 
-# onboarding 答案的渲染標籤 (v2.5 Spec B)：key 順序由 models.ONBOARDING_QUESTION_KEYS 決定
+# onboarding 答案的渲染標籤 (v2.5 Spec B)：key 順序由 models.ONBOARDING_QUESTION_KEYS 決定。
+#
+# ⚠ 與 memory_review.run_review_pass 的耦合：那邊的 onboarding_ids 收「查詢回來的
+# 每一列」，而下面 render_onboarding_lines 會把「查不到標籤的 key 直接跳過」——
+# 兩者只在標籤表涵蓋所有 key 時才對齊。日後新增第 9 題卻忘了在這裡補標籤，那題
+# 就會被標成「已收納」(ingested_at)，但它從頭到尾沒有出現在任何送進模型的素材裡
+# ——答案等於憑空蒸發，且沒有任何 UI 能重跑。新增題目＝同時補這張表的兩種語言。
 ONBOARDING_LABELS = {
     "zh-TW": {"name": "稱呼", "location": "住的城市", "favorite_food": "喜歡的食物",
               "important_people": "重要的人", "hobbies": "喜歡做的事",
@@ -40,11 +47,32 @@ ONBOARDING_LABELS = {
 }
 
 
+_BREAK_CHARS = re.compile(r"[\r\n\t\x0b\x0c]+")   # 斷行類 → 空白 (壓成單行)
+_DROP_CHARS = re.compile(r"[\x00-\x08\x0e-\x1f\x7f]")   # 其餘控制字元 → 刪除
+
+
+def _flatten_answer(text: str) -> str:
+    """答案原文 → 可安全放進提示詞區塊的「單行」文字。
+
+    答案本身照 spec §4 以原文入庫、也不在 schema 層擋換行 (擋了就是 422，
+    而前端寫入失敗是刻意吞掉的 → 合法的多行答案會無聲消失，用真實的資料
+    遺失換一個只能自傷的問題不划算)。防線放在這裡：answer_text 來自
+    <textarea>，換行過得了 .trim()，一旦原樣渲染進【他初次見面時告訴你的】
+    區塊 (_onboarding_block) 或 review pass 素材 (memory_review._onboarding_material)，
+    使用者就能自己偽造一行假的 【】 標頭或區塊結尾、假裝成系統給模型的指示。
+    兩個注入點共用本函式，所以壓在這一處就同時關上兩邊。
+    """
+    if not text:
+        return ""
+    return _BREAK_CHARS.sub(" ", _DROP_CHARS.sub("", text)).strip()
+
+
 def render_onboarding_lines(rows, lang: str) -> list:
     """未收納答案 → 渲染行清單（raw 注入區塊與 review pass 素材共用）。
 
     rows 已由 crud.get_uningested_onboarding_answers 濾掉空字串與 companion_naming；
-    這裡再以標籤 dict 防守一次未知 key（直接跳過）。呼叫端必須在 db session 內呼叫
+    這裡再以標籤 dict 防守一次未知 key（直接跳過——但**跳過不等於沒被標成已收納**，
+    見 ONBOARDING_LABELS 上方的耦合警告）。呼叫端必須在 db session 內呼叫
     （rows 是 ORM 物件，session 關閉後不得再碰屬性）。
     """
     from database.models import ONBOARDING_QUESTION_KEYS
@@ -57,10 +85,11 @@ def render_onboarding_lines(rows, lang: str) -> list:
         if not label:
             continue
         date = r.answered_at.strftime("%Y-%m-%d") if r.answered_at else ""
+        answer = _flatten_answer(r.answer_text)
         if lang_key == "zh-TW":
-            lines.append(f"-（{date}）{label}：{r.answer_text}")
+            lines.append(f"-（{date}）{label}：{answer}")
         else:
-            lines.append(f"- ({date}) {label}: {r.answer_text}")
+            lines.append(f"- ({date}) {label}: {answer}")
     return lines
 
 
@@ -154,5 +183,6 @@ def get_memory_context(user_id: int, lang: str) -> MemoryContext:
 
 
 def get_user_profile_block(user_id: int, lang: str) -> str:
-    """Spec B 接縫契約：B 落地後在本函式內部加【他初次見面時告訴你的】渲染。"""
+    """Spec B 接縫契約（已落地）：【他初次見面時告訴你的】由 get_memory_context
+    內部附掛在 profile_block 上，本包裝維持零改動（spec §7-1）。"""
     return get_memory_context(user_id, lang).profile_block
