@@ -258,9 +258,19 @@ describe('腳本延遲期間的輸入保護與 chips 可見性', () => {
         Object.defineProperty(container, 'scrollTop', { value: 0, writable: true, configurable: true });
 
         ChatModule.init();
-        await flush();
-        expect(document.querySelector('.onboarding-chips')).not.toBeNull();
-        expect(container.scrollTop).toBe(999);
+        // 不能用固定圈數的 flush()：整條開場鏈是「假思考 timer → 訊息 → chips」
+        // 兩層，scrollTop 的寫入序列實測為 500 → 500 → 999 → 500 → 500 → 999，
+        // 中間存在兩段「值還停在 chips 掛上前的 500」的空檔。機器閒置時整條鏈
+        // 第 2 圈就收斂（所以單獨跑 8/8 綠），但全套件併發時 timer 相對於 flush
+        // 迴圈落得晚，8 圈有機率剛好在其中一段空檔用盡 → 偶發 expected 500 to
+        // be 999。改成輪詢等待條件成立，對「timer 晚到」免疫。
+        // 這不會弱化斷言：條件若永遠不成立（例如 showChips() 補捲那行被拿掉，
+        // 最後一次寫入就永遠是 500），vi.waitFor 會逾時並失敗，不是假綠——
+        // 見報告 §R4 的突變複驗。
+        await vi.waitFor(() => {
+            expect(document.querySelector('.onboarding-chips')).not.toBeNull();
+            expect(container.scrollTop).toBe(999);
+        });
     });
 });
 
