@@ -5,9 +5,12 @@
  * 啟動當次與完成後同一 session 都抑制每日 check-in（自我介紹就是問候）。
  * 訊息全部走 ChatModule 的 ephemeral 渲染＋withThinkingDelay 假思考——
  * 不進 chatHistory/chat_messages，重載不重演。
- * 答案逐題即存（POST /users/onboarding/answer，空字串＝跳過）；取名 ≤12 字
- * 直接寫現有 companion_name（PUT /users/me/companion 部分更新），下一則
- * 腳本訊息（namingAck）就自稱新名字。任何 API 失敗只 console.warn，流程照走。
+ * 答案逐題即存（POST /users/onboarding/answer，空字串＝跳過）；取名先做
+ * 零 LLM 的前綴／後綴剝除（extractName），≤12 字直接寫現有 companion_name
+ * （PUT /users/me/companion 部分更新），下一則腳本訊息（namingAck）就自稱
+ * 新名字。/onboarding/complete 首次完成時後端會用 LLM 讀全部原文再判定一次
+ * （後題改口也看得到），判定結果與取名當下自稱的不同就補一句更正（finish()）。
+ * 任何 API 失敗只 console.warn，流程照走。
  */
 const OnboardingModule = (function () {
     // 提問順序＝後端 ONBOARDING_QUESTION_KEYS 去掉 companion_naming（它是開場互動）
@@ -23,6 +26,7 @@ const OnboardingModule = (function () {
     let currentKey = null;             // NAMING_KEY | QUESTION_KEYS 之一 | null
     let namingRetried = false;
     let scriptInFlight = false;        // 腳本訊息還在假思考泡泡裡（見 script()／handleAnswer）
+    let ackedName = null;              // namingAck 當下自稱的名字（跳過／超長＝null；見 finish()）
     let chipsEl = null;
 
     function isActive() { return active; }
@@ -83,6 +87,58 @@ const OnboardingModule = (function () {
             .trim();
     }
 
+    // extractName 的剝除規則：行首可疊一個語氣起手（那／就／那就／我想／我要／可以／不然）
+    const NAME_PREFIX_ZH = /^(?:那就|那|就|我想|我要|可以|不然)?(?:叫你|叫妳|喊你|稱你|你就叫|你叫|你的名字(?:就叫|是|叫)?|名字(?:是|叫)?|取名(?:為|叫)?|你是)/;
+    const NAME_PREFIX_EN = /^(?:i'll |i will |let's |let me |i want to |i'd like to |how about |what about |maybe )?(?:call you|name you|your name is|your name will be|you're|you are|you can be|be called|you'll be)\s+/i;
+    // 尾詞前的空白／標點一起剝（「小澄，好嗎？」不留逗號）；英文尾詞要整字（\b）——
+    // 否則 Brook 會被當成「Bro＋ok」剝成 Bro
+    const NAME_SUFFIX = /[\s！!。？?～~，,.]*(?:吧|好了|好嗎|如何|怎麼樣|可以嗎|囉|喔|哦|啦|呢|\b(?:then|okay|ok|please))?[！!。？?～~，,.]*$/i;
+    const NAME_QUOTE_PAIRS = [['「', '」'], ['『', '』'], ['“', '”'], ['"', '"'], ["'", "'"]];
+
+    /** 剝掉包住整個名字的成對引號（可多層）。 */
+    function stripQuotePairs(text) {
+        let s = text;
+        let stripped = true;
+        while (stripped && s.length >= 2) {
+            stripped = false;
+            for (let i = 0; i < NAME_QUOTE_PAIRS.length; i++) {
+                const open = NAME_QUOTE_PAIRS[i][0];
+                const close = NAME_QUOTE_PAIRS[i][1];
+                if (s.startsWith(open) && s.endsWith(close)) {
+                    s = s.slice(open.length, s.length - close.length).trim();
+                    stripped = true;
+                    break;
+                }
+            }
+        }
+        return s;
+    }
+
+    /**
+     * 取名答案 → 名字本體（零 LLM）：「我想叫你小樹洞」→「小樹洞」、「就叫你小澄吧」
+     * →「小澄」、"I'll call you Momo!" → "Momo"。先 sanitizeName（控制字元防線不變），
+     * 再剝前綴／後綴／成對引號；剝完是空的就退回洗過的原文。
+     *
+     * 只求 namingAck 當下說對——這是規則式的猜測，猜不中的（後題才改口、少見句型）
+     * 交給 /onboarding/complete 的 LLM 判定當最終裁決（見 finish()）。
+     */
+    function extractName(text) {
+        const clean = sanitizeName(text);
+        let s = clean.replace(NAME_PREFIX_ZH, '').trim();
+        s = s.replace(NAME_PREFIX_EN, '').trim();
+        s = s.replace(NAME_SUFFIX, '').trim();
+        s = stripQuotePairs(s);
+        return s || clean;
+    }
+
+    /** 名字定案 → 聊天標題即時換名（SettingsModule 快取＋事件；測試可不載它）。 */
+    function publishCompanionName(name) {
+        if (typeof SettingsModule !== 'undefined' &&
+            typeof SettingsModule.setCompanionName === 'function') {
+            SettingsModule.setCompanionName(name);
+        }
+    }
+
     /**
      * 使用者打字送出（由 ChatModule.sendMessage 攔截轉來）。
      *
@@ -109,7 +165,8 @@ const OnboardingModule = (function () {
     }
 
     /**
-     * 取名分支：原文一律 upsert（含超長，供續跑判斷）；≤12 字才寫 companion_name。
+     * 取名分支：原文一律 upsert（含超長，供續跑判斷）；extractName 剝出的名字
+     * ≤12 字才寫 companion_name，並記下 ackedName（finish() 拿它比對 LLM 判定）。
      *
      * 送去伺服器與拿來自稱的名字先洗掉控制字元：輸入框是 <textarea>，
      * Shift+Enter 就會插進一個換行，而後端 CompanionSettingsIn.companion_name
@@ -121,11 +178,14 @@ const OnboardingModule = (function () {
     function handleNamingAnswer(text) {
         saveAnswer(NAMING_KEY, text);
         answered.add(NAMING_KEY);
-        const name = sanitizeName(text);
+        const name = extractName(text);
         if (name && Array.from(name).length <= NAME_MAX_CHARS) {
             ApiService.fetchAPI('/users/me/companion', {
                 method: 'PUT', body: { companion_name: name },
-            }).catch(function (e) { console.warn('陪伴者名字儲存失敗（流程照常）:', e); });
+            }).then(function () {
+                publishCompanionName(name);
+            }, function (e) { console.warn('陪伴者名字儲存失敗（流程照常）:', e); });
+            ackedName = name;
             script(I18N.t('onboarding.namingAck', { name: name }), function () { askNext(false); });
         } else if (!namingRetried) {
             namingRetried = true;
@@ -158,6 +218,12 @@ const OnboardingModule = (function () {
      *   (1) 失敗不擋主流程——.catch 吞掉並回 null，outro 照樣先出現；
      *   (2) 通知要排在 outro「之後」——outro 自己還壓著 1–3 秒假思考，
      *       所以掛在 script() 的 andThen 裡等兩邊都到齊才顯示。
+     *
+     * 同一個回應還帶 companion_name（v2.5 Spec B 驗收回饋①）：後端用 LLM 讀全部
+     * 原文判定出的名字，只有真的改寫了名字才有值。它和取名當下自稱的 ackedName
+     * 不同（腳本猜錯、後題才改口、當時跳過）就補一句更正——同樣是 ephemeral 腳本
+     * 訊息、同樣壓在 outro 之後，並用 andThen 把待核可通知串在更正句「之後」，
+     * 不會兩則訊息搶順序。聊天標題不等更正句，拿到結果就換。
      */
     function finish(early) {
         currentKey = null;
@@ -170,11 +236,23 @@ const OnboardingModule = (function () {
         });
         script(I18N.t(early ? 'onboarding.outroEarly' : 'onboarding.outro'), function () {
             completing.then(function (res) {
-                if (typeof ChatModule.showMemoryPendingNotice !== 'function') return;
-                // ephemeral：初次見面全程不進持久層，這則通知同理（見該函式說明）
-                ChatModule.showMemoryPendingNotice(res && res.memory_review, { ephemeral: true });
+                const finalName = res && res.companion_name;
+                if (finalName) publishCompanionName(finalName);
+                if (finalName && finalName !== ackedName) {
+                    script(I18N.t('onboarding.nameCorrected', { name: finalName }), function () {
+                        showPendingNotice(res);
+                    }, { last: true });
+                } else {
+                    showPendingNotice(res);
+                }
             });
         }, { last: true });
+    }
+
+    function showPendingNotice(res) {
+        if (typeof ChatModule.showMemoryPendingNotice !== 'function') return;
+        // ephemeral：初次見面全程不進持久層，這則通知同理（見該函式說明）
+        ChatModule.showMemoryPendingNotice(res && res.memory_review, { ephemeral: true });
     }
 
     function saveAnswer(key, text) {
@@ -263,6 +341,7 @@ const OnboardingModule = (function () {
         currentKey = null;
         namingRetried = false;
         scriptInFlight = false;
+        ackedName = null;
         removeChips();
     }
 
@@ -274,6 +353,6 @@ const OnboardingModule = (function () {
         reset: reset,
         // 僅為 vitest 曝光（IIFE 單例跨測試共用）：與正式 reset 同一份實作，
         // 不另外複製一份，避免兩邊日後各自漂移
-        _test: { reset: reset },
+        _test: { reset: reset, extractName: extractName },
     };
 })();

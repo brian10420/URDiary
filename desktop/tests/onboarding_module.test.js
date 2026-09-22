@@ -1,6 +1,6 @@
 // desktop/tests/onboarding_module.test.js
 // @vitest-environment jsdom
-import { describe, it, expect, beforeAll, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeAll, beforeEach, afterEach, vi } from 'vitest';
 import { loadCoreScripts, loadScript } from './helpers/load.js';
 
 /** 等 microtask＋timer 都收斂（延遲設 0 後仍有 setTimeout(0) 與 await 鏈）。 */
@@ -65,6 +65,12 @@ beforeEach(() => {
     OnboardingModule._test.reset();
 });
 
+// 個別測試會掛 SettingsModule stub 觀察「名字定案→聊天標題換名」；本檔預設不載
+// SettingsModule（onboarding_module 對它 typeof 防禦），用完一律拿掉
+afterEach(() => {
+    delete window.SettingsModule;
+});
+
 describe('觸發與抑制', () => {
     it('completed=true → 不啟動，照常走 check-in', async () => {
         const calls = installApi({ completed: true, answered_keys: [] });
@@ -112,6 +118,19 @@ describe('取名分支', () => {
         expect(messagesText()).toContain(I18N.t('onboarding.q.name')); // 續問 q1
     });
 
+    it('口語取名「我想叫你小樹洞」：原文照存，PUT／自稱／聊天標題都用剝過的名字', async () => {
+        // 驗收回饋①：腳本原本照字面收下整句，陪伴者就叫「我想叫你小樹洞」
+        await startFresh();
+        window.SettingsModule = { setCompanionName: vi.fn() };
+        OnboardingModule.handleAnswer('我想叫你小樹洞');
+        await flush();
+        const calls = lastApiCalls();
+        expect(calls.answers).toContainEqual(['companion_naming', '我想叫你小樹洞']); // 原文入庫
+        expect(calls.companionPuts[0]).toEqual({ companion_name: '小樹洞' });
+        expect(messagesText()).toContain(I18N.t('onboarding.namingAck', { name: '小樹洞' }));
+        expect(window.SettingsModule.setCompanionName).toHaveBeenCalledWith('小樹洞'); // PUT 成功後
+    });
+
     it('名字含換行：PUT 與自稱用洗過的版本（原文照樣入庫）', async () => {
         // 輸入框是 <textarea>，Shift+Enter 就插得進換行；後端
         // CompanionSettingsIn.companion_name 帶 pattern=_NO_CTRL_PATTERN → 422，
@@ -142,6 +161,25 @@ describe('取名分支', () => {
         expect(calls.companionPuts.length).toBe(0);
         expect(messagesText()).toContain(I18N.t('onboarding.namingStillLong'));
         expect(messagesText()).toContain(I18N.t('onboarding.q.name'));
+    });
+});
+
+describe('extractName（取名題的零 LLM 前綴／後綴剝除）', () => {
+    it.each([
+        ['我想叫你小樹洞', '小樹洞'],
+        ['就叫你小澄吧', '小澄'],
+        ['你的名字是「阿樹」', '阿樹'],
+        ['小澄', '小澄'],                          // 本來就是名字：不變
+        ["I'll call you Momo!", 'Momo'],
+        ['叫', '叫'],                              // 單字：退回原文
+        ['叫你', '叫你'],                          // 剝完是空的：退回（洗過的）原文
+        ['小澄\n澄', '小澄 澄'],                   // 控制字元案例維持（先 sanitizeName）
+        ['那就叫你小澄，好嗎？', '小澄'],            // 尾詞前的逗號一起剝
+        ['叫你『小澄』', '小澄'],
+        ["I'll call you Momo, OK?", 'Momo'],       // 英文尾詞不分大小寫
+        ['Your name is Brook', 'Brook'],           // 英文尾詞整字比對：Brook 不會被剝成 Bro
+    ])('%j → %j', (input, expected) => {
+        expect(OnboardingModule._test.extractName(input)).toBe(expected);
     });
 });
 
@@ -411,13 +449,23 @@ describe('收束後的待核可記憶通知', () => {
      * 會變成 pending ops（記憶檔案這時還是空的）。finish() 原本把回應整個
      * 丟掉，Spec C 的通知又只掛在 endChat 那條路上，使用者因此完全不知道
      * 有東西等著他核可——徽章也不會刷新。
+     *
+     * finishWith 的 namingAnswer：字串＝先回答取名題、null＝先跳過取名題、
+     * 省略＝在取名題直接收束。
      */
-    async function finishWith(completeImpl) {
+    async function finishWith(completeImpl, namingAnswer) {
         const calls = installApi({ completed: false, answered_keys: [] });
         window.ApiService.completeOnboarding = completeImpl;
         window.MemoryModule = { open: vi.fn(), refreshBadge: vi.fn() };
         ChatModule.init();
         await flush();
+        if (namingAnswer === null) {
+            OnboardingModule.handleSkip();
+            await flush();
+        } else if (namingAnswer !== undefined) {
+            OnboardingModule.handleAnswer(namingAnswer);
+            await flush();
+        }
         document.querySelector('[data-onboarding-start-chat]').click();
         await flush();
         return calls;
@@ -468,6 +516,80 @@ describe('收束後的待核可記憶通知', () => {
         await finishWith(async () => ({ completed: true, memory_review: null }));
         expect(messagesText()).not.toContain(I18N.t('memory.pendingNotice'));
         expect(window.MemoryModule.refreshBadge).not.toHaveBeenCalled();
+    });
+
+    // --- 取名更正（v2.5 Spec B 驗收回饋①）：complete 回傳 LLM 判定的名字 ---
+
+    const PENDING_REVIEW = { batch_id: 'b1', applied: 0, pending: 1, failed: 0, error: null };
+
+    /** 更正句的固定開頭（不含名字）：用來斷言「完全沒有更正句」。 */
+    function correctionLead() {
+        return I18N.t('onboarding.nameCorrected', { name: '\u0000' }).split('\u0000')[0];
+    }
+
+    /** 待核可通知排在整條收束鏈的最後：它出現了，更正句該出現的話也早就出現了。 */
+    async function waitForNotice() {
+        await vi.waitFor(() => {
+            expect(messagesText()).toContain(I18N.t('memory.pendingNotice'));
+        });
+    }
+
+    it('complete 判定出不同的名字：outro 之後補一句更正，待核可通知排在更正句之後，全程不進持久層', async () => {
+        // 33 帳號的實例：取名題答「可愛33」，下一題才改口說陪伴者叫「喵喵」
+        window.SettingsModule = { setCompanionName: vi.fn() };
+        const calls = await finishWith(async () => ({
+            completed: true, companion_name: '喵喵', memory_review: PENDING_REVIEW,
+        }), '可愛33');
+        await waitForNotice();
+        expect(calls.companionPuts[0]).toEqual({ companion_name: '可愛33' });  // 取名當下自稱的名字
+        const text = messagesText();
+        const corrected = I18N.t('onboarding.nameCorrected', { name: '喵喵' });
+        expect(text).toContain(corrected);
+        expect(text.indexOf(I18N.t('onboarding.outroEarly'))).toBeLessThan(text.indexOf(corrected));
+        expect(text.indexOf(corrected)).toBeLessThan(text.indexOf(I18N.t('memory.pendingNotice')));
+        expect(window.SettingsModule.setCompanionName).toHaveBeenLastCalledWith('喵喵'); // 標題換新名
+        expect(ChatModule._test.chatHistoryLength()).toBe(0);
+        const keys = Object.keys(localStorage).filter(k => k.includes(CONFIG.STORAGE.CHAT_HISTORY));
+        expect(keys.length).toBe(0);
+    });
+
+    it('complete 判定的名字和取名當下自稱的相同：不補更正句', async () => {
+        await finishWith(async () => ({
+            completed: true, companion_name: '小澄', memory_review: PENDING_REVIEW,
+        }), '小澄');
+        await waitForNotice();
+        expect(messagesText()).not.toContain(correctionLead());
+    });
+
+    it('complete 回傳 companion_name null（名字沒改）：不補更正句', async () => {
+        await finishWith(async () => ({
+            completed: true, companion_name: null, memory_review: PENDING_REVIEW,
+        }), '可愛33');
+        await waitForNotice();
+        expect(messagesText()).not.toContain(correctionLead());
+    });
+
+    it('取名題跳過（沒自稱過任何名字）而 complete 判定出名字：補更正句', async () => {
+        await finishWith(async () => ({
+            completed: true, companion_name: '喵喵', memory_review: PENDING_REVIEW,
+        }), null);
+        await waitForNotice();
+        expect(messagesText()).toContain(I18N.t('onboarding.nameCorrected', { name: '喵喵' }));
+    });
+
+    it('換帳號時「取名當下自稱的名字」一併歸零：不會拿 A 的名字去比 B 的判定結果', async () => {
+        installApi({ completed: false, answered_keys: [] });
+        ChatModule.init();
+        await flush();
+        OnboardingModule.handleAnswer('可愛33');   // A 自稱「可愛33」後就換帳號
+        await flush();
+        ChatModule.reset();
+        // B 沒回答取名題；判定結果碰巧同名——B 從沒聽過這個名字，仍要補更正句
+        await finishWith(async () => ({
+            completed: true, companion_name: '可愛33', memory_review: PENDING_REVIEW,
+        }));
+        await waitForNotice();
+        expect(messagesText()).toContain(I18N.t('onboarding.nameCorrected', { name: '可愛33' }));
     });
 
     it('complete 送出失敗：不通知也不擋主流程（outro 照樣出現）', async () => {

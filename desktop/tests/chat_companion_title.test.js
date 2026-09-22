@@ -26,4 +26,12 @@ describe('ChatModule.applyCompanionTitle', () => {
         ChatModule.applyCompanionTitle();
         expect(document.querySelector('.chat-title').textContent).toBe(I18N.t('chat.title'));
     });
+
+    it('SettingsModule.setCompanionName（onboarding 取名定案）→ 事件 → 標題即時換名', () => {
+        // 載入真的 settings_module（檔尾自己 window.SettingsModule = …，換掉上面的 stub）：
+        // chat_module 既有的 companion-settings-changed 監聽零改動就接得上
+        loadScript('js/settings_module.js');
+        SettingsModule.setCompanionName('喵喵');
+        expect(document.querySelector('.chat-title').textContent).toBe('喵喵');
+    });
 });

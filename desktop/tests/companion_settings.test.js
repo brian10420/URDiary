@@ -83,3 +83,41 @@ describe('SettingsModule companion helpers：未成功載入過時的儲存防�
             { method: 'PUT', body: { companion_name: '小澄' } });
     });
 });
+
+/**
+ * onboarding 取名定案（v2.5 Spec B 驗收回饋①）：OnboardingModule 經
+ * setCompanionName 讓聊天標題即時換名。只動名字快取＋廣播事件——不碰卡片
+ * 欄位，也不把 companionLoaded 翻成 true（那面旗標代表「看過伺服器上的完整
+ * 設定」；翻錯了，儲存就會改送完整 5 欄位，把沒讀到的空白當成清空指令）。
+ */
+describe('SettingsModule.setCompanionName', () => {
+    beforeEach(() => {
+        document.body.innerHTML = `
+            <input id="companion-name"><input id="companion-nickname">
+            <select id="companion-reply-length"><option value="">--</option><option value="short">s</option></select>
+            <select id="companion-emoji"><option value="">--</option><option value="none">n</option></select>
+            <select id="companion-formality"><option value="">--</option><option value="polite">p</option></select>`;
+        global.CONFIG = { getApiBaseUrl: () => 'http://x' };
+        loadScript('js/settings_module.js');
+    });
+
+    test('更新名字快取並廣播 companion-settings-changed，不碰卡片欄位', () => {
+        const handler = vi.fn();
+        document.addEventListener('companion-settings-changed', handler);
+        document.getElementById('companion-name').value = '舊名字';
+        SettingsModule.setCompanionName('喵喵');
+        document.removeEventListener('companion-settings-changed', handler);
+        expect(SettingsModule.getCompanionName()).toBe('喵喵');
+        expect(handler).toHaveBeenCalledTimes(1);
+        expect(handler.mock.calls[0][0].detail).toEqual({ name: '喵喵' });
+        expect(document.getElementById('companion-name').value).toBe('舊名字');
+    });
+
+    test('不把 companionLoaded 翻成 true：之後卡片全空按儲存仍整個跳過 PUT', async () => {
+        SettingsModule.setCompanionName('喵喵');
+        const fetchAPI = vi.fn();
+        global.ApiService = { fetchAPI };
+        await SettingsModule._test.saveCompanionSettings();
+        expect(fetchAPI).not.toHaveBeenCalled();
+    });
+});
