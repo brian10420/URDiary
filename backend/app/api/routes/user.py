@@ -514,19 +514,36 @@ def save_onboarding_answer(payload: OnboardingAnswerIn,
 
 @router.post("/onboarding/complete", response_model=Dict[str, Any],
              summary="完成 onboarding",
-             description="設完成戳記（冪等），並盡力把答案收納進長期記憶（無金鑰時靜默跳過）")
+             description="設完成戳記（冪等）；首次完成時判定使用者真正要取的陪伴者名字，"
+                         "並盡力把答案收納進長期記憶（無金鑰時兩者都靜默跳過）")
 def complete_onboarding(current_user: User = Depends(get_current_user),
                         llm_config: Optional[LLMConfig] = Depends(get_llm_config),
                         lang: str = Depends(get_language),
                         _rate_limit: None = Depends(enforce_llm_rate_limit)):
     """連線紀律比照 diary.py 的 update_interaction_notes：本路由不掛 get_db，
-    寫入走自己的短交易，LLM 呼叫期間不持有工作用 session。"""
+    寫入走自己的短交易，LLM 呼叫期間不持有工作用 session。
+
+    回應的 companion_name：取名判定改寫了名字才有值（None＝名字沒改）。
+    """
     with db_session() as db:
         user = crud.get_user(db, current_user.id)
-        if user.onboarding_completed_at is None:
+        just_completed = user.onboarding_completed_at is None
+        if just_completed:
             user.onboarding_completed_at = datetime.utcnow()
             db.commit()
         has_material = bool(crud.get_uningested_onboarding_answers(db, current_user.id))
+
+    # 取名判定 (v2.5 Spec B 驗收回饋①)：腳本當下只能照字面收下取名答案，這裡讀
+    # 全部原文判斷真正要取的名字。只在「這次呼叫真的設下完成戳記」時跑——重按
+    # complete 不再判定（比照收納不重收），也就不會把之後在設定頁改的名字蓋回去。
+    # 排在收納之前：兩者互不依賴，失敗也互不阻擋。
+    companion_name = None
+    if just_completed:
+        try:
+            from services.companion_naming import resolve_companion_name
+            companion_name = resolve_companion_name(current_user.id, llm_config, lang=lang)
+        except Exception as e:  # 取名判定是 best-effort：名字維持腳本版，不擋 complete
+            logger.warning(f"取名判定略過 (user_id={current_user.id}): {e}")
 
     review = None
     if has_material:
@@ -538,6 +555,7 @@ def complete_onboarding(current_user: User = Depends(get_current_user),
             logger.warning(f"onboarding 收納略過 (user_id={current_user.id}): {e}")
 
     return {"completed": True,
+            "companion_name": companion_name,
             "memory_review": review.as_dict() if review else None}
 
 
