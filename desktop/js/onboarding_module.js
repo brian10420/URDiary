@@ -90,9 +90,22 @@ const OnboardingModule = (function () {
     // extractName 的剝除規則：行首可疊一個語氣起手（那／就／那就／我想／我要／可以／不然）
     const NAME_PREFIX_ZH = /^(?:那就|那|就|我想|我要|可以|不然)?(?:叫你|叫妳|喊你|稱你|你就叫|你叫|你的名字(?:就叫|是|叫)?|名字(?:是|叫)?|取名(?:為|叫)?|你是)/;
     const NAME_PREFIX_EN = /^(?:i'll |i will |let's |let me |i want to |i'd like to |how about |what about |maybe )?(?:call you|name you|your name is|your name will be|you're|you are|you can be|be called|you'll be)\s+/i;
-    // 尾詞前的空白／標點一起剝（「小澄，好嗎？」不留逗號）；英文尾詞要整字（\b）——
-    // 否則 Brook 會被當成「Bro＋ok」剝成 Bro
-    const NAME_SUFFIX = /[\s！!。？?～~，,.]*(?:吧|好了|好嗎|如何|怎麼樣|可以嗎|囉|喔|哦|啦|呢|\b(?:then|okay|ok|please))?[！!。？?～~，,.]*$/i;
+    // 尾詞前的空白／標點只在「後面真的接了尾詞」時才一起剝（「小澄，好嗎？」不留逗號）：
+    // 前導字元集放在可選群組裡、被必要的尾詞隔開，不和尾端的標點量詞相鄰。兩個字元集
+    // 重疊的相鄰量詞遇到「一長串標點＋一個不在集合裡的字元」時，$ 必定失敗，回溯型
+    // 引擎會在每個起點把切分方式全試一遍＝O(n³)（n=2000 實測 2 秒）；現在最壞是 O(n²)，
+    // 輸入長度另有 NAME_EXTRACT_MAX_INPUT 封頂。英文尾詞要整字（\b）——否則 Brook
+    // 會被當成「Bro＋ok」剝成 Bro。
+    const NAME_SUFFIX = /(?:[\s！!。？?～~，,.]*(?:吧|好了|好嗎|如何|怎麼樣|可以嗎|囉|喔|哦|啦|呢|\b(?:then|okay|ok|please)))?[！!。？?～~，,.]*$/i;
+    // extractName 只剝這個長度（UTF-16 碼元數）以內的輸入。真實的取名答案很短：最長的
+    // 前綴（中文「那就你的名字就叫」8 字、英文 "i'd like to your name will be " 約 30 字元）
+    // ＋名字（≤12）＋尾詞、標點與引號，加起來也就幾十字，100 留足了餘裕。更長的輸入
+    // 剝完也剩不下 ≤12 字的名字（除非是「名字後面接上百個標點」這種不真實的輸入），
+    // 直接退回洗過的原文：過不了 12 字檢查就請他重取，complete 的 LLM 判定照樣讀原文。
+    // 封頂同時把 NAME_SUFFIX 的 O(n²) 回溯與引號迴圈的最壞工作量鎖死——輸入框
+    // （#user-input）沒有 maxlength、sanitizeName 也不截斷，不封頂的話貼一大串標點
+    // 就能讓 renderer 卡上好一陣子。
+    const NAME_EXTRACT_MAX_INPUT = 100;
     const NAME_QUOTE_PAIRS = [['「', '」'], ['『', '』'], ['“', '”'], ['"', '"'], ["'", "'"]];
 
     /** 剝掉包住整個名字的成對引號（可多層）。 */
@@ -117,13 +130,15 @@ const OnboardingModule = (function () {
     /**
      * 取名答案 → 名字本體（零 LLM）：「我想叫你小樹洞」→「小樹洞」、「就叫你小澄吧」
      * →「小澄」、"I'll call you Momo!" → "Momo"。先 sanitizeName（控制字元防線不變），
-     * 再剝前綴／後綴／成對引號；剝完是空的就退回洗過的原文。
+     * 再剝前綴／後綴／成對引號；剝完是空的、或洗過的原文超過 NAME_EXTRACT_MAX_INPUT，
+     * 就退回洗過的原文。
      *
      * 只求 namingAck 當下說對——這是規則式的猜測，猜不中的（後題才改口、少見句型）
      * 交給 /onboarding/complete 的 LLM 判定當最終裁決（見 finish()）。
      */
     function extractName(text) {
         const clean = sanitizeName(text);
+        if (clean.length > NAME_EXTRACT_MAX_INPUT) return clean;
         let s = clean.replace(NAME_PREFIX_ZH, '').trim();
         s = s.replace(NAME_PREFIX_EN, '').trim();
         s = s.replace(NAME_SUFFIX, '').trim();

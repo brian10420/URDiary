@@ -181,6 +181,21 @@ describe('extractName（取名題的零 LLM 前綴／後綴剝除）', () => {
     ])('%j → %j', (input, expected) => {
         expect(OnboardingModule._test.extractName(input)).toBe(expected);
     });
+
+    it('病態長輸入不會讓正規式回溯卡住 renderer（輸入框沒有 maxlength）', () => {
+        // 一長串尾端標點後面接一個不在集合裡的字元：$ 必定失敗，回溯型引擎會在每個
+        // 起點重試。NAME_SUFFIX 若有兩個字元集重疊的相鄰量詞就是 O(n³)——n=2000 實測
+        // 2 秒、n=5000 半分鐘以上，取名題貼一串標點就能把畫面卡死。第二筆混空白：
+        // 尾詞前的分隔符字元集含 \s，另走一條回溯路徑。
+        for (const input of ['。'.repeat(5000) + 'x', '。 '.repeat(2500) + 'x']) {
+            const t0 = performance.now();
+            const out = OnboardingModule._test.extractName(input);
+            const ms = performance.now() - t0;
+            expect(ms, `${JSON.stringify(input.slice(0, 4))}…（${input.length} 字）花了 ${ms.toFixed(1)}ms`)
+                .toBeLessThan(200);
+            expect(out).toBe(input);   // 剝不出名字：原樣退回（之後過不了 12 字檢查→請他重取）
+        }
+    });
 });
 
 describe('七題流程', () => {
