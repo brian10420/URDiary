@@ -524,6 +524,8 @@ def complete_onboarding(current_user: User = Depends(get_current_user),
     寫入走自己的短交易，LLM 呼叫期間不持有工作用 session。
 
     回應的 companion_name：取名判定改寫了名字才有值（None＝名字沒改）。
+    companion_name_note："declined"／"later" 代表那個名字是「他沒取名」時給的
+    預設名字（前端據此換一句話說），None＝他自己取的名字。
     """
     with db_session() as db:
         user = crud.get_user(db, current_user.id)
@@ -538,10 +540,12 @@ def complete_onboarding(current_user: User = Depends(get_current_user),
     # complete 不再判定（比照收納不重收），也就不會把之後在設定頁改的名字蓋回去。
     # 排在收納之前：兩者互不依賴，失敗也互不阻擋。
     companion_name = None
+    companion_name_note = None
     if just_completed:
         try:
             from services.companion_naming import resolve_companion_name
-            companion_name = resolve_companion_name(current_user.id, llm_config, lang=lang)
+            resolved = resolve_companion_name(current_user.id, llm_config, lang=lang)
+            companion_name, companion_name_note = resolved.name, resolved.note
         except Exception as e:  # 取名判定是 best-effort：名字維持腳本版，不擋 complete
             logger.warning(f"取名判定略過 (user_id={current_user.id}): {e}")
 
@@ -556,6 +560,7 @@ def complete_onboarding(current_user: User = Depends(get_current_user),
 
     return {"completed": True,
             "companion_name": companion_name,
+            "companion_name_note": companion_name_note,
             "memory_review": review.as_dict() if review else None}
 
 

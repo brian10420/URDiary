@@ -107,6 +107,17 @@ const OnboardingModule = (function () {
     // 就能讓 renderer 卡上好一陣子。
     const NAME_EXTRACT_MAX_INPUT = 100;
     const NAME_QUOTE_PAIRS = [['「', '」'], ['『', '』'], ['“', '”'], ['"', '"'], ["'", "'"]];
+    // 「沒有要取名字」的兩張片語表（v2.5 Spec B 驗收回饋②）：拿 extractName 的輸出
+    // （標點與尾詞已剝掉，所以「隨便吧」在這裡是「隨便」）做整串比對，不做包含比對
+    // ——「不用客氣」不該被當成婉拒。英文一律小寫寫在表裡，比對前先 toLowerCase。
+    // 命中就用預設名字，兩張表的差別只在說哪一句話。這裡是零 LLM 的第一道；接不住的
+    // 說法（或後面的題目才改口）由 /onboarding/complete 的 LLM 判定補（見 finish()）。
+    const NAME_DECLINE_PHRASES = ['隨便', '都可以', '都好', '你決定', '你自己決定', '不用',
+                                  '不需要', '不用了', '沒差', '沒意見',
+                                  'whatever', 'anything', 'you decide', 'up to you',
+                                  'no need', "doesn't matter"];
+    const NAME_LATER_PHRASES = ['之後再取', '之後再說', '晚點再取', '晚點再說', '再說吧', '再說',
+                                '之後再決定', 'later', 'maybe later', "i'll decide later"];
 
     /** 剝掉包住整個名字的成對引號（可多層）。 */
     function stripQuotePairs(text) {
@@ -146,12 +157,34 @@ const OnboardingModule = (function () {
         return s || clean;
     }
 
+    /**
+     * extractName 的輸出 → 'declined'／'later'／null（沒命中＝他真的在取名）。
+     * 「再說」與「再說吧」都列在表裡：extractName 會把尾詞「吧」剝掉，兩種寫法
+     * 進到這裡時長得不一樣。
+     */
+    function matchNamePhrase(name) {
+        const key = String(name).toLowerCase();
+        if (NAME_DECLINE_PHRASES.indexOf(key) !== -1) return 'declined';
+        if (NAME_LATER_PHRASES.indexOf(key) !== -1) return 'later';
+        return null;
+    }
+
     /** 名字定案 → 聊天標題即時換名（SettingsModule 快取＋事件；測試可不載它）。 */
     function publishCompanionName(name) {
         if (typeof SettingsModule !== 'undefined' &&
             typeof SettingsModule.setCompanionName === 'function') {
             SettingsModule.setCompanionName(name);
         }
+    }
+
+    /** 寫進現有的 companion_name 並記下「腳本當下自稱的名字」（失敗只 warn，流程照走）。 */
+    function saveCompanionName(name) {
+        ApiService.fetchAPI('/users/me/companion', {
+            method: 'PUT', body: { companion_name: name },
+        }).then(function () {
+            publishCompanionName(name);
+        }, function (e) { console.warn('陪伴者名字儲存失敗（流程照常）:', e); });
+        ackedName = name;
     }
 
     /**
@@ -194,13 +227,16 @@ const OnboardingModule = (function () {
         saveAnswer(NAMING_KEY, text);
         answered.add(NAMING_KEY);
         const name = extractName(text);
-        if (name && Array.from(name).length <= NAME_MAX_CHARS) {
-            ApiService.fetchAPI('/users/me/companion', {
-                method: 'PUT', body: { companion_name: name },
-            }).then(function () {
-                publishCompanionName(name);
-            }, function (e) { console.warn('陪伴者名字儲存失敗（流程照常）:', e); });
-            ackedName = name;
+        const phrase = matchNamePhrase(name);
+        if (phrase) {
+            // 他說「隨便」「之後再取」：給預設名字，不要把這句話當成名字收下
+            const defaultName = I18N.t('onboarding.defaultName');
+            saveCompanionName(defaultName);
+            script(I18N.t(phrase === 'later' ? 'onboarding.nameDefaultedLater'
+                                             : 'onboarding.nameDefaulted', { name: defaultName }),
+                   function () { askNext(false); });
+        } else if (name && Array.from(name).length <= NAME_MAX_CHARS) {
+            saveCompanionName(name);
             script(I18N.t('onboarding.namingAck', { name: name }), function () { askNext(false); });
         } else if (!namingRetried) {
             namingRetried = true;
@@ -239,6 +275,11 @@ const OnboardingModule = (function () {
      * 不同（腳本猜錯、後題才改口、當時跳過）就補一句更正——同樣是 ephemeral 腳本
      * 訊息、同樣壓在 outro 之後，並用 andThen 把待核可通知串在更正句「之後」，
      * 不會兩則訊息搶順序。聊天標題不等更正句，拿到結果就換。
+     *
+     * companion_name_note（驗收回饋②）決定說哪一句：'later'／'declined' 代表那個
+     * 名字是「他沒取名」時給的預設名字（他跳過整題、或腳本沒接住的婉拒說法），
+     * 其餘走原本的更正句。三者共用同一道 ackedName 閘門——取名題當下已經說過的
+     * 話（片語命中那條路），收束時不會再說第二次。
      */
     function finish(early) {
         currentKey = null;
@@ -254,7 +295,11 @@ const OnboardingModule = (function () {
                 const finalName = res && res.companion_name;
                 if (finalName) publishCompanionName(finalName);
                 if (finalName && finalName !== ackedName) {
-                    script(I18N.t('onboarding.nameCorrected', { name: finalName }), function () {
+                    const note = res.companion_name_note;
+                    const key = note === 'later' ? 'onboarding.nameDefaultedLater'
+                              : note === 'declined' ? 'onboarding.nameDefaulted'
+                              : 'onboarding.nameCorrected';
+                    script(I18N.t(key, { name: finalName }), function () {
                         showPendingNotice(res);
                     }, { last: true });
                 } else {
@@ -368,6 +413,6 @@ const OnboardingModule = (function () {
         reset: reset,
         // 僅為 vitest 曝光（IIFE 單例跨測試共用）：與正式 reset 同一份實作，
         // 不另外複製一份，避免兩邊日後各自漂移
-        _test: { reset: reset, extractName: extractName },
+        _test: { reset: reset, extractName: extractName, matchNamePhrase: matchNamePhrase },
     };
 })();

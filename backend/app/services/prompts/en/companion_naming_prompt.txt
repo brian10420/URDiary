@@ -6,14 +6,16 @@ You are reading a new user's verbatim answers from your first meeting. The first
 {answers_block}
 
 [Your task]
-Work out the name they actually want to give you:
+Work out the name they actually want to give you — or that they did not want to name you at all:
 - The name on record may be their whole sentence taken literally. For example, if they said "I'd like to call you Momo", the real name is "Momo".
 - Later answers may change their mind. For example, if they later said "wait, change your name to Mochi — Cutie33 is MY name", your name is "Mochi", and "Cutie33" is what they want to be called themselves.
-- Output a name only when they clearly said what they want to call you; if they said "maybe later" or "no need", or you can't tell, output null.
+- If they ever named you clearly, output that name (if they said different names, the last one wins) — never treat it as "no name" just because they did not bring it up again.
+- Only count it as "declined" when they really said things like "no need", "anything", "you decide" to the naming question; only count it as "later" when they really said things like "maybe later", "I'll decide later". If neither is clear, it is "unclear".
 - Keep the name within 12 characters: just the name itself, no quotes and no sentence.
 
 [Output format]
-Output one JSON object only — no markdown fences and no explanation:
+Output one JSON object only — no markdown fences and no explanation. Exactly one of:
 {{"companion_name": "the name"}}
-If you can't tell, or they don't want to name you:
-{{"companion_name": null}}
+{{"companion_name": null, "no_name": "declined"}}
+{{"companion_name": null, "no_name": "later"}}
+{{"companion_name": null, "no_name": "unclear"}}

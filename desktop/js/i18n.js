@@ -176,6 +176,12 @@ const I18N = (function() {
             'onboarding.namingTooLong': '這名字有點長，我怕記不住自己叫什麼（笑）。可以幫我取個 12 個字以內的短名字嗎？',
             'onboarding.namingStillLong': '沒關係，我先把它記在心裡！之後你隨時可以到設定頁告訴我要叫什麼。',
             'onboarding.nameCorrected': '對了，名字我再確認一次——你想叫我「{name}」，對吧？那從現在起我就是{name}了！',
+            // 沒取名時的預設名字。與後端 services/companion_naming.DEFAULT_COMPANION_NAME
+            // 是耦合的一對（前端在取名題當下用、後端在判定與跳過後備時用），兩語都要
+            // 跟那張表一字不差——backend/tests/test_companion_naming.py 會比對。
+            'onboarding.defaultName': '愛你的日記',
+            'onboarding.nameDefaulted': '那我就叫{name}吧！你之後隨時可以幫我改名。',
+            'onboarding.nameDefaultedLater': '那我現在先叫{name}，未來隨時都可以改。',
             'onboarding.resume': '嗨，又見面了！上次自我介紹到一半，我們接著聊？',
             'onboarding.q.name': '那你呢？我該怎麼稱呼你？',
             'onboarding.q.location': '你住在哪個城市？知道了我才想像得出你說的那些街景。',
@@ -532,6 +538,10 @@ const I18N = (function() {
             'onboarding.namingTooLong': "That's a bit long — I'm afraid I'd forget my own name! Could you give me something within 12 characters?",
             'onboarding.namingStillLong': "No worries, I'll keep it in my heart! You can always tell me the name in Settings later.",
             'onboarding.nameCorrected': "One more thing, just to be sure about my name: you'd like to call me “{name}”, right? Then from now on, I'm {name}!",
+            // 見 zh-TW 區塊同一把鑰匙上方的說明（與後端 DEFAULT_COMPANION_NAME 成對）
+            'onboarding.defaultName': "Loving Diary",
+            'onboarding.nameDefaulted': "Then I'll go by {name}! You can rename me any time.",
+            'onboarding.nameDefaultedLater': "I'll go by {name} for now — you can rename me any time.",
             'onboarding.resume': "Hi, we meet again! We were halfway through introductions — shall we pick up where we left off?",
             'onboarding.q.name': "And you? What should I call you?",
             'onboarding.q.location': "Which city do you live in? It helps me picture the streets in your stories.",

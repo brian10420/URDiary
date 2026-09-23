@@ -170,8 +170,37 @@ def test_complete_resolves_companion_name(client, auth_header, mock_llm):
     r = client.post("/users/onboarding/complete", headers={**headers, **LLM_HEADERS})
     assert r.status_code == 200
     assert r.json()["companion_name"] == "小樹洞"
+    assert r.json()["companion_name_note"] is None        # 判定出名字＝沒有「沒取名」註記
     assert r.json()["memory_review"]["applied"] == 1      # 收納照跑、既有欄位不變
     assert _companion_name(client, headers) == "小樹洞"
+
+
+def test_complete_returns_default_name_and_note(client, auth_header, mock_llm):
+    """取名題答「不用了」被腳本照字面收下：判定回 declined → 回應帶預設名字與 note
+    （前端據此改說 nameDefaulted，而不是「你想叫我⋯⋯對吧」）。"""
+    from services.companion_naming import DEFAULT_COMPANION_NAME
+    headers, _uid = auth_header
+    client.put("/users/me/companion", headers=headers, json={"companion_name": "不用了"})
+    _answer(client, headers, "companion_naming", "不用了")
+    mock_llm.respond(json.dumps({"companion_name": None, "no_name": "declined"}))
+    r = client.post("/users/onboarding/complete", headers={**headers, **LLM_HEADERS})
+    assert r.status_code == 200
+    assert r.json()["companion_name"] == DEFAULT_COMPANION_NAME["zh-TW"]
+    assert r.json()["companion_name_note"] == "declined"
+    assert _companion_name(client, headers) == DEFAULT_COMPANION_NAME["zh-TW"]
+
+
+def test_complete_skipped_naming_gets_default_without_llm(client, auth_header, mock_llm):
+    """按「跳過這題」又沒有別的素材：零 LLM 呼叫，回應照樣帶預設名字與 later。"""
+    from services.companion_naming import DEFAULT_COMPANION_NAME
+    headers, _uid = auth_header
+    _answer(client, headers, "companion_naming", "")
+    r = client.post("/users/onboarding/complete", headers={**headers, **LLM_HEADERS})
+    assert r.status_code == 200
+    assert mock_llm.calls == []
+    assert r.json()["companion_name"] == DEFAULT_COMPANION_NAME["zh-TW"]
+    assert r.json()["companion_name_note"] == "later"
+    assert r.json()["memory_review"] is None
 
 
 def test_complete_naming_failure_still_ingests(client, auth_header, mock_llm):

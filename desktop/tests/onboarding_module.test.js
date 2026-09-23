@@ -145,6 +145,28 @@ describe('取名分支', () => {
         expect(messagesText()).toContain(I18N.t('onboarding.namingAck', { name: '小澄 澄' }));
     });
 
+    it('婉拒取名（「隨便吧」）：用預設名字、當下就說 nameDefaulted，原文照舊入庫', async () => {
+        await startFresh();
+        const def = I18N.t('onboarding.defaultName');
+        OnboardingModule.handleAnswer('隨便吧');
+        await flush();
+        const calls = lastApiCalls();
+        expect(calls.answers).toContainEqual(['companion_naming', '隨便吧']);  // 原文，不是預設名字
+        expect(calls.companionPuts[0]).toEqual({ companion_name: def });
+        expect(messagesText()).toContain(I18N.t('onboarding.nameDefaulted', { name: def }));
+        expect(messagesText()).toContain(I18N.t('onboarding.q.name'));         // 照常續問下一題
+    });
+
+    it('延後取名（「之後再取」）：一樣用預設名字，但說「先叫⋯⋯，未來隨時可以改」', async () => {
+        await startFresh();
+        const def = I18N.t('onboarding.defaultName');
+        OnboardingModule.handleAnswer('之後再取');
+        await flush();
+        expect(lastApiCalls().companionPuts[0]).toEqual({ companion_name: def });
+        expect(messagesText()).toContain(I18N.t('onboarding.nameDefaultedLater', { name: def }));
+        expect(messagesText()).not.toContain(I18N.t('onboarding.nameDefaulted', { name: def }));
+    });
+
     it('>12 字：溫和請重試一次；仍超長只留原文並繼續 q1', async () => {
         await startFresh();
         const longName = '這個名字實在是太長了完全記不住';
@@ -195,6 +217,30 @@ describe('extractName（取名題的零 LLM 前綴／後綴剝除）', () => {
                 .toBeLessThan(200);
             expect(out).toBe(input);   // 剝不出名字：原樣退回（之後過不了 12 字檢查→請他重取）
         }
+    });
+});
+
+describe('婉拒／延後片語表（拿 extractName 的輸出整串比對）', () => {
+    it.each([
+        ['隨便', 'declined'],
+        ['隨便吧', 'declined'],          // 帶尾詞：extractName 先把「吧」剝掉才比對
+        ['不用了', 'declined'],
+        ['你自己決定', 'declined'],
+        ['沒差', 'declined'],
+        ['Whatever', 'declined'],        // 英文不分大小寫
+        ['up to you', 'declined'],
+        ['No need', 'declined'],
+        ['之後再取', 'later'],
+        ['晚點再說', 'later'],
+        ['再說吧', 'later'],
+        ['Maybe later', 'later'],
+        ['小澄', null],                  // 一般名字不受影響
+        ['小樹洞', null],
+        ['我想叫你小樹洞', null],
+        ['不用客氣', null],              // 只認整串，不做包含比對
+    ])('%j → %s', (input, expected) => {
+        const extracted = OnboardingModule._test.extractName(input);
+        expect(OnboardingModule._test.matchNamePhrase(extracted)).toBe(expected);
     });
 });
 
@@ -605,6 +651,34 @@ describe('收束後的待核可記憶通知', () => {
         }));
         await waitForNotice();
         expect(messagesText()).toContain(I18N.t('onboarding.nameCorrected', { name: '可愛33' }));
+    });
+
+    it.each([
+        ['later', 'onboarding.nameDefaultedLater'],
+        ['declined', 'onboarding.nameDefaulted'],
+        [null, 'onboarding.nameCorrected'],
+    ])('complete 回 companion_name_note=%j → 收束時說 %s', async (note, key) => {
+        const def = I18N.t('onboarding.defaultName');
+        await finishWith(async () => ({
+            completed: true, companion_name: def, companion_name_note: note,
+            memory_review: PENDING_REVIEW,
+        }), '小澄');
+        await waitForNotice();
+        expect(messagesText()).toContain(I18N.t(key, { name: def }));
+    });
+
+    it('取名當下就用了預設名字：收束時不再說一次（閘門是 finalName !== ackedName）', async () => {
+        const def = I18N.t('onboarding.defaultName');
+        await finishWith(async () => ({
+            completed: true, companion_name: def, companion_name_note: 'declined',
+            memory_review: PENDING_REVIEW,
+        }), '隨便');
+        await waitForNotice();
+        expect(lastApiCalls().companionPuts[0]).toEqual({ companion_name: def });  // A 當下就寫了
+        // 當下那句還在畫面上，但收束時不得再出現第二次
+        const text = messagesText();
+        const said = I18N.t('onboarding.nameDefaulted', { name: def });
+        expect(text.indexOf(said)).toBe(text.lastIndexOf(said));
     });
 
     it('complete 送出失敗：不通知也不擋主流程（outro 照樣出現）', async () => {
