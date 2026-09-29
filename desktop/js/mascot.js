@@ -43,8 +43,10 @@ const MascotModule = (function () {
     function svg200(inner, size, extraClass, pose) {
         return `<svg viewBox="0 0 200 200" width="${size}" height="${size}" class="${extraClass || ''}" data-mm-pose="${pose}" aria-hidden="true"><g class="mm-rig">${inner}</g></svg>`;
     }
-    function svg220(inner, size, pose) {
-        return `<svg viewBox="0 0 220 200" width="${size}" height="${Math.round(size * 200 / 220)}" data-mm-pose="${pose}" aria-hidden="true"><g class="mm-rig">${inner}</g></svg>`;
+    // behavior：行為旗標（data-mm-idle＝待機生命感…），只給 mascot_motion.js 當掛點；
+    // 聊天區域的吉祥物（思考中／生成日記／check-in）一律不帶——契約 §4：只准安靜搖擺或靜態
+    function svg220(inner, size, pose, behavior) {
+        return `<svg viewBox="0 0 220 200" width="${size}" height="${Math.round(size * 200 / 220)}" data-mm-pose="${pose}"${behavior ? ' ' + behavior : ''} aria-hidden="true"><g class="mm-rig">${inner}</g></svg>`;
     }
 
     const POSE_SLEEP =
@@ -183,11 +185,11 @@ const MascotModule = (function () {
 
     function emptyHtml(kind, caption) {
         const pose = kind === 'diary' ? 'sleep' : kind === 'calendar' ? 'calendar' : 'question';
-        return `<div class="mascot-empty">${svg220(POSES[pose], 132, pose)}` +
+        return `<div class="mascot-empty">${svg220(POSES[pose], 132, pose, 'data-mm-idle')}` +
             `<p class="mascot-empty-caption">${escapeText(caption)}</p></div>`;
     }
 
-    function welcomeHtml() { return `<div class="mascot-welcome">${svg220(POSE_WAVE, 110, 'wave')}</div>`; }
+    function welcomeHtml() { return `<div class="mascot-welcome">${svg220(POSE_WAVE, 110, 'wave', 'data-mm-idle')}</div>`; }
     function checkinHtml() { return `<span class="mascot-checkin">${svg220(POSE_TEA, 44, 'tea')}</span>`; }
 
     // 安靜門檻：spec §4 原文寫「負向情緒 → 安靜版」並字面舉例 valence<0，

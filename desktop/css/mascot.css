@@ -29,7 +29,33 @@
 
 .mascot-cat-icon { vertical-align: middle; }
 
+/* ---- v2.6 motion：rig 部件的共同設定 ----------------------------------------
+   SVG 群組的 transform 預設以整張 viewBox 為參考框；fill-box 讓 transform-origin 的
+   百分比落在「該部件自己的外框」上（眼睛以自己的中心縮、整隻以腳底為支點）。 */
+.mm-rig, .mm-eyes, .mm-zzz { transform-box: fill-box; }
+.mm-rig { transform-origin: 50% 100%; }
+.mm-eyes { transform-origin: 50% 55%; }
+
+/* 待機生命感（mascot_motion.js 的共用排程器只負責眨眼的時機；呼吸與 zzz 是純 CSS）。
+   只作用在模板標了 data-mm-idle 的吉祥物（登入歡迎、空狀態）——聊天區域的吉祥物不帶。
+   呼吸週期用自訂屬性調（睡著的比較慢）；不要另寫 animation-duration 規則——它的
+   specificity 會蓋過點擊反應 .mm-react 的彈跳時長。 */
+svg[data-mm-idle] .mm-rig { animation: mm-breathe var(--mm-breathe, 3.6s) ease-in-out infinite; }
+svg[data-mm-pose="sleep"] { --mm-breathe: 4.8s; }
+svg[data-mm-idle][data-mm-pose="sleep"] .mm-zzz { animation: mm-zzz 2.8s ease-in-out infinite; }
+@keyframes mm-breathe { 0%, 100% { transform: scale(1, 1); } 50% { transform: scale(1.01, 1.025); } }
+@keyframes mm-zzz { 0%, 100% { transform: translateY(0); opacity: 1; } 50% { transform: translateY(-4px); opacity: .55; } }
+
+/* 眨眼：排程器加 .mm-blink（並設 --mm-blink-delay 錯開），只有睜眼（dot）的眼睛會動 */
+svg.mm-blink .mm-eyes[data-mm-eyes="dot"] { animation: mm-blink 180ms ease-in-out var(--mm-blink-delay, 0ms) 1; }
+@keyframes mm-blink { 0%, 100% { transform: scaleY(1); } 45%, 55% { transform: scaleY(.1); } }
+
+/* 分頁隱藏時（html.mm-paused，mascot_motion.js 設）連 CSS 的循環待機一起停 */
+html.mm-paused svg[data-mm-idle] .mm-rig, html.mm-paused svg[data-mm-idle] .mm-zzz { animation-play-state: paused; }
+
 @media (prefers-reduced-motion: reduce) {
     .mascot-sway, .mascot-dots span, .mascot-egg svg { animation: none !important; }
     .mascot-egg { transition: none; }
+    svg[data-mm-idle] .mm-rig, svg[data-mm-idle][data-mm-pose="sleep"] .mm-zzz,
+    svg.mm-blink .mm-eyes[data-mm-eyes="dot"] { animation: none !important; }
 }

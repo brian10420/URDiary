@@ -34,6 +34,22 @@
             viewport: [320, 280], frames: [0, 300],
             setup: () => MascotModule.showSaveEgg('goodnight'),
         },
+        // --- Task 5 待機生命感 ---------------------------------------------------
+        'idle-breathe': {
+            viewport: [220, 200], frames: [0, 900, 1800, 2700],
+            setup: (stage) => mount(stage, MascotModule.welcomeHtml()),
+        },
+        'idle-sleep': {
+            viewport: [240, 220], frames: [0, 1200, 2400, 3600],
+            setup: (stage) => mount(stage, MascotModule.emptyHtml('diary', '')),
+        },
+        'blink': {
+            viewport: [240, 220], frames: [0, 45, 90, 135, 180],
+            setup: (stage) => {
+                mount(stage, MascotModule.emptyHtml('calendar', ''));
+                MascotMotion.blink(stage.querySelector('svg'), 0);
+            },
+        },
     };
 
     function list() { return Object.keys(SCENES); }
