@@ -605,6 +605,19 @@ const SettingsModule = (function() {
     /** 陪伴者名字（模組內快取；GET/PUT 成功後更新）。chat_module 讀取用。 */
     function getCompanionName() { return companionNameCache; }
 
+    /**
+     * 外部模組直接更新名字快取（v2.5 Spec B 驗收回饋①：onboarding 取名定案
+     * 時用）：只改快取並廣播 companion-settings-changed——chat_module 既有的
+     * 監聽會據此換聊天標題。不碰卡片 DOM 欄位（下次開面板的 GET 自會回填），
+     * 也不動 companionLoaded：這不是「看過伺服器上的完整設定」，翻成 true
+     * 會讓之後的儲存改送完整 5 欄位，把沒讀到的空白當成清空指令。
+     */
+    function setCompanionName(name) {
+        companionNameCache = name || null;
+        document.dispatchEvent(new CustomEvent('companion-settings-changed',
+            { detail: { name: companionNameCache } }));
+    }
+
     function companionFieldValue(id) {
         const el = document.getElementById(id);
         return el ? el.value : '';
@@ -788,6 +801,7 @@ const SettingsModule = (function() {
         isSemanticMemoryEnabled: isSemanticMemoryEnabled,
         openDialog: openDialog,
         getCompanionName: getCompanionName,
+        setCompanionName: setCompanionName,
         // 僅為 vitest 單元測試曝光，行為不變（本檔案目前唯一的 _test 匯出，
         // 未見既有慣例——依任務說明新增）。buildCompanionPartialPayload 與
         // saveCompanionSettings 是 code review 修復（controller 裁定的必修

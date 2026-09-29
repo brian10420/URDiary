@@ -309,7 +309,7 @@ def test_llm_bucket_shared_across_llm_endpoints_for_same_user(client, auth_heade
 
 
 def test_all_llm_backed_endpoints_are_wired_to_the_dependency(client, auth_header, mock_llm, llm_headers, monkeypatch):
-    """真的會呼叫 LLM 供應商的 8 個端點都必須掛 enforce_llm_rate_limit——
+    """真的會呼叫 LLM 供應商的 9 個端點都必須掛 enforce_llm_rate_limit——
     用掉唯一的 1 次額度後，其餘每一個不管打哪一個都該立即 429，不能有
     漏網之魚 (純 CRUD、不花 LLM 額度的端點如 GET /diaries/{id}、
     DELETE /chat/clear/ 則刻意不掛，不在這份清單裡)。"""
@@ -330,13 +330,14 @@ def test_all_llm_backed_endpoints_are_wired_to_the_dependency(client, auth_heade
         ("POST", "/enhanced-generate", {}),
         ("GET", f"/analytics/emotion/{user_id}", None),
         ("POST", "/interaction-notes/update", {}),
+        ("POST", "/users/onboarding/complete", None),
     ]
     for method, path, body in calls:
         resp = client.request(method, path, json=body, headers=combined)
         assert resp.status_code == 429, f"{method} {path} 未被限流擋下: {resp.status_code} {resp.text}"
         assert resp.json()["code"] == "E1006"
 
-    # 上面 9 次呼叫 (含燒額度那次) 只有第一次真的打到 LLM
+    # 上面 10 次呼叫 (含燒額度那次) 只有第一次真的打到 LLM
     assert len(mock_llm.calls) == 1
 
 

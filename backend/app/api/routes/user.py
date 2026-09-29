@@ -25,19 +25,22 @@ from typing import List, Dict, Any, Optional
 from pydantic import BaseModel, Field
 from datetime import datetime, timedelta
 
+import logging
 import uuid
 
-from api.deps import get_db, get_current_user, get_current_token_data, get_language
-from api.schemas import CompanionSettingsIn
+from api.deps import get_db, get_current_user, get_current_token_data, get_language, get_llm_config
+from api.schemas import CompanionSettingsIn, OnboardingAnswerIn
 from middleware import rate_limit
+from middleware.rate_limit import enforce_llm_rate_limit
 from utils.api_exceptions import BadRequestError, NotFoundError, UnauthorizedError, ForbiddenError
 from utils.error_codes import ErrorCode
 from utils.messages import msg
 from utils.password_validator import validate_password_and_get_errors
 from utils.invite_codes import hash_invite_code
-from database import crud
+from database import crud, db_session
 from database.models import User
 from providers.factory import KNOWN_PROVIDERS
+from providers.base import LLMConfig
 from services import llm_credential_service
 from utils.security import (
     TokenData,
@@ -55,6 +58,7 @@ from config import ACCESS_TOKEN_MINUTES, REFRESH_TOKEN_DAYS
 import config
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 class UserCreate(BaseModel):
     username: str
@@ -481,6 +485,83 @@ def put_my_companion(payload: CompanionSettingsIn,
             setattr(user, column, value)
     db.commit()
     return {"message": msg("companion_saved", lang), **_companion_payload(user)}
+
+
+# --- Onboarding 初次見面 (v2.5 Spec B) ---
+# 註冊順序同樣要在 /{user_id} 之前 (見上面 /sessions 的說明——"onboarding"
+# 會被 /{user_id} 的 int 轉型接走然後 422)。
+
+@router.get("/onboarding/state", response_model=Dict[str, Any],
+            summary="查詢 onboarding 狀態",
+            description="回報是否已完成初次見面，以及已作答（含空字串跳過）的題目 key")
+def get_onboarding_state(current_user: User = Depends(get_current_user),
+                         db: Session = Depends(get_db)):
+    answers = crud.get_onboarding_answers(db, current_user.id)
+    return {"completed": current_user.onboarding_completed_at is not None,
+            "answered_keys": [a.question_key for a in answers]}
+
+
+@router.post("/onboarding/answer", response_model=Dict[str, Any],
+             summary="儲存一題 onboarding 答案",
+             description="逐題 upsert；空字串＝跳過（續跑不重問）。白名單外或超長回 422")
+def save_onboarding_answer(payload: OnboardingAnswerIn,
+                           current_user: User = Depends(get_current_user),
+                           db: Session = Depends(get_db)):
+    row = crud.upsert_onboarding_answer(db, current_user.id,
+                                        payload.question_key, payload.answer_text)
+    return {"saved": True, "question_key": row.question_key}
+
+
+@router.post("/onboarding/complete", response_model=Dict[str, Any],
+             summary="完成 onboarding",
+             description="設完成戳記（冪等）；首次完成時判定使用者真正要取的陪伴者名字，"
+                         "並盡力把答案收納進長期記憶（無金鑰時兩者都靜默跳過）")
+def complete_onboarding(current_user: User = Depends(get_current_user),
+                        llm_config: Optional[LLMConfig] = Depends(get_llm_config),
+                        lang: str = Depends(get_language),
+                        _rate_limit: None = Depends(enforce_llm_rate_limit)):
+    """連線紀律比照 diary.py 的 update_interaction_notes：本路由不掛 get_db，
+    寫入走自己的短交易，LLM 呼叫期間不持有工作用 session。
+
+    回應的 companion_name：取名判定改寫了名字才有值（None＝名字沒改）。
+    companion_name_note："declined"／"later" 代表那個名字是「他沒取名」時給的
+    預設名字（前端據此換一句話說），None＝他自己取的名字。
+    """
+    with db_session() as db:
+        user = crud.get_user(db, current_user.id)
+        just_completed = user.onboarding_completed_at is None
+        if just_completed:
+            user.onboarding_completed_at = datetime.utcnow()
+            db.commit()
+        has_material = bool(crud.get_uningested_onboarding_answers(db, current_user.id))
+
+    # 取名判定 (v2.5 Spec B 驗收回饋①)：腳本當下只能照字面收下取名答案，這裡讀
+    # 全部原文判斷真正要取的名字。只在「這次呼叫真的設下完成戳記」時跑——重按
+    # complete 不再判定（比照收納不重收），也就不會把之後在設定頁改的名字蓋回去。
+    # 排在收納之前：兩者互不依賴，失敗也互不阻擋。
+    companion_name = None
+    companion_name_note = None
+    if just_completed:
+        try:
+            from services.companion_naming import resolve_companion_name
+            resolved = resolve_companion_name(current_user.id, llm_config, lang=lang)
+            companion_name, companion_name_note = resolved.name, resolved.note
+        except Exception as e:  # 取名判定是 best-effort：名字維持腳本版，不擋 complete
+            logger.warning(f"取名判定略過 (user_id={current_user.id}): {e}")
+
+    review = None
+    if has_material:
+        try:
+            from services.memory_review import run_review_pass
+            review = run_review_pass(current_user.id, llm_config, lang=lang,
+                                     source="onboarding")
+        except Exception as e:  # 收納是 best-effort：任何失敗都不擋 complete
+            logger.warning(f"onboarding 收納略過 (user_id={current_user.id}): {e}")
+
+    return {"completed": True,
+            "companion_name": companion_name,
+            "companion_name_note": companion_name_note,
+            "memory_review": review.as_dict() if review else None}
 
 
 # --- 個人 LLM 金鑰 (v2.3 task 1.6：手機瀏覽器沒有 safeStorage，金鑰改存伺服器) ---

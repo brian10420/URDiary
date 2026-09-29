@@ -658,3 +658,48 @@ def get_diaries_by_ids(db: Session, user_id: int, ids) -> dict:
                       models.Diary.id.in_(ids))
               .all())
     return {r.id: r for r in rows}
+
+
+# --- Onboarding 初次見面 (v2.5 Spec B) -----------------------------------------
+
+def get_onboarding_answers(db, user_id: int):
+    """全部答案列（含空字串跳過與 companion_naming）——state API 的 answered_keys 用。"""
+    return (db.query(models.OnboardingAnswer)
+            .filter(models.OnboardingAnswer.user_id == user_id).all())
+
+
+def upsert_onboarding_answer(db, user_id: int, question_key: str, answer_text: str):
+    """一題一列 upsert。重答＝覆蓋＋answered_at 更新＋ingested_at 歸 None (重新等收納)。"""
+    row = (db.query(models.OnboardingAnswer)
+           .filter_by(user_id=user_id, question_key=question_key).first())
+    if row is None:
+        row = models.OnboardingAnswer(user_id=user_id, question_key=question_key)
+        db.add(row)
+    row.answer_text = answer_text
+    row.answered_at = datetime.utcnow()
+    row.ingested_at = None
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+def get_uningested_onboarding_answers(db, user_id: int):
+    """待收納答案＝未戳記＋非空＋非 companion_naming——raw 注入區塊與 review 素材共用。"""
+    return (db.query(models.OnboardingAnswer)
+            .filter(models.OnboardingAnswer.user_id == user_id,
+                    models.OnboardingAnswer.ingested_at.is_(None),
+                    models.OnboardingAnswer.answer_text != "",
+                    models.OnboardingAnswer.question_key != "companion_naming")
+            .all())
+
+
+def mark_onboarding_answers_ingested(db, user_id: int, answer_ids) -> int:
+    """review pass 成功套用後戳記。user_id 過濾＝跨用戶防護。回傳實際戳記筆數。"""
+    if not answer_ids:
+        return 0
+    n = (db.query(models.OnboardingAnswer)
+         .filter(models.OnboardingAnswer.user_id == user_id,
+                 models.OnboardingAnswer.id.in_(answer_ids))
+         .update({"ingested_at": datetime.utcnow()}, synchronize_session=False))
+    db.commit()
+    return n

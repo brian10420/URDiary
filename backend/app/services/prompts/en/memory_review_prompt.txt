@@ -8,7 +8,7 @@ You are the memory keeper of a companionship system. Based on today's conversati
 [Companion notes (how to accompany them) | currently {companion_notes_count} / limit {companion_notes_limit} chars]
 {companion_notes_content}
 
-{near_limit_hint}{legacy_note_block}{over_budget_feedback}[Recent conversation]
+{near_limit_hint}{legacy_note_block}{onboarding_block}{over_budget_feedback}[Recent conversation]
 {chat_history}
 
 [Today's diary]

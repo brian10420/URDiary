@@ -165,6 +165,7 @@ const MemoryModule = (function() {
         const first = ops[0];
         const date = (first.created_at || '').slice(0, 10);
         if (first.source === 'user_edit') return `${date}・${I18N.t('memory.selfEdit')}`;
+        if (first.source === 'onboarding') return `${date}・${I18N.t('memory.fromOnboarding')}`;
         if (first.source_diary_title) {
             return `${date}・${I18N.t('memory.fromDiary', { title: first.source_diary_title })}`;
         }

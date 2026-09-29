@@ -321,9 +321,10 @@ const ChatModule = (function() {
                 chatMessagesContainer.innerHTML = '';
             }
 
-            // 每日 check-in：今日首次開啟時由 AI 主動問候（依昨日日記與時段）。
-            // 後端為準：已問候過/未設金鑰時回 checkin:false，畫面空著才補靜態歡迎詞。
-            requestDailyCheckin(renderedToday);
+            // 開場 gate（v2.5 Spec B）：onboarding 未完成者先走初次見面（自我介紹
+            // 就是問候，該次不發 check-in；完成後同一 session 也不補發）；
+            // 其餘照舊由後端決定每日問候。
+            startConversationOpening(renderedToday);
         } catch (error) {
             console.error('載入聊天歷史失敗:', error);
             chatHistory = [];
@@ -335,16 +336,36 @@ const ChatModule = (function() {
     // 每日問候只發一次（init 可能被重複呼叫，兩個非同步請求賽跑會加出兩句歡迎詞）
     let checkinInFlight = false;
 
+    // onboarding gate：只有「沒啟動 onboarding」才走每日 check-in
+    async function startConversationOpening(renderedToday) {
+        let onboardingStarted = false;
+        if (typeof OnboardingModule !== 'undefined' && OnboardingModule.maybeStart) {
+            try {
+                onboardingStarted = await OnboardingModule.maybeStart();
+            } catch (e) {
+                console.warn('onboarding 啟動檢查失敗，回退每日問候:', e);
+            }
+        }
+        if (!onboardingStarted) {
+            requestDailyCheckin(renderedToday);
+        }
+    }
+
     // 向後端請求每日開場問候
     async function requestDailyCheckin(hasRenderedHistory) {
         if (checkinInFlight) return;
         checkinInFlight = true;
         let thinkingMessageId = null;
 
-        // 靜態歡迎詞保底：僅在對話仍是空的時候補上，避免重複
+        // 靜態歡迎詞保底：僅在對話仍是空的時候補上，避免重複。
+        // v2.5 Spec B：靜態訊息順帶適用假思考延遲（同一 util，測試可設 0）。
         function fallbackWelcome() {
             if (!hasRenderedHistory && chatHistory.length === 0) {
-                addSystemMessage(WELCOME_MESSAGE_TEXT());
+                withThinkingDelay(function () {
+                    if (chatHistory.length === 0) {
+                        addSystemMessage(WELCOME_MESSAGE_TEXT());
+                    }
+                });
             }
         }
 
@@ -416,6 +437,21 @@ const ChatModule = (function() {
     // 揭曉），(2) 萬一送出失敗，原始文字存在該則氣泡的 dataset 上，附一顆
     // 「點擊重試」，不必使用者重新輸入（見 attemptSend/markSendFailed）。
     async function sendMessage() {
+        // onboarding 進行中（v2.5 Spec B）：打字送出＝回答當前題，不走一般聊天。
+        // typeof 防禦比照本檔其餘可選依賴（部分測試不載入 onboarding_module.js）。
+        if (typeof OnboardingModule !== 'undefined' && OnboardingModule.isActive &&
+            OnboardingModule.isActive()) {
+            const answerText = userInputElement.value.trim();
+            if (!answerText) return;
+            // 只有真的被收下當答案才清空輸入框：自我介紹的假思考延遲期間
+            // （active 但還沒問到題目）handleAnswer 會回 false，此時文字必須
+            // 留在輸入框裡，否則使用者打的字會被無聲吃掉、無從復原。
+            if (OnboardingModule.handleAnswer(answerText)) {
+                userInputElement.value = '';
+            }
+            return;
+        }
+
         // 獲取用戶輸入
         const userInput = userInputElement.value.trim();
 
@@ -802,18 +838,22 @@ const ChatModule = (function() {
     // 也不會被傳給 VoiceModule.speak（見下方 ttsBtn 區塊仍是用原始 content
     // 參數）。使用者/AI 文字本身仍然全程走 formatMessageContent 的 escape，
     // 這個參數不能拿來塞未經信任的內容。
-    function appendChatMessage(type, content, scroll, isReply, htmlPrefix) {
+    function appendChatMessage(type, content, scroll, isReply, htmlPrefix, ephemeral) {
         const messageElement = document.createElement('div');
         messageElement.className = type === 'user' ? 'chat-message user-message' : 'chat-message system-message';
         messageElement.innerHTML = buildMessageHtml(type, (htmlPrefix || '') + formatMessageContent(content));
 
         chatMessagesContainer.appendChild(messageElement);
 
-        chatHistory.push({
-            type: type,
-            content: content,
-            timestamp: new Date().toISOString()
-        });
+        // ephemeral（v2.5 Spec B）：onboarding 腳本訊息與答案只進 DOM，不進
+        // chatHistory——之後任何 saveChatHistory() 都不會把它們持久化（重載不重演）。
+        if (!ephemeral) {
+            chatHistory.push({
+                type: type,
+                content: content,
+                timestamp: new Date().toISOString()
+            });
+        }
 
         // 朗讀鍵接線（v2.4 spec②）：buildMessageHtml 只為真正的 assistant 訊息
         // 附上 .tts-play（思考中佔位泡泡不經過這裡，見該函式說明），這裡用
@@ -861,6 +901,49 @@ const ChatModule = (function() {
         return appendChatMessage('system', content, scroll, isReply, htmlPrefix);
     }
 
+    // ephemeral 訊息（v2.5 Spec B）：樣式與一般訊息相同，但不進 chatHistory/持久層
+    function addEphemeralSystemMessage(content) {
+        return appendChatMessage('system', content, true, false, undefined, true);
+    }
+
+    function addEphemeralUserMessage(content) {
+        return appendChatMessage('user', content, true, false, undefined, true);
+    }
+
+    /**
+     * v2.5 Spec C：核可制下有待核可記憶 → 溫暖邀請（整顆泡泡可點 → 記憶 modal）。
+     *
+     * 兩個呼叫端共用同一份實作：endChat 的成功路徑（日記生成完）、以及
+     * OnboardingModule.finish()（初次見面的答案也會產生 pending ops，見
+     * user.py 的 /onboarding/complete 回傳 memory_review）。原本這段只寫在
+     * endChat 裡，onboarding 那條路產生的待核可項目因此從來不會被告知。
+     *
+     * opts.ephemeral：onboarding 呼叫時傳 true——初次見面全程「不進持久層」
+     * （spec §4 鐵律：重載不重演），這則通知緊接在 ephemeral 的 outro 之後，
+     * 若走一般 addSystemMessage 就會混進記憶體裡的 chatHistory，被使用者
+     * 之後第一則真實訊息的 saveChatHistory() 一起存下來、重載時單獨浮出來
+     * （outro 早已消失）。文案／點擊接線／refreshBadge 三件事兩邊完全一致，
+     * 只有「進不進 chatHistory」不同。
+     * 回傳訊息節點；review 缺席或 pending<=0 回 null（呼叫端不必自己判斷）。
+     */
+    function showMemoryPendingNotice(review, opts) {
+        if (!review || !(review.pending > 0)) return null;
+        // spec §5 裁決（fix wave）：泡泡需要看得見的「去看看」文字提示，
+        // 不能只靠純滑鼠游標樣式暗示可點——兩把 i18n 鑰匙用最小拼接組成
+        // 訊息文字，不新增 HTML 機關。
+        const noticeText = `${I18N.t('memory.pendingNotice')} ${I18N.t('memory.goSee')}`;
+        const noticeElement = (opts && opts.ephemeral)
+            ? addEphemeralSystemMessage(noticeText)
+            : addSystemMessage(noticeText);
+        const noticeBubble = noticeElement && noticeElement.querySelector('.message-bubble');
+        if (noticeBubble && typeof MemoryModule !== 'undefined') {
+            noticeBubble.style.cursor = 'pointer';
+            noticeBubble.addEventListener('click', () => MemoryModule.open());
+        }
+        if (typeof MemoryModule !== 'undefined') MemoryModule.refreshBadge();
+        return noticeElement;
+    }
+
     // 添加"思考中"消息
     // v2.4 spec③：泡泡內文優先用 MascotModule.thinkingBubbleHtml()（搖擺吉祥物
     // ＋三點動畫）。typeof 防禦比照下面 appendChatMessage 對 VoiceModule 的
@@ -892,6 +975,28 @@ const ChatModule = (function() {
         scrollToBottom();
 
         return messageId;
+    }
+
+    // 腳本/靜態訊息的「假思考」（v2.5 Spec B §4）：搖擺泡泡 → uniform 隨機延遲 →
+    // 替換為訊息。只用於腳本與靜態訊息（onboarding 全部訊息、fallbackWelcome）；
+    // 真實 LLM 回覆維持既有 addThinkingMessage 流程，不經過這裡。
+    let scriptDelayRange = [1000, 3000];
+
+    // 測試鉤子（spec 硬需求）：測試設 (0,0)，正式碼不得縮短預設區間
+    function setScriptDelayRange(minMs, maxMs) {
+        scriptDelayRange = [minMs, maxMs];
+    }
+
+    function withThinkingDelay(showFn) {
+        const min = scriptDelayRange[0];
+        const max = scriptDelayRange[1];
+        const delay = min + Math.random() * (max - min);
+        const thinkingId = addThinkingMessage();
+        setTimeout(function () {
+            const el = document.getElementById(thinkingId);
+            if (el) el.remove();
+            showFn();
+        }, delay);
     }
 
     // 添加「生成日記中」等待訊息（v2.4 final-fix：spec③ §3 使用位置 3——
@@ -985,20 +1090,7 @@ const ChatModule = (function() {
             // 早於這整段執行，成功路徑之後不再呼叫 saveChatHistory()，所以
             // 這裡沿用預設參數（捲動到通知是正確的 UX）即可，訊息不會落盤，
             // 與上面的 diaryMessage 本身同構（見該處）。
-            // spec §5 裁決（fix wave）：泡泡需要看得見的「去看看」文字提示，
-            // 不能只靠純滑鼠游標樣式暗示可點——兩把 i18n 鑰匙用最小拼接組成
-            // 訊息文字，不新增 HTML 機關；整顆泡泡仍然可點擊 → MemoryModule.open()。
-            const review = response.memory_review;
-            if (review && review.pending > 0) {
-                const noticeText = `${I18N.t('memory.pendingNotice')} ${I18N.t('memory.goSee')}`;
-                const noticeElement = addSystemMessage(noticeText);
-                const noticeBubble = noticeElement && noticeElement.querySelector('.message-bubble');
-                if (noticeBubble && typeof MemoryModule !== 'undefined') {
-                    noticeBubble.style.cursor = 'pointer';
-                    noticeBubble.addEventListener('click', () => MemoryModule.open());
-                }
-                if (typeof MemoryModule !== 'undefined') MemoryModule.refreshBadge();
-            }
+            showMemoryPendingNotice(response.memory_review);
 
             // v2.4 spec ③：存日記彩蛋。只綁這個操作事件；negative valence → 安靜略過。
             if (typeof MascotModule !== 'undefined') {
@@ -1170,6 +1262,17 @@ const ChatModule = (function() {
         // 換帳號後新的工作階段可以再提示一次慢速模型建議
         slowModelHintShown = false;
 
+        // onboarding 狀態同樣歸零（v2.5 Spec B）：main.js 的 loginUser() 每次
+        // 登入都跑 reset() → init() 且不重整頁面，OnboardingModule 又是活在整個
+        // 分頁生命週期的 IIFE 單例——不歸零的話，前一個帳號的「本 session 已
+        // 完成」會讓下一個帳號的初次見面永遠不啟動（連每日問候也一併被抑制＝
+        // 空白對話頁）；前一個帳號若停在進行中，下一位使用者打的字還會被
+        // sendMessage 攔截、以舊題目 key 存進他自己的帳號。理由與上面
+        // slowModelHintShown 同一類。typeof 防禦同本檔其餘可選依賴。
+        if (typeof OnboardingModule !== 'undefined' && OnboardingModule.reset) {
+            OnboardingModule.reset();
+        }
+
         // 麥克風鍵不在 chatMessagesContainer 底下，上面的 innerHTML 清空不會
         // 動到它——錄音狀態旗標另外歸零，避免殘留的 recording=true 讓下一次
         // 點擊誤判成「正在錄音、要停止」（此時 VoiceModule 內部其實早已沒有
@@ -1194,6 +1297,24 @@ const ChatModule = (function() {
         diaryDayString: diaryDayString,
         applyCompanionTitle: applyCompanionTitle,
         maybeShowSlowModelHint: maybeShowSlowModelHint,
-        _test: { handleTranscript: handleTranscript }
+        // v2.5 Spec B：onboarding 腳本訊息基礎設施（假思考泡泡本身不外曝——
+        // 腳本訊息一律走 withThinkingDelay，它內部才呼叫 addThinkingMessage）
+        addEphemeralSystemMessage: addEphemeralSystemMessage,
+        addEphemeralUserMessage: addEphemeralUserMessage,
+        withThinkingDelay: withThinkingDelay,
+        setScriptDelayRange: setScriptDelayRange,
+        // v2.5 Spec C 通知：endChat 與 onboarding 收束共用（見該函式說明）
+        showMemoryPendingNotice: showMemoryPendingNotice,
+        _test: {
+            handleTranscript: handleTranscript,
+            // v2.5 Spec B fix round 1（code review finding 1/2）：純測試觀察
+            // 鉤子，不改變任何正式行為。讓測試能直接讀「陣列層保證本身」與
+            // 「從未被覆寫過的出廠預設值」，而不是只驗證下游、可能沒被真的
+            // 觸發到的副作用（例如 localStorage 持久層——沒有任何直接呼叫
+            // 路徑會從 ephemeral 函式一路走到 saveChatHistory()，就算 guard
+            // 被拿掉，那個斷言本來就不會發現）。
+            chatHistoryLength: function () { return chatHistory.length; },
+            getScriptDelayRange: function () { return scriptDelayRange; }
+        }
     };
 })();

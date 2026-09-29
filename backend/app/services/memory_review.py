@@ -17,6 +17,7 @@ from database import db_session, crud
 from memory_manager import format_chat_content
 from services import day_stamp, memory_files
 from services.prompt_loader import load_prompt, get_role
+from services.user_profile import render_onboarding_lines
 from utils.time_utils import get_diary_date
 
 logger = logging.getLogger(__name__)
@@ -104,9 +105,25 @@ def _over_budget_feedback(over_keys: list, snapshot_counts: dict, lang: str) -> 
             "Re-output the FULL ops batch: consolidate and trim so both files fit within their limits.\n\n")
 
 
+def _onboarding_material(lines: list, lang: str) -> str:
+    """未收納的初次見面答案 → review pass 素材塊 (比照 legacy_note_block 懶遷移模式)。"""
+    if not lines:
+        return ""
+    body = "\n".join(lines)
+    if lang != "en":
+        return ("【初次見面他告訴你的（收納素材）】\n" + body +
+                "\n（這些是初次見面自我介紹的原文回答：請把值得長期記住的部分分流進上面的"
+                "使用者檔案（多半屬「稱呼與身分」「四大生活領域」「優勢與關鍵洞察」）；"
+                "這批素材收納完成前每次都會出現，已在檔案裡的不要重複新增。）\n\n")
+    return ("[What they told you when you first met (to be filed)]\n" + body +
+            "\n(Their verbatim onboarding answers: file what deserves long-term memory into the "
+            "user profile above (mostly 稱呼與身分 / 四大生活領域 / 優勢與關鍵洞察); this "
+            "material reappears until filed — never re-add what is already in the file.)\n\n")
+
+
 def _build_prompt(snapshot: dict, lang: str, *, chat_text: str, diary_content: str,
                   valence, day_notes_rows, legacy_note: Optional[str],
-                  over_budget: str = "") -> str:
+                  onboarding_lines=None, over_budget: str = "") -> str:
     today = get_diary_date().strftime("%Y-%m-%d")
     if legacy_note:
         if lang != "en":
@@ -128,6 +145,7 @@ def _build_prompt(snapshot: dict, lang: str, *, chat_text: str, diary_content: s
         companion_notes_limit=memory_files.FILE_LIMITS["companion_notes"],
         near_limit_hint=_near_limit_hint(snapshot, lang),
         legacy_note_block=legacy_block,
+        onboarding_block=_onboarding_material(onboarding_lines or [], lang),
         over_budget_feedback=over_budget,
         chat_history=chat_text or ("（本次沒有對話素材）" if lang != "en" else "(no conversation material)"),
         todays_diary=diary_content or ("（無）" if lang != "en" else "(none)"),
@@ -221,6 +239,9 @@ def run_review_pass(user_id: int, cfg, lang: str = "zh-TW", *,
         approval = (user is not None and user.memory_write_mode == "approval")
         today = get_diary_date()
         day_rows = crud.get_day_notes(db, user_id, today - timedelta(days=13), today)
+        onboarding_rows = crud.get_uningested_onboarding_answers(db, user_id)
+        onboarding_lines = render_onboarding_lines(onboarding_rows, lang)
+        onboarding_ids = [r.id for r in onboarding_rows]
 
     chat_text = format_chat_content(chat_history) if chat_history else ""
 
@@ -229,6 +250,7 @@ def run_review_pass(user_id: int, cfg, lang: str = "zh-TW", *,
         prompt = _build_prompt(snapshot, lang, chat_text=chat_text,
                                diary_content=diary_content, valence=valence,
                                day_notes_rows=day_rows, legacy_note=legacy_note,
+                               onboarding_lines=onboarding_lines,
                                over_budget=over_budget_feedback)
         raw = llm.chat([{"role": "system", "content": get_role("note_taker", lang)},
                         {"role": "user", "content": prompt}], cfg)
@@ -274,6 +296,8 @@ def run_review_pass(user_id: int, cfg, lang: str = "zh-TW", *,
             crud.create_memory_ops(db, rows)
             result.pending = sum(1 for r in rows if r["status"] == "pending")
             result.failed = sum(1 for r in rows if r["status"] == "failed")
+            if onboarding_ids and result.pending:
+                crud.mark_onboarding_answers_ingested(db, user_id, onboarding_ids)
             return result
         for key in memory_files.FILE_KEYS:
             if contents[key] != snapshot[key]:
@@ -282,6 +306,8 @@ def run_review_pass(user_id: int, cfg, lang: str = "zh-TW", *,
         crud.create_memory_ops(db, rows)
         result.applied = sum(1 for r in rows if r["status"] == "applied")
         result.failed = sum(1 for r in rows if r["status"] == "failed")
+        if onboarding_ids and result.applied:
+            crud.mark_onboarding_answers_ingested(db, user_id, onboarding_ids)
         return result
 
 
