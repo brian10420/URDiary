@@ -51,16 +51,17 @@
             },
         },
         // --- Task 6 點擊反應 -----------------------------------------------------
+        // 190／260＝拉長到最高點（愛心此時必須還沒出現）、340＝愛心剛冒出、420＝放到最大
         'react-welcome': {
-            viewport: [220, 200], frames: [0, 120, 260, 420, 600, 850],
+            viewport: [220, 200], frames: [0, 60, 120, 190, 260, 340, 420, 600, 850],
             setup: (stage) => MascotMotion.react(mount(stage, MascotModule.welcomeHtml()).querySelector('svg')),
         },
         'react-calendar': {
-            viewport: [240, 220], frames: [0, 120, 260, 420, 600, 850],
+            viewport: [240, 220], frames: [0, 60, 120, 190, 260, 340, 420, 600, 850],
             setup: (stage) => MascotMotion.react(mount(stage, MascotModule.emptyHtml('calendar', '')).querySelector('svg')),
         },
         'react-sleep': {
-            viewport: [240, 220], frames: [0, 120, 260, 420, 600, 850],
+            viewport: [240, 220], frames: [0, 60, 120, 190, 260, 340, 420, 600, 850],
             setup: (stage) => MascotMotion.react(mount(stage, MascotModule.emptyHtml('diary', '')).querySelector('svg')),
         },
     };

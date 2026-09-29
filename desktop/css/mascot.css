@@ -65,11 +65,14 @@ svg.mm-react .mm-face-alt { visibility: visible; }
     72%  { transform: translateY(0) scale(1.04, .96); }
     100% { transform: translateY(0) scale(1, 1); }
 }
+/* 愛心在 mm-rig 之外、不跟著彈跳：彈跳拉到最高點（約 250ms）時頭頂會升進愛心的位置，
+   所以前 35% 保持透明，等身體落回來（315ms）才冒出、在落地壓扁（432ms）時放到最大，
+   再往上飄、淡出。位置在 mascot.js 的 reactionHeartSvg（translate），兩邊一起調。 */
 @keyframes mm-heart {
-    0%   { transform: translateY(6px) scale(.3); opacity: 0; }
-    25%  { transform: translateY(0) scale(1.15); opacity: 1; }
-    45%  { transform: translateY(-4px) scale(1); opacity: 1; }
-    100% { transform: translateY(-26px) scale(.9); opacity: 0; }
+    0%, 35% { transform: translateY(0) scale(.3); opacity: 0; }
+    48%     { transform: translateY(0) scale(1.15); opacity: 1; }
+    60%     { transform: translateY(-4px) scale(1); opacity: 1; }
+    100%    { transform: translateY(-26px) scale(.9); opacity: 0; }
 }
 
 /* 分頁隱藏時（html.mm-paused，mascot_motion.js 設）連 CSS 的循環待機一起停 */

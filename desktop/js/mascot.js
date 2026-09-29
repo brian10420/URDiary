@@ -229,8 +229,10 @@ const MascotModule = (function () {
     // 點擊反應的小愛心（v2.6 motion Task 6）：沿用 heart 印章的心形路徑與既有粉紅 #e8899a。
     // 外層無名 <g> 負責定位（transform 屬性；插在 <svg> 底下、mm-rig 之外，不跟著彈跳），
     // 內層 .mm-heart 給 CSS 動畫（不能帶 transform 屬性，理由同 rig 鐵律 (2)）。
+    // 位置與 mascot.css 的 @keyframes mm-heart 是一組：彈跳最高點時頭頂會升到這一帶，所以
+    // 愛心等身體落回來才冒出；y=38 讓它冒出時離落地的頭頂一小段、飄到最後也不出 viewBox。
     function reactionHeartSvg() {
-        return `<g data-mm-heart transform="translate(108 50)"><g class="mm-heart">` +
+        return `<g data-mm-heart transform="translate(108 38)"><g class="mm-heart">` +
             `<path d="M37 6.5 c-2.8 -2.8 -6.5 -1 -6.5 2.2 c0 2.8 2.8 4.7 6.5 7.5 c3.7 -2.8 6.5 -4.7 6.5 -7.5 c0 -3.2 -3.7 -5 -6.5 -2.2 z" ` +
             `transform="scale(2) translate(-37 -9.5)" fill="#e8899a" stroke="${OUTLINE}" stroke-width="2.4" stroke-linejoin="round"/>` +
             `</g></g>`;
