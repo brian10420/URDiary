@@ -2,90 +2,126 @@
  * MascotModule (v2.4 spec ③)：書本吉祥物視覺層唯一來源。
  * 所有 SVG 以模板字串內嵌（零外部請求）；動畫 class 在 css/mascot.css。
  * 彩蛋硬規則見 eggKindFor —— 只綁操作事件、情緒門檻、夜間版。
+ *
+ * Rig（v2.6 motion）：每個姿勢拆成具名群組，class 就是動畫掛點——
+ *   mm-rig（整隻：呼吸／彈跳）> mm-body（書頁＋書皮）、mm-bookmark、
+ *   mm-face（mm-eyes＋mm-mouth；mm-eyes 帶 data-mm-eyes=dot|happy|closed）、
+ *   mm-blush、mm-arm-l／mm-arm-r（以「畫面」左右為準）、mm-prop（道具）、
+ *   mm-zzz／mm-stars／mm-shadow／mm-sky／mm-hat（姿勢專屬）。
+ * 兩條鐵律（tests/mascot_rig.test.js 釘住）：
+ *   (1) 群組只包、不改繪製順序——靜止畫面與 rig 化之前逐像素相同
+ *       （desktop/tools/motion/pose-identity.js 驗證）；
+ *   (2) mm-* 群組本身不帶 transform 屬性——CSS transform 會整個蓋掉 SVG 的
+ *       transform 屬性，姿勢自帶的旋轉／位移一律留在外層的無名 <g>。
  */
 const MascotModule = (function () {
     const OUTLINE = '#4b2e1e';
 
+    // rig 群組：attrs 只准放不影響靜止畫面的屬性（data-*、visibility、opacity 等）
+    function part(name, inner, attrs) {
+        return `<g class="mm-${name}"${attrs ? ' ' + attrs : ''}>${inner}</g>`;
+    }
+    function face(inner) { return `<g class="mm-face">${inner}</g>`; }
+
     // -- 基底（正面 Q 版）與姿態 --------------------------------------------
-    const BASE_BOOK = `
-      <path d="M54 90 q0 -18 18 -18 h56 q18 0 18 18 v4 h-92 z" fill="#f9f3e6" stroke="${OUTLINE}" stroke-width="9" stroke-linejoin="round"/>
-      <rect x="48" y="94" width="104" height="72" rx="16" fill="#b98d6d" stroke="${OUTLINE}" stroke-width="9"/>
-      <path d="M64 94 h20 v36 l-10 -9 -10 9 z" fill="#5fd0a0" stroke="${OUTLINE}" stroke-width="6" stroke-linejoin="round"/>`;
-    const FACE_SMILE = `
-      <circle cx="103" cy="126" r="6.5" fill="#2b1a10"/><circle cx="133" cy="126" r="6.5" fill="#2b1a10"/>
-      <path d="M110 139 q8 7 16 0" stroke="#2b1a10" stroke-width="5" fill="none" stroke-linecap="round"/>`;
-    const FACE_HAPPY = `
-      <path d="M96 128 q7 -7 14 0 M126 128 q7 -7 14 0" stroke="#2b1a10" stroke-width="5" fill="none" stroke-linecap="round"/>
-      <path d="M106 136 q12 12 24 0" stroke="#2b1a10" stroke-width="5" fill="none" stroke-linecap="round"/>`;
-    const BLUSH = `
-      <ellipse cx="92" cy="140" rx="7" ry="4.5" fill="#f0a78f" opacity="0.55"/>
-      <ellipse cx="148" cy="140" rx="7" ry="4.5" fill="#f0a78f" opacity="0.55"/>`;
+    const BASE_BOOK =
+      part('body',
+        `<path d="M54 90 q0 -18 18 -18 h56 q18 0 18 18 v4 h-92 z" fill="#f9f3e6" stroke="${OUTLINE}" stroke-width="9" stroke-linejoin="round"/>` +
+        `<rect x="48" y="94" width="104" height="72" rx="16" fill="#b98d6d" stroke="${OUTLINE}" stroke-width="9"/>`) +
+      part('bookmark',
+        `<path d="M64 94 h20 v36 l-10 -9 -10 9 z" fill="#5fd0a0" stroke="${OUTLINE}" stroke-width="6" stroke-linejoin="round"/>`);
+    const FACE_SMILE = face(
+      part('eyes', `<circle cx="103" cy="126" r="6.5" fill="#2b1a10"/><circle cx="133" cy="126" r="6.5" fill="#2b1a10"/>`, 'data-mm-eyes="dot"') +
+      part('mouth', `<path d="M110 139 q8 7 16 0" stroke="#2b1a10" stroke-width="5" fill="none" stroke-linecap="round"/>`));
+    const EYES_HAPPY = part('eyes', `<path d="M96 128 q7 -7 14 0 M126 128 q7 -7 14 0" stroke="#2b1a10" stroke-width="5" fill="none" stroke-linecap="round"/>`, 'data-mm-eyes="happy"');
+    const MOUTH_HAPPY = part('mouth', `<path d="M106 136 q12 12 24 0" stroke="#2b1a10" stroke-width="5" fill="none" stroke-linecap="round"/>`);
+    const FACE_HAPPY = face(EYES_HAPPY + MOUTH_HAPPY);
+    const BLUSH = part('blush',
+      `<ellipse cx="92" cy="140" rx="7" ry="4.5" fill="#f0a78f" opacity="0.55"/>` +
+      `<ellipse cx="148" cy="140" rx="7" ry="4.5" fill="#f0a78f" opacity="0.55"/>`);
 
-    function svg200(inner, size, extraClass) {
-        return `<svg viewBox="0 0 200 200" width="${size}" height="${size}" class="${extraClass || ''}" aria-hidden="true">${inner}</svg>`;
+    function svg200(inner, size, extraClass, pose) {
+        return `<svg viewBox="0 0 200 200" width="${size}" height="${size}" class="${extraClass || ''}" data-mm-pose="${pose}" aria-hidden="true"><g class="mm-rig">${inner}</g></svg>`;
     }
-    function svg220(inner, size) {
-        return `<svg viewBox="0 0 220 200" width="${size}" height="${Math.round(size * 200 / 220)}" aria-hidden="true">${inner}</svg>`;
+    function svg220(inner, size, pose) {
+        return `<svg viewBox="0 0 220 200" width="${size}" height="${Math.round(size * 200 / 220)}" data-mm-pose="${pose}" aria-hidden="true"><g class="mm-rig">${inner}</g></svg>`;
     }
 
-    const POSE_SLEEP = `
-      <text x="150" y="52" font-size="22" fill="#a58a70" font-weight="bold" transform="rotate(12 150 52)">z</text>
-      <text x="168" y="38" font-size="16" fill="#bfa88d" font-weight="bold" transform="rotate(12 168 38)">z</text>
-      <g transform="rotate(-6 100 130)">${BASE_BOOK}
-        <path d="M96 127 q7 5 14 0 M126 127 q7 5 14 0" stroke="#2b1a10" stroke-width="5" fill="none" stroke-linecap="round"/>
-        <circle cx="120" cy="141" r="3.5" fill="#2b1a10"/></g>
-      <g transform="rotate(24 186 150)">
-        <rect x="180" y="118" width="11" height="52" rx="4" fill="#f2c94c" stroke="${OUTLINE}" stroke-width="5"/>
-        <path d="M181 170 l4.5 12 l4.5 -12 z" fill="#e8b04b" stroke="${OUTLINE}" stroke-width="4" stroke-linejoin="round"/></g>`;
+    const POSE_SLEEP =
+      part('zzz',
+        `<text x="150" y="52" font-size="22" fill="#a58a70" font-weight="bold" transform="rotate(12 150 52)">z</text>` +
+        `<text x="168" y="38" font-size="16" fill="#bfa88d" font-weight="bold" transform="rotate(12 168 38)">z</text>`) +
+      `<g transform="rotate(-6 100 130)">${BASE_BOOK}` +
+        face(
+          part('eyes', `<path d="M96 127 q7 5 14 0 M126 127 q7 5 14 0" stroke="#2b1a10" stroke-width="5" fill="none" stroke-linecap="round"/>`, 'data-mm-eyes="closed"') +
+          part('mouth', `<circle cx="120" cy="141" r="3.5" fill="#2b1a10"/>`)) +
+      `</g>` +
+      part('prop',
+        `<g transform="rotate(24 186 150)">` +
+          `<rect x="180" y="118" width="11" height="52" rx="4" fill="#f2c94c" stroke="${OUTLINE}" stroke-width="5"/>` +
+          `<path d="M181 170 l4.5 12 l4.5 -12 z" fill="#e8b04b" stroke="${OUTLINE}" stroke-width="4" stroke-linejoin="round"/>` +
+        `</g>`);
 
-    const POSE_CALENDAR = `
-      <g transform="rotate(8 178 92)">
-        <rect x="156" y="66" width="46" height="42" rx="7" fill="#ffffff" stroke="${OUTLINE}" stroke-width="6"/>
-        <rect x="156" y="66" width="46" height="12" rx="6" fill="#e8836f" stroke="${OUTLINE}" stroke-width="6"/>
-        <circle cx="168" cy="89" r="2.6" fill="#d9c9ae"/><circle cx="179" cy="89" r="2.6" fill="#d9c9ae"/><circle cx="190" cy="89" r="2.6" fill="#d9c9ae"/>
-        <circle cx="168" cy="99" r="2.6" fill="#d9c9ae"/><circle cx="179" cy="99" r="2.6" fill="#d9c9ae"/></g>
-      <path d="M152 120 q14 -6 20 -14" stroke="${OUTLINE}" stroke-width="8" fill="none" stroke-linecap="round"/>
-      ${BASE_BOOK}
-      <circle cx="106" cy="126" r="6.5" fill="#2b1a10"/><circle cx="136" cy="126" r="6.5" fill="#2b1a10"/>
-      <path d="M113 139 q8 7 16 0" stroke="#2b1a10" stroke-width="5" fill="none" stroke-linecap="round"/>`;
+    const POSE_CALENDAR =
+      part('prop',
+        `<g transform="rotate(8 178 92)">` +
+          `<rect x="156" y="66" width="46" height="42" rx="7" fill="#ffffff" stroke="${OUTLINE}" stroke-width="6"/>` +
+          `<rect x="156" y="66" width="46" height="12" rx="6" fill="#e8836f" stroke="${OUTLINE}" stroke-width="6"/>` +
+          `<circle cx="168" cy="89" r="2.6" fill="#d9c9ae"/><circle cx="179" cy="89" r="2.6" fill="#d9c9ae"/><circle cx="190" cy="89" r="2.6" fill="#d9c9ae"/>` +
+          `<circle cx="168" cy="99" r="2.6" fill="#d9c9ae"/><circle cx="179" cy="99" r="2.6" fill="#d9c9ae"/>` +
+        `</g>`) +
+      part('arm-r', `<path d="M152 120 q14 -6 20 -14" stroke="${OUTLINE}" stroke-width="8" fill="none" stroke-linecap="round"/>`) +
+      BASE_BOOK +
+      face(
+        part('eyes', `<circle cx="106" cy="126" r="6.5" fill="#2b1a10"/><circle cx="136" cy="126" r="6.5" fill="#2b1a10"/>`, 'data-mm-eyes="dot"') +
+        part('mouth', `<path d="M113 139 q8 7 16 0" stroke="#2b1a10" stroke-width="5" fill="none" stroke-linecap="round"/>`));
 
-    const POSE_QUESTION = `
-      <text x="140" y="58" font-size="42" fill="#a58a70" font-weight="bold" font-family="sans-serif">?</text>
-      <g transform="rotate(5 100 130)">${BASE_BOOK}
-        <circle cx="103" cy="126" r="6.5" fill="#2b1a10"/><circle cx="135" cy="124" r="6.5" fill="#2b1a10"/>
-        <path d="M112 141 h14" stroke="#2b1a10" stroke-width="5" stroke-linecap="round"/></g>`;
+    const POSE_QUESTION =
+      part('prop', `<text x="140" y="58" font-size="42" fill="#a58a70" font-weight="bold" font-family="sans-serif">?</text>`) +
+      `<g transform="rotate(5 100 130)">${BASE_BOOK}` +
+        face(
+          part('eyes', `<circle cx="103" cy="126" r="6.5" fill="#2b1a10"/><circle cx="135" cy="124" r="6.5" fill="#2b1a10"/>`, 'data-mm-eyes="dot"') +
+          part('mouth', `<path d="M112 141 h14" stroke="#2b1a10" stroke-width="5" stroke-linecap="round"/>`)) +
+      `</g>`;
 
-    const POSE_WAVE = `
-      <path d="M154 116 q16 -10 14 -26" stroke="${OUTLINE}" stroke-width="8" fill="none" stroke-linecap="round"/>
-      <circle cx="169" cy="86" r="7" fill="#b98d6d" stroke="${OUTLINE}" stroke-width="5"/>
-      ${BASE_BOOK}${FACE_HAPPY}${BLUSH}`;
+    const POSE_WAVE =
+      part('arm-r',
+        `<path d="M154 116 q16 -10 14 -26" stroke="${OUTLINE}" stroke-width="8" fill="none" stroke-linecap="round"/>` +
+        `<circle cx="169" cy="86" r="7" fill="#b98d6d" stroke="${OUTLINE}" stroke-width="5"/>`) +
+      BASE_BOOK + FACE_HAPPY + BLUSH;
 
-    const POSE_JUMP = `
-      <ellipse cx="100" cy="176" rx="34" ry="7" fill="#d8c5ae"/>
-      <path d="M42 70 l3 7 7 3 -7 3 -3 7 -3 -7 -7 -3 7 -3 z" fill="#f5c542" stroke="${OUTLINE}" stroke-width="3"/>
-      <path d="M172 56 l3.5 8 8 3.5 -8 3.5 -3.5 8 -3.5 -8 -8 -3.5 8 -3.5 z" fill="#f5c542" stroke="${OUTLINE}" stroke-width="3"/>
-      <path d="M186 118 l2.5 6 6 2.5 -6 2.5 -2.5 6 -2.5 -6 -6 -2.5 6 -2.5 z" fill="#f5c542" stroke="${OUTLINE}" stroke-width="3"/>
-      <g transform="translate(0 -18)">${BASE_BOOK}${FACE_HAPPY}</g>`;
+    const POSE_JUMP =
+      part('shadow', `<ellipse cx="100" cy="176" rx="34" ry="7" fill="#d8c5ae"/>`) +
+      part('stars',
+        `<path d="M42 70 l3 7 7 3 -7 3 -3 7 -3 -7 -7 -3 7 -3 z" fill="#f5c542" stroke="${OUTLINE}" stroke-width="3"/>` +
+        `<path d="M172 56 l3.5 8 8 3.5 -8 3.5 -3.5 8 -3.5 -8 -8 -3.5 8 -3.5 z" fill="#f5c542" stroke="${OUTLINE}" stroke-width="3"/>` +
+        `<path d="M186 118 l2.5 6 6 2.5 -6 2.5 -2.5 6 -2.5 -6 -6 -2.5 6 -2.5 z" fill="#f5c542" stroke="${OUTLINE}" stroke-width="3"/>`) +
+      `<g transform="translate(0 -18)">${BASE_BOOK}${FACE_HAPPY}</g>`;
 
-    const POSE_TEA = `
-      <path d="M174 84 q4 -6 0 -12 q-4 -6 0 -12 M186 88 q4 -6 0 -12" stroke="#c8b49a" stroke-width="4" fill="none" stroke-linecap="round"/>
-      <rect x="164" y="96" width="30" height="24" rx="7" fill="#ffffff" stroke="${OUTLINE}" stroke-width="6"/>
-      <path d="M194 102 q10 2 0 12" stroke="${OUTLINE}" stroke-width="5" fill="none"/>
-      <path d="M152 122 q10 -8 18 -10" stroke="${OUTLINE}" stroke-width="8" fill="none" stroke-linecap="round"/>
-      ${BASE_BOOK}${FACE_SMILE}`;
+    const POSE_TEA =
+      part('prop',
+        `<path d="M174 84 q4 -6 0 -12 q-4 -6 0 -12 M186 88 q4 -6 0 -12" stroke="#c8b49a" stroke-width="4" fill="none" stroke-linecap="round"/>` +
+        `<rect x="164" y="96" width="30" height="24" rx="7" fill="#ffffff" stroke="${OUTLINE}" stroke-width="6"/>` +
+        `<path d="M194 102 q10 2 0 12" stroke="${OUTLINE}" stroke-width="5" fill="none"/>`) +
+      part('arm-r', `<path d="M152 122 q10 -8 18 -10" stroke="${OUTLINE}" stroke-width="8" fill="none" stroke-linecap="round"/>`) +
+      BASE_BOOK + FACE_SMILE;
 
-    const POSE_GOODNIGHT = `
-      <path d="M190 40 a17 17 0 1 0 9 32 a13 13 0 1 1 -9 -32 z" fill="#f5c542" stroke="${OUTLINE}" stroke-width="3"/>
-      <circle cx="46" cy="52" r="2.5" fill="#f9f3e6"/><circle cx="176" cy="96" r="2" fill="#f9f3e6"/><circle cx="30" cy="96" r="2" fill="#f9f3e6"/>
-      ${BASE_BOOK}
-      <path d="M58 74 Q78 30 128 38 Q158 44 164 66 L166 74 Q150 80 120 79 Q86 78 58 74 z" fill="#7f96c9" stroke="${OUTLINE}" stroke-width="8" stroke-linejoin="round"/>
-      <path d="M162 66 q14 6 8 20 q-3 8 -12 8" fill="#7f96c9" stroke="${OUTLINE}" stroke-width="7" stroke-linejoin="round" stroke-linecap="round"/>
-      <circle cx="158" cy="98" r="10" fill="#f9f3e6" stroke="${OUTLINE}" stroke-width="6"/>
-      <path d="M52 80 q0 -12 12 -12 h72 q12 0 12 12 v2 q-24 6 -48 6 q-24 0 -48 -6 z" fill="#f3ecdd" stroke="${OUTLINE}" stroke-width="7" stroke-linejoin="round"/>
-      <path d="M96 128 q7 5 14 0 M126 128 q7 5 14 0" stroke="#2b1a10" stroke-width="5" fill="none" stroke-linecap="round"/>
-      <path d="M112 141 q7 6 14 0" stroke="#2b1a10" stroke-width="5" fill="none" stroke-linecap="round"/>
-      <ellipse cx="92" cy="140" rx="7" ry="4.5" fill="#f0a78f" opacity="0.5"/>
-      <ellipse cx="146" cy="140" rx="7" ry="4.5" fill="#f0a78f" opacity="0.5"/>`;
+    const POSE_GOODNIGHT =
+      part('sky',
+        `<path d="M190 40 a17 17 0 1 0 9 32 a13 13 0 1 1 -9 -32 z" fill="#f5c542" stroke="${OUTLINE}" stroke-width="3"/>` +
+        `<circle cx="46" cy="52" r="2.5" fill="#f9f3e6"/><circle cx="176" cy="96" r="2" fill="#f9f3e6"/><circle cx="30" cy="96" r="2" fill="#f9f3e6"/>`) +
+      BASE_BOOK +
+      part('hat',
+        `<path d="M58 74 Q78 30 128 38 Q158 44 164 66 L166 74 Q150 80 120 79 Q86 78 58 74 z" fill="#7f96c9" stroke="${OUTLINE}" stroke-width="8" stroke-linejoin="round"/>` +
+        `<path d="M162 66 q14 6 8 20 q-3 8 -12 8" fill="#7f96c9" stroke="${OUTLINE}" stroke-width="7" stroke-linejoin="round" stroke-linecap="round"/>` +
+        `<circle cx="158" cy="98" r="10" fill="#f9f3e6" stroke="${OUTLINE}" stroke-width="6"/>` +
+        `<path d="M52 80 q0 -12 12 -12 h72 q12 0 12 12 v2 q-24 6 -48 6 q-24 0 -48 -6 z" fill="#f3ecdd" stroke="${OUTLINE}" stroke-width="7" stroke-linejoin="round"/>`) +
+      face(
+        part('eyes', `<path d="M96 128 q7 5 14 0 M126 128 q7 5 14 0" stroke="#2b1a10" stroke-width="5" fill="none" stroke-linecap="round"/>`, 'data-mm-eyes="closed"') +
+        part('mouth', `<path d="M112 141 q7 6 14 0" stroke="#2b1a10" stroke-width="5" fill="none" stroke-linecap="round"/>`)) +
+      part('blush',
+        `<ellipse cx="92" cy="140" rx="7" ry="4.5" fill="#f0a78f" opacity="0.5"/>` +
+        `<ellipse cx="146" cy="140" rx="7" ry="4.5" fill="#f0a78f" opacity="0.5"/>`);
 
     // -- 分類圖標（48 viewBox；face 群組在 size<24 時整組省略） ----------------
     function faceGroup(inner) { return `<g class="face">${inner}</g>`; }
@@ -131,25 +167,28 @@ const MascotModule = (function () {
             .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
     }
 
+    // 姿勢名 → 模板（data-mm-pose 的值；emptyHtml／showSaveEgg 由名稱取模板）
+    const POSES = { sleep: POSE_SLEEP, calendar: POSE_CALENDAR, question: POSE_QUESTION,
+                    wave: POSE_WAVE, jump: POSE_JUMP, tea: POSE_TEA, goodnight: POSE_GOODNIGHT };
+
     // -- 對外 API -------------------------------------------------------------
     function loadingHtml(size) {
-        return `<span class="mascot-sway">${svg200(BASE_BOOK + FACE_SMILE, size || 96)}</span>`;
+        return `<span class="mascot-sway">${svg200(BASE_BOOK + FACE_SMILE, size || 96, '', 'smile')}</span>`;
     }
 
     function thinkingBubbleHtml() {
-        return `<span class="mascot-sway">${svg200(BASE_BOOK + FACE_SMILE, 26)}</span>` +
+        return `<span class="mascot-sway">${svg200(BASE_BOOK + FACE_SMILE, 26, '', 'smile')}</span>` +
             `<span class="mascot-dots"><span>.</span><span>.</span><span>.</span></span>`;
     }
 
     function emptyHtml(kind, caption) {
-        const pose = kind === 'diary' ? POSE_SLEEP
-                   : kind === 'calendar' ? POSE_CALENDAR : POSE_QUESTION;
-        return `<div class="mascot-empty">${svg220(pose, 132)}` +
+        const pose = kind === 'diary' ? 'sleep' : kind === 'calendar' ? 'calendar' : 'question';
+        return `<div class="mascot-empty">${svg220(POSES[pose], 132, pose)}` +
             `<p class="mascot-empty-caption">${escapeText(caption)}</p></div>`;
     }
 
-    function welcomeHtml() { return `<div class="mascot-welcome">${svg220(POSE_WAVE, 110)}</div>`; }
-    function checkinHtml() { return `<span class="mascot-checkin">${svg220(POSE_TEA, 44)}</span>`; }
+    function welcomeHtml() { return `<div class="mascot-welcome">${svg220(POSE_WAVE, 110, 'wave')}</div>`; }
+    function checkinHtml() { return `<span class="mascot-checkin">${svg220(POSE_TEA, 44, 'tea')}</span>`; }
 
     // 安靜門檻：spec §4 原文寫「負向情緒 → 安靜版」並字面舉例 valence<0，
     // 但後端 valence 經 diary_draft.py 的 _clamp() 永遠夾在 [0,1]
@@ -168,10 +207,10 @@ const MascotModule = (function () {
 
     function showSaveEgg(kind) {
         if (kind === 'quiet') return; // 沉重的日記：安靜，不慶祝
-        const pose = kind === 'goodnight' ? POSE_GOODNIGHT : POSE_JUMP;
+        const pose = kind === 'goodnight' ? 'goodnight' : 'jump';
         const wrap = document.createElement('div');
         wrap.className = 'mascot-egg' + (kind === 'goodnight' ? ' mascot-egg-night' : '');
-        wrap.innerHTML = svg220(pose, 150);
+        wrap.innerHTML = svg220(POSES[pose], 150, pose);
         document.body.appendChild(wrap);
         setTimeout(() => { wrap.classList.add('fade'); }, 1200);
         setTimeout(() => { wrap.remove(); }, 1800);
