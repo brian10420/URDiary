@@ -27,6 +27,12 @@ document.addEventListener('DOMContentLoaded', function() {
         console.warn('ErrorLogger未定義');
     }
 
+    // 吉祥物行為層（v2.6 motion：待機、點擊反應、眼睛跟隨；reduced-motion 下全靜態）。
+    // 不依賴任何 App 模組，越早啟動越好——後面各模組渲染出的吉祥物一出現就接得上。
+    if (typeof MascotMotion !== 'undefined' && typeof MascotMotion.init === 'function') {
+        MascotMotion.init();
+    }
+
     // 确保先初始化ApiService
     if (typeof ApiService !== 'undefined' && typeof ApiService.init === 'function') {
         ApiService.init();

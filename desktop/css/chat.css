@@ -507,3 +507,13 @@
     cursor: pointer;
 }
 .onboarding-chip:hover { filter: brightness(0.95); }
+
+/* 使用者要求減少動態效果（v2.6 motion Task 4）：訊息淡入、思考點點、錄音脈動、
+   結束鈕懸浮位移一律靜態（錄音中的紅色圖示本身已足以辨識狀態）。放檔尾：同
+   specificity 下要贏過上面的宣告。 */
+@media (prefers-reduced-motion: reduce) {
+    .chat-message { animation: none; }
+    .thinking-dots span { animation: none; }
+    #mic-button.recording i { animation: none; }
+    #end-chat-btn, #end-chat-btn:hover, #end-chat-btn:active { transition: none; transform: none; }
+}

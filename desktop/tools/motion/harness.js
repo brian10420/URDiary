@@ -55,6 +55,8 @@
 
     // 手動檢視：file://.../harness.html?scene=<名稱>
     document.addEventListener('DOMContentLoaded', function () {
+        // 與 App 相同的行為層（main.js 也是這樣啟動）；擷取時假時鐘讓排程器不會自己跑
+        if (window.MascotMotion) window.MascotMotion.init();
         const name = new URLSearchParams(location.search).get('scene');
         if (name) { setup(name); return; }
         if (navigator.webdriver) return;   // 自動擷取時不畫索引

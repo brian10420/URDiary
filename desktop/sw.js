@@ -72,6 +72,7 @@ const SHELL_ASSETS = [
     '/js/memory_module.js',
     '/js/settings_module.js',
     '/js/mascot.js',
+    '/js/mascot_motion.js',
     '/js/sw_logic.js',
     '/js/ui_manager.js',
     '/js/voice_module.js',

@@ -37,6 +37,7 @@ describe('motion 工具不進 app shell', () => {
 describe('harness 場景在 jsdom 可同步 setup', () => {
     beforeAll(() => {
         loadScript('js/mascot.js');
+        loadScript('js/mascot_motion.js');
         loadScript('tools/motion/harness.js');
     });
     beforeEach(() => {
