@@ -4573,3 +4573,29 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 ## 執行交接
 
 依 plan of record：subagent-driven-development，implementer＝`opus-max` 代理、每個任務由 Fable 做 spec＋品質審查，視覺任務（T3、T5–T11）另看影格。任務之間有介面相依（rig class、`svg220` 參數、`showEggOverlay`），請依序執行。全部完成後：兩套件＋e2e 綠、Fable 影格審過、請 Brian 桌面驗收（先提醒他重啟 App；PWA 會跳「有新版本」提示）。v2.6 的 push／合併需要 Brian 另外同意。
+
+---
+
+## 追加任務（2026-09-30 Brian 裁決：v2.6 順手修兩個會入鏡的小 bug）
+
+分鏡事實核對（`promo/video/STORYBOARD.md` 附錄 A-2／A-3）發現兩個會出現在英文錄影裡的小問題，Brian 裁決在 v2.6 修掉。兩者都不碰吉祥物檔案；排在 Task 11 之後（Task 10 動過 `chat_module.js` 的存日記段落）。
+
+### Task 12: 結束對話回應訊息雙語化（後端）
+
+**Files:** Modify `backend/app/api/routes/chat.py`（`/chat/end/` 回傳的 `message`，約 193 行）、`backend/app/utils/messages.py`（新增兩個鍵）；Test：`backend/tests/` 下與 chat end 相關的測試檔（沿用既有 `X-Language` 測試手法）。
+
+- 現況：`"message": "對話已結束並生成摘要" if result["memory_review_error"] is None else "日記已生成，但記憶更新失敗"`——寫死中文；前端 `chat_module.js:1084` 優先顯示 `response.message`，所以 en 介面會出現中文。
+- 要求：兩句改走 `msg(key, lang)`（`lang` 即該路由已有的語言變數，與同檔 `diary_failed_retry` 同一套），新增鍵 `chat_ended_diary_done`（zh-TW「對話已結束並生成摘要」／en "Chat ended — your diary entry is ready."）與 `diary_done_memory_failed`（zh-TW「日記已生成，但記憶更新失敗」／en "Your diary entry is ready, but updating memory failed."）。zh-TW 字串必須與現況一字不差（前端測試與使用者習慣依賴它）。
+- TDD：先寫失敗測試——帶 `X-Language: en` 呼叫 `/chat/end/`（用既有 stub／mock 手法）斷言 `message` 為英文；zh-TW（預設）斷言原中文；記憶更新失敗分支同樣兩語各一。
+- 前端不改（`response.message || I18N.t('chat.diaryDone')` 的後備仍保留）。
+- Commit：`fix(對話體驗): 結束對話的回應訊息依介面語言回傳（en 不再出現寫死中文）`＋Fable 5.1 trailer。
+
+### Task 13: 很低落的日記不再標成「憤怒」（前端）
+
+**Files:** Modify `desktop/js/api_service.js` `getMoodFromValence`（約 1369–1378 行）；Test：`desktop/tests/api_helpers.test.js`（已有 angry 相關斷言，需改）。
+
+- 現況：valence < 0.25 → `'angry'`（「憤怒／Angry」）。只靠 valence 分不出憤怒與悲傷，把很低落標成憤怒是錯的。
+- 要求：`valence < 0.45` 一律 `'sad'`（移除 valence-only 的 `'angry'` 分支）；其他分界（0.7／0.55／0.45）不變；`'angry'` 標籤與色票保留在 `diary_module.js`（未來 Brian 的情緒識別模型可能產出），只是不再由 valence 推得。更新函式上方註解說明理由（valence 無法區分憤怒與悲傷；情緒模型替換點）。
+- TDD：先改測試——0.1／0.24／0.25／0.44 → `'sad'`，0.45 → `'neutral'`，非數字 → `'neutral'`；確認舊實作下紅。
+- 檢查 `mascot.js` 的 `QUIET_VALENCE_THRESHOLD` 註解引用的行號／語意仍正確（0.45 分界不變）。
+- Commit：`fix(日記): 很低落的日記標成「悲傷」而不是「憤怒」`＋Fable 5.1 trailer。
