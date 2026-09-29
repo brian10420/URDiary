@@ -21,7 +21,7 @@ const MascotModule = (function () {
     function part(name, inner, attrs) {
         return `<g class="mm-${name}"${attrs ? ' ' + attrs : ''}>${inner}</g>`;
     }
-    function face(inner) { return `<g class="mm-face">${inner}</g>`; }
+    function face(inner, extraClass) { return `<g class="mm-face${extraClass ? ' ' + extraClass : ''}">${inner}</g>`; }
 
     // -- 基底（正面 Q 版）與姿態 --------------------------------------------
     const BASE_BOOK =
@@ -40,6 +40,11 @@ const MascotModule = (function () {
       `<ellipse cx="92" cy="140" rx="7" ry="4.5" fill="#f0a78f" opacity="0.55"/>` +
       `<ellipse cx="148" cy="140" rx="7" ry="4.5" fill="#f0a78f" opacity="0.55"/>`);
 
+    // 點擊反應的開心臉（v2.6 motion Task 6）：預設 visibility="hidden"，靜止畫面不畫它；
+    // mascot.css 在 svg.mm-react 時把它換上、把同一姿勢的 .mm-face-rest 藏起來。
+    // 只放在「靜止臉不是開心臉」且可點的姿勢（睡覺、舉月曆、歪頭問號）。
+    const FACE_REACT = `<g class="mm-face mm-face-alt" visibility="hidden">${EYES_HAPPY}${MOUTH_HAPPY}${BLUSH}</g>`;
+
     function svg200(inner, size, extraClass, pose) {
         return `<svg viewBox="0 0 200 200" width="${size}" height="${size}" class="${extraClass || ''}" data-mm-pose="${pose}" aria-hidden="true"><g class="mm-rig">${inner}</g></svg>`;
     }
@@ -56,7 +61,8 @@ const MascotModule = (function () {
       `<g transform="rotate(-6 100 130)">${BASE_BOOK}` +
         face(
           part('eyes', `<path d="M96 127 q7 5 14 0 M126 127 q7 5 14 0" stroke="#2b1a10" stroke-width="5" fill="none" stroke-linecap="round"/>`, 'data-mm-eyes="closed"') +
-          part('mouth', `<circle cx="120" cy="141" r="3.5" fill="#2b1a10"/>`)) +
+          part('mouth', `<circle cx="120" cy="141" r="3.5" fill="#2b1a10"/>`), 'mm-face-rest') +
+        FACE_REACT +
       `</g>` +
       part('prop',
         `<g transform="rotate(24 186 150)">` +
@@ -76,14 +82,16 @@ const MascotModule = (function () {
       BASE_BOOK +
       face(
         part('eyes', `<circle cx="106" cy="126" r="6.5" fill="#2b1a10"/><circle cx="136" cy="126" r="6.5" fill="#2b1a10"/>`, 'data-mm-eyes="dot"') +
-        part('mouth', `<path d="M113 139 q8 7 16 0" stroke="#2b1a10" stroke-width="5" fill="none" stroke-linecap="round"/>`));
+        part('mouth', `<path d="M113 139 q8 7 16 0" stroke="#2b1a10" stroke-width="5" fill="none" stroke-linecap="round"/>`), 'mm-face-rest') +
+      `<g transform="translate(3 0)">${FACE_REACT}</g>`;   // 這個姿勢的臉整體右移 3
 
     const POSE_QUESTION =
       part('prop', `<text x="140" y="58" font-size="42" fill="#a58a70" font-weight="bold" font-family="sans-serif">?</text>`) +
       `<g transform="rotate(5 100 130)">${BASE_BOOK}` +
         face(
           part('eyes', `<circle cx="103" cy="126" r="6.5" fill="#2b1a10"/><circle cx="135" cy="124" r="6.5" fill="#2b1a10"/>`, 'data-mm-eyes="dot"') +
-          part('mouth', `<path d="M112 141 h14" stroke="#2b1a10" stroke-width="5" stroke-linecap="round"/>`)) +
+          part('mouth', `<path d="M112 141 h14" stroke="#2b1a10" stroke-width="5" stroke-linecap="round"/>`), 'mm-face-rest') +
+        FACE_REACT +
       `</g>`;
 
     const POSE_WAVE =
@@ -185,11 +193,11 @@ const MascotModule = (function () {
 
     function emptyHtml(kind, caption) {
         const pose = kind === 'diary' ? 'sleep' : kind === 'calendar' ? 'calendar' : 'question';
-        return `<div class="mascot-empty">${svg220(POSES[pose], 132, pose, 'data-mm-idle')}` +
+        return `<div class="mascot-empty">${svg220(POSES[pose], 132, pose, 'data-mm-idle data-mm-tap')}` +
             `<p class="mascot-empty-caption">${escapeText(caption)}</p></div>`;
     }
 
-    function welcomeHtml() { return `<div class="mascot-welcome">${svg220(POSE_WAVE, 110, 'wave', 'data-mm-idle')}</div>`; }
+    function welcomeHtml() { return `<div class="mascot-welcome">${svg220(POSE_WAVE, 110, 'wave', 'data-mm-idle data-mm-tap')}</div>`; }
     function checkinHtml() { return `<span class="mascot-checkin">${svg220(POSE_TEA, 44, 'tea')}</span>`; }
 
     // 安靜門檻：spec §4 原文寫「負向情緒 → 安靜版」並字面舉例 valence<0，
@@ -216,6 +224,16 @@ const MascotModule = (function () {
         document.body.appendChild(wrap);
         setTimeout(() => { wrap.classList.add('fade'); }, 1200);
         setTimeout(() => { wrap.remove(); }, 1800);
+    }
+
+    // 點擊反應的小愛心（v2.6 motion Task 6）：沿用 heart 印章的心形路徑與既有粉紅 #e8899a。
+    // 外層無名 <g> 負責定位（transform 屬性；插在 <svg> 底下、mm-rig 之外，不跟著彈跳），
+    // 內層 .mm-heart 給 CSS 動畫（不能帶 transform 屬性，理由同 rig 鐵律 (2)）。
+    function reactionHeartSvg() {
+        return `<g data-mm-heart transform="translate(108 50)"><g class="mm-heart">` +
+            `<path d="M37 6.5 c-2.8 -2.8 -6.5 -1 -6.5 2.2 c0 2.8 2.8 4.7 6.5 7.5 c3.7 -2.8 6.5 -4.7 6.5 -7.5 c0 -3.2 -3.7 -5 -6.5 -2.2 z" ` +
+            `transform="scale(2) translate(-37 -9.5)" fill="#e8899a" stroke="${OUTLINE}" stroke-width="2.4" stroke-linejoin="round"/>` +
+            `</g></g>`;
     }
 
     function categoryIcon(category, size) {
@@ -261,7 +279,8 @@ const MascotModule = (function () {
     }
 
     return { loadingHtml, thinkingBubbleHtml, emptyHtml, welcomeHtml,
-             checkinHtml, eggKindFor, showSaveEgg, categoryIcon, stampIcon };
+             checkinHtml, eggKindFor, showSaveEgg, categoryIcon, stampIcon,
+             reactionHeartSvg };
 })();
 
 if (typeof window !== 'undefined') { window.MascotModule = MascotModule; }

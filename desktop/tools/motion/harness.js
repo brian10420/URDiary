@@ -50,6 +50,19 @@
                 MascotMotion.blink(stage.querySelector('svg'), 0);
             },
         },
+        // --- Task 6 點擊反應 -----------------------------------------------------
+        'react-welcome': {
+            viewport: [220, 200], frames: [0, 120, 260, 420, 600, 850],
+            setup: (stage) => MascotMotion.react(mount(stage, MascotModule.welcomeHtml()).querySelector('svg')),
+        },
+        'react-calendar': {
+            viewport: [240, 220], frames: [0, 120, 260, 420, 600, 850],
+            setup: (stage) => MascotMotion.react(mount(stage, MascotModule.emptyHtml('calendar', '')).querySelector('svg')),
+        },
+        'react-sleep': {
+            viewport: [240, 220], frames: [0, 120, 260, 420, 600, 850],
+            setup: (stage) => MascotMotion.react(mount(stage, MascotModule.emptyHtml('diary', '')).querySelector('svg')),
+        },
     };
 
     function list() { return Object.keys(SCENES); }

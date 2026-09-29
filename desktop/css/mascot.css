@@ -50,6 +50,28 @@ svg[data-mm-idle][data-mm-pose="sleep"] .mm-zzz { animation: mm-zzz 2.8s ease-in
 svg.mm-blink .mm-eyes[data-mm-eyes="dot"] { animation: mm-blink 180ms ease-in-out var(--mm-blink-delay, 0ms) 1; }
 @keyframes mm-blink { 0%, 100% { transform: scaleY(1); } 45%, 55% { transform: scaleY(.1); } }
 
+/* 點擊反應（v2.6 motion Task 6）：彈跳＋換開心臉＋小愛心。只有模板標了 data-mm-tap 的
+   吉祥物（登入歡迎、空狀態）會被 mascot_motion.js 加上 .mm-react（聊天區、彩蛋浮層永不）。
+   這條要排在待機呼吸之後：同 specificity，後寫的蓋掉呼吸，反應期間暫停呼吸。 */
+svg[data-mm-tap] { cursor: pointer; }
+svg.mm-react .mm-rig { animation: mm-bounce 600ms cubic-bezier(.3, .7, .4, 1) 1; }
+svg.mm-react .mm-face-rest, svg.mm-react .mm-zzz { visibility: hidden; }
+svg.mm-react .mm-face-alt { visibility: visible; }
+.mm-heart { transform-box: fill-box; transform-origin: 50% 100%; animation: mm-heart 900ms ease-out 1 both; }
+@keyframes mm-bounce {
+    0%   { transform: translateY(0) scale(1, 1); }
+    18%  { transform: translateY(0) scale(1.06, .9); }
+    45%  { transform: translateY(-9%) scale(.97, 1.05); }
+    72%  { transform: translateY(0) scale(1.04, .96); }
+    100% { transform: translateY(0) scale(1, 1); }
+}
+@keyframes mm-heart {
+    0%   { transform: translateY(6px) scale(.3); opacity: 0; }
+    25%  { transform: translateY(0) scale(1.15); opacity: 1; }
+    45%  { transform: translateY(-4px) scale(1); opacity: 1; }
+    100% { transform: translateY(-26px) scale(.9); opacity: 0; }
+}
+
 /* 分頁隱藏時（html.mm-paused，mascot_motion.js 設）連 CSS 的循環待機一起停 */
 html.mm-paused svg[data-mm-idle] .mm-rig, html.mm-paused svg[data-mm-idle] .mm-zzz { animation-play-state: paused; }
 
@@ -57,5 +79,6 @@ html.mm-paused svg[data-mm-idle] .mm-rig, html.mm-paused svg[data-mm-idle] .mm-z
     .mascot-sway, .mascot-dots span, .mascot-egg svg { animation: none !important; }
     .mascot-egg { transition: none; }
     svg[data-mm-idle] .mm-rig, svg[data-mm-idle][data-mm-pose="sleep"] .mm-zzz,
-    svg.mm-blink .mm-eyes[data-mm-eyes="dot"] { animation: none !important; }
+    svg.mm-blink .mm-eyes[data-mm-eyes="dot"],
+    svg.mm-react .mm-rig, .mm-heart { animation: none !important; }
 }

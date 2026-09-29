@@ -18,7 +18,9 @@ const MascotMotion = (function () {
     const BLINK_MIN_MS = 3000;
     const BLINK_MAX_MS = 7000;
     const BLINK_STAGGER_MS = 400;          // 同一 tick 多隻吉祥物時各自錯開，免得同步眨眼
-    const MOTION_CLASSES = ['mm-blink'];   // reduced-motion 開啟時要立刻拔掉的一次性 class
+    const REACT_MS = 900;                  // 點擊反應全長（彈跳 600ms、愛心 900ms 取長者）
+    const REACT_INTERVAL_MS = 1200;        // 同一隻吉祥物兩次反應的最小間隔（限流）
+    const MOTION_CLASSES = ['mm-blink', 'mm-react'];   // reduced-motion 開啟時要立刻拔掉的一次性 class
 
     // ------------------------------------------------------------------
     // 純函式
@@ -87,6 +89,7 @@ const MascotMotion = (function () {
     let reducedMql = null;
     let reduced = false;
     let scheduler = null;
+    let tapLimiter = createRateLimiter(REACT_INTERVAL_MS);
 
     function isReducedMotion() { return reduced; }
 
@@ -120,11 +123,50 @@ const MascotMotion = (function () {
         restartClass(svg, 'mm-blink');
     }
 
-    /** reduced-motion 生效的瞬間：拔掉所有一次性動畫 class，畫面回到靜止姿勢。 */
+    /**
+     * 契約 §4：點擊反應只給模板標了 data-mm-tap 的吉祥物；就算標了，放進聊天訊息區或
+     * 彩蛋浮層裡也一律不反應（聊天區只准安靜搖擺／靜態，彩蛋本身已是反應）。
+     */
+    function isTapAllowed(el) {
+        return !!(el && el.hasAttribute && el.hasAttribute('data-mm-tap') &&
+                  !el.closest('.chat-messages, .mascot-egg'));
+    }
+
+    function removeHearts(root) {
+        root.querySelectorAll('[data-mm-heart]').forEach(function (n) { n.parentNode.removeChild(n); });
+    }
+
+    /**
+     * 點擊反應：彈跳＋換開心臉＋小愛心（動畫都在 mascot.css 的 .mm-react／.mm-heart）。
+     * 回傳是否真的播了（reduced-motion、不允許的位置、限流中都回 false）。
+     */
+    function react(svg) {
+        if (reduced || !isTapAllowed(svg)) return false;
+        if (!tapLimiter.tryAcquire(svg, Date.now())) return false;
+        removeHearts(svg);
+        restartClass(svg, 'mm-react');
+        if (typeof MascotModule !== 'undefined' && typeof MascotModule.reactionHeartSvg === 'function') {
+            svg.insertAdjacentHTML('beforeend', MascotModule.reactionHeartSvg());
+        }
+        setTimeout(function () {
+            svg.classList.remove('mm-react');
+            removeHearts(svg);
+        }, REACT_MS);
+        return true;
+    }
+
+    function onDocumentClick(event) {
+        const target = event.target && typeof event.target.closest === 'function'
+            ? event.target.closest('svg[data-mm-tap]') : null;
+        if (target) react(target);
+    }
+
+    /** reduced-motion 生效的瞬間：拔掉所有一次性動畫 class 與愛心，畫面回到靜止姿勢。 */
     function clearTransientMotion() {
         MOTION_CLASSES.forEach(function (cls) {
             document.querySelectorAll('.' + cls).forEach(function (el) { el.classList.remove(cls); });
         });
+        removeHearts(document);
     }
 
     function onReducedChange(event) {
@@ -171,6 +213,7 @@ const MascotMotion = (function () {
         });
         watchReducedMotion();
         document.addEventListener('visibilitychange', onVisibilityChange);
+        document.addEventListener('click', onDocumentClick);
         document.documentElement.classList.toggle('mm-paused', !!document.hidden);
         scheduler.start();
     }
@@ -181,6 +224,8 @@ const MascotMotion = (function () {
         started = false;
         scheduler.stop();
         document.removeEventListener('visibilitychange', onVisibilityChange);
+        document.removeEventListener('click', onDocumentClick);
+        tapLimiter = createRateLimiter(REACT_INTERVAL_MS);
         if (reducedMql) {
             if (typeof reducedMql.removeEventListener === 'function') {
                 reducedMql.removeEventListener('change', onReducedChange);
@@ -197,7 +242,9 @@ const MascotMotion = (function () {
         init: init,
         isReducedMotion: isReducedMotion,
         blink: blink,
+        react: react,
         _test: {
+            isTapAllowed: isTapAllowed,
             nextBlinkDelay: nextBlinkDelay,
             createRateLimiter: createRateLimiter,
             createIdleScheduler: createIdleScheduler,
