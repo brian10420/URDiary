@@ -58,8 +58,10 @@
 }
 /* 使用者要求減少動態效果（v2.6 motion Task 4）：本檔的通用動畫與視圖切換一律靜態。
    吉祥物在 mascot.css、聊天在 chat.css 各自處理；tests/reduced_motion_css.test.js
-   逐檔檢查「每個 animation 都有 none 版」。轉圈的載入指示（base.css／components.css
-   的 spin）是進度狀態指示、刻意保留；toast 的 transition 也保留——ui_manager.js 的
+   逐檔檢查「每個 animation 都有 none 版」。本區塊會凍結 `.loading`
+   （animation: spin）；`.loading` 與 components.css 的 `.toast { animation: slideIn }`
+   目前都沒有被 index.html／js 使用（toast 的 slideIn 因此本區塊未涵蓋；若日後啟用要另補
+   none 版，也別把 `.loading` 當真正的轉圈指示用）。toast 的 transition 保留——ui_manager.js 的
    showToast 靠 transitionend 移除節點，拿掉 transition 會讓看不見的 toast 永遠留在 DOM。 */
 @media (prefers-reduced-motion: reduce) {
     .fade-in, .slide-in, .loading { animation: none !important; }

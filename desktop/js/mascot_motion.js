@@ -5,8 +5,10 @@
  * transform」，不用 WAAPI、不內嵌任何 keyframes。
  *
  * 獨立可攜：1d 的 GitHub Pages 展示頁會原封複製 mascot.js＋mascot.css＋本檔，
- * 所以本檔不依賴 I18N／ApiService／UIManager 或任何 App 模組；缺 matchMedia、
- * checkVisibility 等 API 時一律退回「不動」，不拋錯。
+ * 所以本檔不依賴 I18N／ApiService／UIManager 或任何 App 模組。缺 API 時的行為：
+ * 缺 matchMedia ⇒ 視為「無偏好」（JS 動作照常執行；CSS 的
+ * @media (prefers-reduced-motion) 仍管轄所有 CSS 動態）；缺 checkVisibility ⇒ 退回
+ * getClientRects() 可見性檢查；缺 DOM／計時器 API ⇒ 不動作，絕不拋錯。
  *
  * 分層：上半部是純函式決策（vitest 直接測），下半部是薄 DOM 層。
  * reduced-motion＝靜態：任何動作前先問 isReducedMotion()，偏好改變時即時停／起。
@@ -59,6 +61,7 @@ const MascotMotion = (function () {
     function createIdleScheduler(deps) {
         let timer = null;
         function schedule() {
+            if (timer !== null) return;   // 已有計時器：重入時不覆蓋（免得洩漏一個永遠清不掉的 timer）
             timer = deps.setTimer(tick, nextBlinkDelay(deps.random()));
         }
         function tick() {
@@ -116,10 +119,22 @@ const MascotMotion = (function () {
         });
     }
 
+    /**
+     * 眨眼動畫播完就拔掉 mm-blink：否則元素從 display:none 再顯示（切視圖）時 CSS 會
+     * 帶著過期的 --mm-blink-delay 重播一次。animationend 從 .mm-eyes 冒泡到 <svg>，
+     * 只認 mm-blink（.mm-react 的 mm-bounce 等不能誤拔）。同一函式參照 addEventListener 會去重。
+     */
+    function onBlinkEnd(event) {
+        if (event.animationName !== 'mm-blink') return;
+        event.currentTarget.classList.remove('mm-blink');
+        event.currentTarget.removeEventListener('animationend', onBlinkEnd);
+    }
+
     /** 眨一次眼：CSS（mascot.css 的 .mm-blink）負責動畫，這裡只設錯開延遲並重播 class。 */
     function blink(svg, delayMs) {
         if (reduced || !svg) return;
         svg.style.setProperty('--mm-blink-delay', (delayMs || 0) + 'ms');
+        svg.addEventListener('animationend', onBlinkEnd);
         restartClass(svg, 'mm-blink');
     }
 

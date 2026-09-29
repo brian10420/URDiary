@@ -228,6 +228,82 @@ describe('DOM 層：init／reduced-motion／分頁可見度', () => {
     });
 });
 
+describe('DOM 層：補強（fix round 1）', () => {
+    beforeEach(() => {
+        vi.useFakeTimers();
+        vi.spyOn(Math, 'random').mockReturnValue(0);
+        hiddenFlag = false;
+        Object.defineProperty(document, 'hidden', { configurable: true, get: () => hiddenFlag });
+        Element.prototype.checkVisibility = function () { return true; };
+        document.body.innerHTML = '';
+        loadScript('js/mascot_motion.js');
+    });
+    afterEach(() => {
+        MascotMotion._test.teardown();
+        delete window.matchMedia;
+        delete Element.prototype.checkVisibility;
+        vi.restoreAllMocks();
+        vi.useRealTimers();
+    });
+
+    function animEnd(target, name) {
+        const ev = new Event('animationend', { bubbles: true });
+        ev.animationName = name;
+        target.dispatchEvent(ev);
+    }
+
+    it('眨眼動畫結束（animationend mm-blink，自 .mm-eyes 冒泡）後拔掉 mm-blink；別的動畫結束不誤拔', () => {
+        const svg = idleSvg();
+        MascotMotion.init();
+        vi.advanceTimersByTime(3000);
+        expect(svg.classList.contains('mm-blink')).toBe(true);
+        animEnd(svg, 'mm-bounce');
+        expect(svg.classList.contains('mm-blink')).toBe(true);
+        animEnd(svg.querySelector('.mm-eyes'), 'mm-blink');
+        expect(svg.classList.contains('mm-blink')).toBe(false);
+    });
+
+    it('沒有 checkVisibility：改用 getClientRects() 判斷是否在畫面上', () => {
+        delete Element.prototype.checkVisibility;
+        const shown = idleSvg();
+        const hiddenOne = idleSvg();
+        shown.getClientRects = () => [{}];
+        hiddenOne.getClientRects = () => [];
+        MascotMotion.init();
+        vi.advanceTimersByTime(3000);
+        expect(shown.classList.contains('mm-blink')).toBe(true);
+        expect(hiddenOne.classList.contains('mm-blink')).toBe(false);
+    });
+
+    it('分頁隱藏時關掉 reduced-motion：排程器維持停止，直到分頁可見', () => {
+        const media = stubReducedMotion(true);
+        const svg = idleSvg();
+        MascotMotion.init();
+        setHidden(true);
+        media.set(false);
+        expect(MascotMotion._test.schedulerRunning()).toBe(false);
+        vi.advanceTimersByTime(30000);
+        expect(svg.classList.contains('mm-blink')).toBe(false);
+        setHidden(false);
+        expect(MascotMotion._test.schedulerRunning()).toBe(true);
+    });
+
+    it('排程器重入保護：即使內部 schedule 被再叫也只有一個計時器（clearTimer 一次就全停）', () => {
+        vi.useFakeTimers();
+        const timers = [];
+        const sched = MascotMotion._test.createIdleScheduler({
+            setTimer: (fn, ms) => { const id = setTimeout(fn, ms); timers.push(id); return id; },
+            clearTimer: (id) => clearTimeout(id),
+            random: () => 0, collect: () => [], blink: () => {},
+            isHidden: () => false, isReduced: () => false,
+        });
+        sched.start(); sched.start();
+        expect(timers).toHaveLength(1);
+        sched.stop();
+        expect(vi.getTimerCount()).toBe(0);
+    });
+});
+
 describe('接線（house rule：呼叫端 typeof 守衛）', () => {
     const __dirname = path.dirname(fileURLToPath(import.meta.url));
     const read = (rel) => fs.readFileSync(path.resolve(__dirname, '..', rel), 'utf8');

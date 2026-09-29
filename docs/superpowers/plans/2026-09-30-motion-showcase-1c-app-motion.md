@@ -17,7 +17,7 @@
 - **色票（契約 §1，一字不差）**：描邊 `#4b2e1e`、書皮 `#b98d6d`、書頁 `#f9f3e6`、書籤 `#5fd0a0`、眼嘴 `#2b1a10`、腮紅 `#f0a78f`（opacity 0.55）；姿勢既有道具色不動；新增裝飾只准沿用 `mascot.js` 既有色值（愛心 `#e8899a`、金星 `#f5c542`）。
 - **技術邊界**：只用 inline SVG＋CSS keyframes（WAAPI 雖允許，本計畫不用——keyframes 才能守 §6 單一來源）；不加任何動畫庫、不加任何 runtime npm 依賴。
 - **單一來源（契約 §6）**：SVG 只在 `desktop/js/mascot.js` 的模板字串；吉祥物 keyframes 只在 `desktop/css/mascot.css`；App 層級非吉祥物動態（視圖轉場、聊天訊息淡入）在 `animations.css`／`chat.css`。
-- **可攜**：`desktop/js/mascot_motion.js` 必須能在純靜態頁單獨運作（1d 展示頁會原封複製 `mascot.js`＋`mascot.css`＋它）——不得依賴 I18N／ApiService／UIManager；缺 `matchMedia`／`checkVisibility`／SVG 幾何 API 時退回「不動」、不拋錯。
+- **可攜**：`desktop/js/mascot_motion.js` 必須能在純靜態頁單獨運作（1d 展示頁會原封複製 `mascot.js`＋`mascot.css`＋它）——不得依賴 I18N／ApiService／UIManager；缺 `matchMedia` 視為「無偏好」（JS 動作照常，CSS `@media (prefers-reduced-motion)` 仍管轄 CSS 動態）、缺 `checkVisibility` 退回 `getClientRects()` 可見性檢查、缺 DOM／計時器 API 則不動作，一律不拋錯。（2026-09-30 審查裁決：缺 matchMedia 視為無偏好——能表達減少動態偏好的環境必有 matchMedia）
 - **契約 §4**：彩蛋與反應只綁明確操作事件，永不由對話內容或情緒觸發；`.chat-messages` 裡只准安靜搖擺／靜態吉祥物；`valence < 0.45`（`QUIET_VALENCE_THRESHOLD`）走安靜路徑（沒有彩蛋、印章不壓）；前端目前沒有危機訊號＝已知限制（見文末）。
 - **reduced-motion＝靜態**：每個新 `animation` 都要在同檔 `@media (prefers-reduced-motion: reduce)` 有 `animation: none`（`tests/reduced_motion_css.test.js` 逐檔檢查）；JS 動作前先問 `MascotMotion.isReducedMotion()`（視圖轉場問 `matchMedia`），偏好改變時即時停／起；瀏覽器層面由 `capture-frames.js --reduced` 斷言每個場景影格完全相同。
 - **靜止畫面不變**：每個動手改 `mascot.js`／`mascot.css` 的任務結尾都跑 `node tools/motion/pose-identity.js`，必須印 `pose identity: OK`。
