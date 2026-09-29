@@ -70,6 +70,11 @@ const STUB_DIARY_BODY =
 // stub 的互動筆記更新永遠成功，interaction_note_error 恆為 None，因此固定
 // 是這一句，不會是「日記已生成，但互動筆記更新失敗」那句）。
 const DIARY_DONE_TEXT = '對話已結束並生成摘要';
+// v2.5 Spec B：全新帳號登入後先走「初次見面」腳本；本旅程點「直接開始聊天」
+// chip 收束它，這是收束後的那句話（js/i18n.js 的 onboarding.outroEarly，
+// zh-TW——e2e 瀏覽器沒設過語言，I18N 預設 zh-TW）。兩邊沒有共用來源，改文案
+// 時務必同步。
+const OUTRO_EARLY_TEXT = '好，那我們直接開始吧！想到什麼就跟我說什麼。';
 
 // 密碼需符合 utils/password_validator：長度>=8、大小寫、數字、特殊字元。
 const STRONG_PASSWORD = 'E2eTest!2026';
@@ -109,9 +114,15 @@ test.describe.serial('URDiary mobile E2E journey', () => {
 
     test.beforeAll(async ({ browser }, testInfo) => {
         const deviceDescriptor = testInfo.project.name === 'Pixel 7' ? PIXEL_7 : IPHONE_14;
+        // reducedMotion: 'reduce'（v2.6 motion Task 1）：旅程主體一律在「減少動態」
+        // 下跑——吉祥物動畫、存日記彩蛋與視圖轉場（View Transitions）在這個偏好下
+        // 全部退回靜態／直接切換（見 js/mascot_motion.js 與 js/ui_manager.js），
+        // 斷言不必跟動畫時序賽跑。動態開啟時的轉場路徑由檔尾專屬的 test 用
+        // page.emulateMedia 切回 no-preference 另外驗證。
         const context = await browser.newContext({
             ...contextOptionsFor(deviceDescriptor),
             baseURL: BASE_URL,
+            reducedMotion: 'reduce',
         });
         page = await context.newPage();
         realSystemMessages = page.locator('.chat-message.system-message:not(.thinking)');
@@ -190,6 +201,23 @@ test.describe.serial('URDiary mobile E2E journey', () => {
         // 登入成功會關掉所有登入相關對話框、顯示主畫面（main.js 的 enterApp()）。
         await expect(page.locator('#create-user-dialog')).toBeHidden();
         await expect(page.locator('#user-input')).toBeVisible();
+
+        // v2.5 Spec B：全新帳號＝onboarding 未完成，ChatModule 的開場 gate 會先跑
+        // 「初次見面」腳本（每則腳本訊息前有 1–3 秒假思考），期間 sendMessage 被
+        // OnboardingModule 攔截——不收束的話下一個 test 打的字會被當成取名答案
+        // （甚至在假思考空窗期被整句留在輸入框，見 onboarding_module.js
+        // handleAnswer）。這裡點常駐 chip「直接開始聊天」收束，然後三段等待，
+        // 讓後面每個「訊息數量」斷言的基準點不被 onboarding 的非同步尾巴汙染：
+        //   1. outroEarly 那句話真的落地；
+        //   2. networkidle——/users/onboarding/complete 回來了（它若帶回判定出的
+        //      名字，finish() 會在 .then 裡「同步」掛上下一顆假思考泡泡）；
+        //   3. 假思考泡泡歸零——那句更正／預設名字的話（如果有）也落地了。
+        const startChatChip = page.locator('[data-onboarding-start-chat]');
+        await expect(startChatChip).toBeVisible({ timeout: 15000 });
+        await startChatChip.click();
+        await expect(page.locator('.chat-messages')).toContainText(OUTRO_EARLY_TEXT, { timeout: 15000 });
+        await page.waitForLoadState('networkidle');
+        await expect(page.locator('.chat-message.thinking')).toHaveCount(0, { timeout: 15000 });
 
         // 登入成功後 main.js 的 loginUser() 會重新初始化 ChatModule，
         // loadChatHistory() 因此觸發一次「今日首次開啟」的每日問候請求
