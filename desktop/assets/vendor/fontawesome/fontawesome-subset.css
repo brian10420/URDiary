@@ -10,15 +10,18 @@
  * This is NOT the upstream all.min.css: it's a hand-trimmed subset
  * containing only the base ".fa" rule (this codebase only ever uses the
  * bare "fa fa-<name>" v4-style class pair — no .fas/.far/.fab) plus the
- * ten icon glyphs actually referenced from index.html and
- * js/ui_manager.js:699/704 (theme toggle icon swap). webfonts/fa-solid-900.woff2
- * is subset to just those ten glyphs via fonttools/pyftsubset (~1.4KB vs
+ * twelve icon glyphs actually referenced from index.html and js/*.js
+ * (incl. ui_manager.js theme toggle swap, chat_module.js read-aloud). webfonts/fa-solid-900.woff2
+ * is subset to just those twelve glyphs via fonttools/pyftsubset (~1.7KB vs
  * the ~150KB full solid webfont). If a future change adds a new fa-*
  * class, it needs both a rule here AND a re-subset of the woff2 file, or
  * the glyph will silently render as a blank/tofu box.
  *
  * Glyphs vendored: fa-cog, fa-user, fa-sun, fa-moon, fa-bug, fa-trash,
- * fa-paper-plane, fa-chevron-left, fa-chevron-right, fa-pen.
+ * fa-paper-plane, fa-chevron-left, fa-chevron-right, fa-pen, fa-microphone, fa-volume-up.
+ *
+ * tests/fontawesome_subset.test.js pins that every fa-* class used by the app
+ * has a rule here; tools/fonts/check-subset.py checks the woff2 has the glyphs.
  */
 
 @font-face {
@@ -51,3 +54,5 @@
 .fa-chevron-left::before { content: "\f053"; }
 .fa-chevron-right::before { content: "\f054"; }
 .fa-pen::before { content: "\f304"; }
+.fa-microphone::before { content: "\f130"; }
+.fa-volume-up::before { content: "\f028"; }
