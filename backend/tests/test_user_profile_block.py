@@ -52,3 +52,12 @@ def test_conversation_prompt_injects_blocks(client, auth_header):
         assert "小B" in system
         assert "{user_profile_block}" not in system and "{interaction_note}" not in system
         assert "\n\n\n" not in system  # companion 空塊不留三連空行
+
+
+def test_companion_only_profile_template_follows_lang(client, auth_header):
+    """v2.6：只有陪伴者筆記時，profile 塊墊的空白模板用請求語言的節標題。"""
+    _h, uid = auth_header
+    with db_session() as db:
+        crud.upsert_memory_file(db, uid, "companion_notes", "## Support that works\n- listen first (2026-09-30)")
+    assert "## Name & identity" in get_memory_context(uid, "en").profile_block
+    assert "## 稱呼與身分" in get_memory_context(uid, "zh-TW").profile_block

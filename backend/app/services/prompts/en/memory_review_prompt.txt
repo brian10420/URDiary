@@ -21,14 +21,14 @@ You are the memory keeper of a companionship system. Based on today's conversati
 
 [Your task]
 Output one JSON object containing an "ops" array; each op is one of:
-{{"action": "add", "file": "user_profile", "section": "重要事件時間線", "text": "- [{today_date}] one-line event summary"}}
+{{"action": "add", "file": "user_profile", "section": "Key events timeline", "text": "- [{today_date}] one-line event summary"}}
 {{"action": "replace", "file": "companion_notes", "target": "exact snippet from the file above", "text": "updated text"}}
 {{"action": "remove", "file": "user_profile", "target": "exact snippet from the file above"}}
 
 [Hard rules]
 - "file" must be user_profile (who they are) or companion_notes (your own working notes on how to accompany them).
-- user_profile sections must be one of: 稱呼與身分 / 四大生活領域 / 情緒模式 / 重要事件時間線 / 優勢與關鍵洞察.
-- companion_notes sections must be one of: 有效的支持方式 / 進行中的關注 / 觀察與提醒.
+- user_profile sections must be one of: Name & identity / Four life domains / Emotional patterns / Key events timeline / Strengths & key insights.
+- companion_notes sections must be one of: Support that works / Ongoing follow-ups / Observations & reminders.
 - The "target" of replace/remove must be copied verbatim from the file content above, or the op will fail.
 - Record patterns, not logs: recurring themes, important people and major events deserve memory; one-off trivia does not.
 - Only record what they actually said; never speculate, diagnose or label.

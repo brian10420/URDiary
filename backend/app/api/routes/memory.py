@@ -52,10 +52,23 @@ def put_memory_settings(body: MemorySettingsIn,
     return memory_review.set_write_mode(current_user.id, body.write_mode)
 
 
+def _section_fields(file_key: str, stored, lang: str) -> dict:
+    """帳本的 section：存的是 canonical key (v2.6) 或中文標題 (v2.5 舊列)。
+
+    section＝請求語言的標題 (前端直接顯示這欄)；section_key＝canonical key。
+    認不得的節 (模型送來的壞資料) 原樣回傳、section_key 為 None。
+    """
+    key = memory_files.normalize_section(file_key, stored)
+    if key is None:
+        return {"section": stored, "section_key": None}
+    return {"section": memory_files.section_title(file_key, key, lang), "section_key": key}
+
+
 @router.get("/ops", response_model=dict, summary="記憶帳本")
 def list_memory_ops(limit: int = 100, offset: int = 0,
                     db: Session = Depends(get_db),
-                    current_user: User = Depends(get_current_user)):
+                    current_user: User = Depends(get_current_user),
+                    lang: str = Depends(get_language)):
     ops = crud.get_memory_ops(db, current_user.id, limit=min(limit, 200), offset=offset)
     diary_ids = {o.source_diary_id for o in ops if o.source_diary_id}
     titles = {}
@@ -65,7 +78,7 @@ def list_memory_ops(limit: int = 100, offset: int = 0,
             titles[diary_id] = diary.title
     return {"ops": [{
         "id": o.id, "file_key": o.file_key, "batch_id": o.batch_id,
-        "action": o.action, "section": o.section,
+        "action": o.action, **_section_fields(o.file_key, o.section, lang),
         "target_text": o.target_text, "new_text": o.new_text,
         "status": o.status, "source": o.source,
         "source_diary_id": o.source_diary_id,
@@ -76,10 +89,11 @@ def list_memory_ops(limit: int = 100, offset: int = 0,
     } for o in ops]}
 
 
+# 會寫檔的動作帶介面語言 (寫入時節標頭換成該語言)；拒絕不寫檔
 _OP_ACTIONS = {
-    "approve": memory_review.approve_op,
-    "reject": memory_review.reject_op,
-    "undo": memory_review.undo_op,
+    "approve": lambda uid, op_id, lang: memory_review.approve_op(uid, op_id, lang=lang),
+    "reject": lambda uid, op_id, lang: memory_review.reject_op(uid, op_id),
+    "undo": lambda uid, op_id, lang: memory_review.undo_op(uid, op_id, lang=lang),
 }
 
 
@@ -90,7 +104,7 @@ def act_on_op(op_id: int, action: str,
     handler = _OP_ACTIONS.get(action)
     if handler is None:
         raise NotFoundError(error_code=ErrorCode.RESOURCE_NOT_FOUND, detail="unknown action")
-    result = handler(current_user.id, op_id)
+    result = handler(current_user.id, op_id, lang)
     if result["ok"]:
         return result
     if result.get("error") == "not_found":
@@ -104,9 +118,10 @@ def act_on_op(op_id: int, action: str,
 
 @router.post("/batches/{batch_id}/{action}", response_model=dict, summary="批次帳本操作")
 def act_on_batch(batch_id: str, action: str,
-                 current_user: User = Depends(get_current_user)):
+                 current_user: User = Depends(get_current_user),
+                 lang: str = Depends(get_language)):
     if action == "approve":
-        return memory_review.approve_batch(current_user.id, batch_id)
+        return memory_review.approve_batch(current_user.id, batch_id, lang=lang)
     if action == "reject":
         return memory_review.reject_batch(current_user.id, batch_id)
     raise NotFoundError(error_code=ErrorCode.RESOURCE_NOT_FOUND, detail="unknown action")

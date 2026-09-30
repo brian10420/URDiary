@@ -151,7 +151,7 @@ def get_memory_context(user_id: int, lang: str) -> MemoryContext:
     onb_context = _onboarding_context(onboarding_lines, lang) if onboarding_lines else ""
 
     if profile or companion:
-        profile_block = _profile_block(profile or memory_files.blank_template("user_profile"), lang)
+        profile_block = _profile_block(profile or memory_files.blank_template("user_profile", lang), lang)
         companion_block = _companion_block(companion, lang) if companion else ""
         if lang != "en":
             diary_context = "使用者檔案：\n" + (profile or "（空）")

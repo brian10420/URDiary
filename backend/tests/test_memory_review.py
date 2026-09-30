@@ -158,3 +158,108 @@ def test_ingest_diary_entrypoint(client, auth_header, mock_llm):
     with db_session() as db:
         op = crud.get_memory_ops(db, uid)[0]
         assert op.source == "diary_ingest" and op.source_diary_id == diary_id
+
+
+# --- v2.6：區段標題依介面語言 ---------------------------------------------------
+
+EN_PROFILE_LIST = "Name & identity / Four life domains / Emotional patterns / Key events timeline / Strengths & key insights"
+EN_COMPANION_LIST = "Support that works / Ongoing follow-ups / Observations & reminders"
+ZH_TITLES = ("稱呼與身分", "四大生活領域", "情緒模式", "重要事件時間線", "優勢與關鍵洞察",
+             "有效的支持方式", "進行中的關注", "觀察與提醒")
+
+
+def _run_en(user_id, mock_llm, reply):
+    from services.memory_review import run_review_pass
+    from providers.base import LLMConfig
+    mock_llm.respond(reply)
+    cfg = LLMConfig(provider="claude", model="m", api_key="k", base_url=None)
+    return run_review_pass(user_id, cfg, lang="en",
+                           chat_history=[{"role": "user", "content": "Had pho with Annie"}],
+                           diary_content="Pho with Annie, felt calm.", diary_id=None, valence=0.8)
+
+
+def test_prompt_files_list_their_own_language_titles():
+    """兩語提示詞的區段白名單＝memory_files 的標題 (防漂移)；en 提示詞不含任何中文標題。"""
+    from services import memory_files as mf
+    from services.prompt_loader import load_prompt
+    en = load_prompt("memory_review_prompt.txt", "en")
+    assert " / ".join(mf.section_titles("user_profile", "en")) == EN_PROFILE_LIST
+    assert " / ".join(mf.section_titles("companion_notes", "en")) == EN_COMPANION_LIST
+    assert EN_PROFILE_LIST in en and EN_COMPANION_LIST in en
+    assert '"section": "Key events timeline"' in en
+    assert not any(t in en for t in ZH_TITLES)
+    zh = load_prompt("memory_review_prompt.txt", "zh-TW")
+    assert "／".join(mf.section_titles("user_profile", "zh-TW")) in zh
+    assert "／".join(mf.section_titles("companion_notes", "zh-TW")) in zh
+
+
+def test_en_onboarding_material_uses_en_titles():
+    from services import memory_review as mr
+    en = mr._onboarding_material(["- (2026-09-30) City: Pittsburgh"], "en")
+    assert "(mostly Name & identity / Four life domains / Strengths & key insights)" in en
+    assert not any(t in en for t in ZH_TITLES)
+    zh = mr._onboarding_material(["-（2026-09-30）住的城市：台中"], "zh-TW")
+    assert "（多半屬「稱呼與身分」「四大生活領域」「優勢與關鍵洞察」）" in zh  # zh 原字串不變
+
+
+def test_en_review_pass_applies_en_titles_on_fresh_user(client, auth_header, mock_llm):
+    _h, uid = auth_header
+    result = _run_en(uid, mock_llm, _ops_json([
+        {"action": "add", "file": "user_profile", "section": "Emotional patterns",
+         "text": "- Food with friends calms her (2026-09-30)"},
+        {"action": "add", "file": "user_profile", "section": "Key events timeline",
+         "text": "- [2026-09-30] Pho with Annie"},
+        {"action": "add", "file": "companion_notes", "section": "Observations & reminders",
+         "text": "- Food talk relaxes her (2026-09-30)"},
+        {"action": "add", "file": "user_profile", "section": "Hobbies", "text": "- x"},
+    ]))
+    assert result.applied == 3 and result.failed == 1
+    prompt = mock_llm.calls[0]["messages"][1]["content"]
+    assert EN_PROFILE_LIST in prompt and not any(t in prompt for t in ZH_TITLES)
+    with db_session() as db:
+        files = crud.get_memory_files(db, uid)
+        profile = files["user_profile"].content
+        assert profile.startswith("## Name & identity\n\n## Four life domains\n\n## Emotional patterns\n"
+                                  "- Food with friends calms her (2026-09-30)\n")
+        assert "## Key events timeline\n- [2026-09-30] Pho with Annie\n" in profile
+        assert files["companion_notes"].content.startswith("## Support that works\n")
+        sections = {o.new_text: o.section for o in crud.get_memory_ops(db, uid)}
+    # 帳本存 canonical key；認不得的節原樣保留 (稽核真相)
+    assert sections["- Food with friends calms her (2026-09-30)"] == "emotion_patterns"
+    assert sections["- [2026-09-30] Pho with Annie"] == "timeline"
+    assert sections["- x"] == "Hobbies"
+
+
+def test_en_review_pass_migrates_touched_zh_file_only(client, auth_header, mock_llm):
+    _h, uid = auth_header
+    from services import memory_files as mf
+    zh_profile = mf.apply_op("user_profile", "", "add", section="情緒模式", text="- 雨天想家 (2026-09-01)").content
+    zh_notes = mf.apply_op("companion_notes", "", "add", section="觀察與提醒", text="- 還好＝累了 (2026-09-01)").content
+    with db_session() as db:
+        crud.upsert_memory_file(db, uid, "user_profile", zh_profile)
+        crud.upsert_memory_file(db, uid, "companion_notes", zh_notes)
+    result = _run_en(uid, mock_llm, _ops_json([
+        {"action": "add", "file": "user_profile", "section": "情緒模式",   # 模型抄了舊檔的中文標題也行
+         "text": "- Calm after pho (2026-09-30)"}]))
+    assert result.applied == 1
+    with db_session() as db:
+        files = crud.get_memory_files(db, uid)
+        assert files["user_profile"].content == (
+            "## Name & identity\n\n## Four life domains\n\n## Emotional patterns\n"
+            "- 雨天想家 (2026-09-01)\n- Calm after pho (2026-09-30)\n\n"
+            "## Key events timeline\n\n## Strengths & key insights\n")
+        assert files["companion_notes"].content == zh_notes  # 沒被寫的檔不動
+        assert crud.get_memory_ops(db, uid)[0].section == "emotion_patterns"
+
+
+def test_remove_backfills_section_as_key(client, auth_header, mock_llm):
+    _h, uid = auth_header
+    from services import memory_files as mf
+    content = mf.apply_op("user_profile", "", "add", section="情緒模式", text="- 過時的 (2026-08-01)").content
+    with db_session() as db:
+        crud.upsert_memory_file(db, uid, "user_profile", content)
+    result = _run(uid, mock_llm, _ops_json([
+        {"action": "remove", "file": "user_profile", "target": "- 過時的 (2026-08-01)"}]))
+    assert result.applied == 1
+    with db_session() as db:
+        assert crud.get_memory_ops(db, uid)[0].section == "emotion_patterns"

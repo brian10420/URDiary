@@ -110,14 +110,16 @@ def _onboarding_material(lines: list, lang: str) -> str:
     if not lines:
         return ""
     body = "\n".join(lines)
+    titles = [memory_files.section_title("user_profile", key, lang)
+              for key in ("identity", "life_domains", "strengths")]
     if lang != "en":
         return ("【初次見面他告訴你的（收納素材）】\n" + body +
                 "\n（這些是初次見面自我介紹的原文回答：請把值得長期記住的部分分流進上面的"
-                "使用者檔案（多半屬「稱呼與身分」「四大生活領域」「優勢與關鍵洞察」）；"
+                "使用者檔案（多半屬" + "".join(f"「{t}」" for t in titles) + "）；"
                 "這批素材收納完成前每次都會出現，已在檔案裡的不要重複新增。）\n\n")
     return ("[What they told you when you first met (to be filed)]\n" + body +
             "\n(Their verbatim onboarding answers: file what deserves long-term memory into the "
-            "user profile above (mostly 稱呼與身分 / 四大生活領域 / 優勢與關鍵洞察); this "
+            "user profile above (mostly " + " / ".join(titles) + "); this "
             "material reappears until filed — never re-add what is already in the file.)\n\n")
 
 
@@ -154,10 +156,11 @@ def _build_prompt(snapshot: dict, lang: str, *, chat_text: str, diary_content: s
     )
 
 
-def _validate_and_apply(ops: list, snapshot: dict):
+def _validate_and_apply(ops: list, snapshot: dict, lang: str):
     """對工作副本逐筆套用。回 (per_op_results, new_contents)。
 
     per_op_results: [{"op": 原始 op, "status": "applied"/"failed", "error": ...}]
+    lang：被寫到的檔，節標頭順便換成這個語言 (memory_files.apply_op 的懶遷移)。
     """
     contents = dict(snapshot)
     results = []
@@ -169,7 +172,7 @@ def _validate_and_apply(ops: list, snapshot: dict):
         action = op.get("action")
         applied = memory_files.apply_op(
             file_key, contents[file_key], action,
-            section=op.get("section"), target=op.get("target"), text=op.get("text"))
+            section=op.get("section"), target=op.get("target"), text=op.get("text"), lang=lang)
         if applied.ok:
             # undo remove 需要知道原節：套用前回填 section (find_section_of 看「套用前」內容)
             if action == "remove" and not op.get("section"):
@@ -205,7 +208,7 @@ def _op_rows(user_id, batch_id, source, diary_id, results, status_map=None) -> l
             "file_key": raw_file[:16] if isinstance(raw_file, str) else "user_profile",
             "batch_id": batch_id,
             "action": raw_action[:12] if isinstance(raw_action, str) else "add",
-            "section": op.get("section"),
+            "section": memory_files.canonical_section(raw_file, op.get("section")),
             "target_text": target_text.strip() if isinstance(target_text, str) else target_text,
             "new_text": new_text.strip() if isinstance(new_text, str) else new_text,
             "status": status,
@@ -264,7 +267,7 @@ def run_review_pass(user_id: int, cfg, lang: str = "zh-TW", *,
     if not ops:
         return result  # 平凡的一天：不記，也不留帳
 
-    results, contents = _validate_and_apply(ops, snapshot)
+    results, contents = _validate_and_apply(ops, snapshot, lang)
     over = [k for k in memory_files.FILE_KEYS if memory_files.over_limit(k, contents[k])]
     if over:
         counts = {k: memory_files.char_count(contents[k]) for k in over}
@@ -273,7 +276,7 @@ def run_review_pass(user_id: int, cfg, lang: str = "zh-TW", *,
             results = [{"op": o["op"], "status": "failed", "error": "over_budget"} for o in results]
             contents = None
         else:
-            results, contents = _validate_and_apply(ops, snapshot)  # 重試對「原始」快照重來
+            results, contents = _validate_and_apply(ops, snapshot, lang)  # 重試對「原始」快照重來
             over = [k for k in memory_files.FILE_KEYS if memory_files.over_limit(k, contents[k])]
             if over:
                 results = [{"op": o["op"], "status": "failed", "error": "over_budget"} for o in results]
@@ -343,8 +346,11 @@ def _mark(db, op, status: str, error: Optional[str] = None):
     db.commit()
 
 
-def approve_op(user_id: int, op_id: int) -> dict:
-    """核可一筆 pending：以「當下」檔案重驗套用；target 比不到→stale；套用後超標→拒絕核可。"""
+def approve_op(user_id: int, op_id: int, lang: Optional[str] = None) -> dict:
+    """核可一筆 pending：以「當下」檔案重驗套用；target 比不到→stale；套用後超標→拒絕核可。
+
+    lang＝核可者的介面語言：寫入時把該檔節標頭換成此語言 (None＝標頭不動)。
+    """
     with db_session() as db:
         op = crud.get_memory_op(db, user_id, op_id)
         if op is None:
@@ -354,14 +360,15 @@ def approve_op(user_id: int, op_id: int) -> dict:
         content = _load_content(db, user_id, op.file_key)
         applied = memory_files.apply_op(op.file_key, content, op.action,
                                         section=op.section, target=op.target_text,
-                                        text=op.new_text)
+                                        text=op.new_text, lang=lang)
         if not applied.ok:
             _mark(db, op, "stale", applied.error)
             return _op_result(False, status="stale", error=applied.error)
         if memory_files.over_limit(op.file_key, applied.content):
             return _op_result(False, status="pending", error="over_budget")
         if op.action == "remove" and not op.section:
-            op.section = memory_files.find_section_of(content, op.target_text or "")
+            op.section = memory_files.canonical_section(
+                op.file_key, memory_files.find_section_of(content, op.target_text or ""))
         crud.upsert_memory_file(db, user_id, op.file_key, applied.content)
         _mark(db, op, "applied")
         return _op_result(True, status="applied")
@@ -378,8 +385,11 @@ def reject_op(user_id: int, op_id: int) -> dict:
         return _op_result(True, status="rejected")
 
 
-def undo_op(user_id: int, op_id: int) -> dict:
-    """撤銷一筆 applied：反向 op (add→remove new_text / remove→補回 target / replace→反向替換)。"""
+def undo_op(user_id: int, op_id: int, lang: Optional[str] = None) -> dict:
+    """撤銷一筆 applied：反向 op (add→remove new_text / remove→補回 target / replace→反向替換)。
+
+    lang 同 approve_op。帳本 section 可能是 v2.6 的 key 或 v2.5 的中文標題，兩者都認。
+    """
     with db_session() as db:
         op = crud.get_memory_op(db, user_id, op_id)
         if op is None:
@@ -388,14 +398,15 @@ def undo_op(user_id: int, op_id: int) -> dict:
             return _op_result(False, status=op.status, error="not_undoable")
         content = _load_content(db, user_id, op.file_key)
         if op.action == "add":
-            reverse = memory_files.apply_op(op.file_key, content, "remove", target=op.new_text)
+            reverse = memory_files.apply_op(op.file_key, content, "remove", target=op.new_text,
+                                            lang=lang)
         elif op.action == "remove":
             reverse = memory_files.apply_op(op.file_key, content, "add",
                                             section=op.section or memory_files.SECTIONS[op.file_key][0],
-                                            text=op.target_text)
+                                            text=op.target_text, lang=lang)
         else:  # replace
             reverse = memory_files.apply_op(op.file_key, content, "replace",
-                                            target=op.new_text, text=op.target_text)
+                                            target=op.new_text, text=op.target_text, lang=lang)
         if not reverse.ok:
             return _op_result(False, status="applied", error=reverse.error)
         if memory_files.over_limit(op.file_key, reverse.content):
@@ -405,13 +416,13 @@ def undo_op(user_id: int, op_id: int) -> dict:
         return _op_result(True, status="undone")
 
 
-def approve_batch(user_id: int, batch_id: str) -> dict:
+def approve_batch(user_id: int, batch_id: str, lang: Optional[str] = None) -> dict:
     with db_session() as db:
         pending_ids = [o.id for o in crud.get_ops_by_batch(db, user_id, batch_id)
                        if o.status == "pending"]
     applied = stale = 0
     for op_id in pending_ids:  # 逐筆走 approve_op：每筆各自短交易、依序套用
-        r = approve_op(user_id, op_id)
+        r = approve_op(user_id, op_id, lang=lang)
         if r["ok"]:
             applied += 1
         elif r.get("status") == "stale":

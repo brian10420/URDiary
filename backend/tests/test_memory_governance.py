@@ -173,3 +173,58 @@ def test_overview_and_write_mode(client, auth_header):
     _seed_pending(uid)
     ov2 = mr.get_memory_overview(uid)
     assert ov2["write_mode"] == "approval" and ov2["pending_count"] == 1
+
+
+# --- v2.6：核可／撤銷帶介面語言 → 寫入時遷移標頭 -----------------------------------
+
+def test_approve_with_en_migrates_zh_file_headers(client, auth_header):
+    _h, uid = auth_header
+    with db_session() as db:
+        crud.upsert_memory_file(db, uid, "user_profile", mf.blank_template("user_profile"))
+    op_id = _seed_pending(uid, section="emotion_patterns", text="- calm (2026-09-30)")
+    r = mr.approve_op(uid, op_id, lang="en")
+    assert r["ok"] and r["status"] == "applied"
+    with db_session() as db:
+        content = crud.get_memory_files(db, uid)["user_profile"].content
+    assert content == ("## Name & identity\n\n## Four life domains\n\n## Emotional patterns\n"
+                       "- calm (2026-09-30)\n\n## Key events timeline\n\n## Strengths & key insights\n")
+
+
+def test_approve_legacy_zh_section_on_en_file(client, auth_header):
+    """v2.5 帳本存的是中文標題：核可時照樣找得到 en 標頭。"""
+    _h, uid = auth_header
+    with db_session() as db:
+        crud.upsert_memory_file(db, uid, "user_profile", mf.blank_template("user_profile", "en"))
+    op_id = _seed_pending(uid, section="重要事件時間線", text="- [2026-09-30] x")
+    assert mr.approve_op(uid, op_id, lang="en")["ok"]
+    with db_session() as db:
+        content = crud.get_memory_files(db, uid)["user_profile"].content
+    assert "## Key events timeline\n- [2026-09-30] x\n" in content and "重要事件時間線" not in content
+
+
+def test_undo_remove_with_en_restores_into_en_section(client, auth_header):
+    _h, uid = auth_header
+    with db_session() as db:
+        content = mf.apply_op("user_profile", "", "add", section="情緒模式", text="- 新句 (2026-08-23)").content
+        crud.upsert_memory_file(db, uid, "user_profile", content)
+        op = crud.create_memory_ops(db, [{
+            "user_id": uid, "file_key": "user_profile", "batch_id": "b-undo-en", "action": "remove",
+            "section": "emotion_patterns", "target_text": "- 被刪的 (2026-08-01)", "new_text": None,
+            "status": "applied", "source": "review_pass"}])[0]
+        op_id = op.id
+    assert mr.undo_op(uid, op_id, lang="en")["ok"]
+    with db_session() as db:
+        content = crud.get_memory_files(db, uid)["user_profile"].content
+    assert "## Emotional patterns\n- 新句 (2026-08-23)\n- 被刪的 (2026-08-01)\n" in content
+    assert content.startswith("## Name & identity\n")
+
+
+def test_approve_remove_backfills_section_as_key(client, auth_header):
+    _h, uid = auth_header
+    with db_session() as db:
+        content = mf.apply_op("user_profile", "", "add", section="情緒模式", text="- 舊 (2026-08-01)").content
+        crud.upsert_memory_file(db, uid, "user_profile", content)
+    op_id = _seed_pending(uid, action="remove", section=None, target="- 舊 (2026-08-01)", text=None)
+    assert mr.approve_op(uid, op_id)["ok"]
+    with db_session() as db:
+        assert crud.get_memory_op(db, uid, op_id).section == "emotion_patterns"
