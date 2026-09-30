@@ -1,0 +1,283 @@
+{
+  "_about": "Maya: fictional en demo persona. Every date is a day offset from D0 (the day S3–S5 are recorded): day -16 = 16 days before D0. Field guide: promo/demo/README.md. After editing, just re-run seed_demo.py; it validates everything (lengths, stamp rules, crisis words, storyboard needs) before writing.",
+  "lang": "en",
+  "persona": "Maya",
+  "accounts": {
+    "password": "treehole-demo-en",
+    "main": {"username": "maya", "id": 102},
+    "copy": {"username": "maya_b", "id": 104},
+    "hello": {"username": "maya_hello", "id": 106}
+  },
+  "companion": {"companion_name": "Treehole", "user_nickname": "Maya"},
+  "memory_write_mode": "approval",
+  "account_created": {"day": -21, "time": "19:50"},
+  "last_checkin": {"day": -1, "time": "21:05"},
+  "onboarding": {
+    "day": -21,
+    "start_time": "19:52",
+    "completed_time": "19:58",
+    "answers": {
+      "companion_naming": "Treehole",
+      "name": "Maya",
+      "location": "Pittsburgh",
+      "favorite_food": "Pho, no contest.",
+      "important_people": "My mom back in Columbus, my roommate Annie, and our cat Dumpling",
+      "hobbies": "Night runs and playing piano",
+      "strengths": "I'm careful, and I always keep my promises",
+      "self_view": "A grad student still finding her direction. A bit anxious, but trying hard."
+    }
+  },
+  "diary_headings": ["Today", "Feelings", "Reflections", "Tomorrow"],
+  "storyboard_roles": {
+    "recall_target_day": -16,
+    "recall_keywords": ["presentation", "sleepless"],
+    "bright_day": -4,
+    "heavy_day": -7
+  },
+  "diaries": [
+    {
+      "day": -21, "time": "22:10",
+      "title": "Pho night with Annie",
+      "summary": "Third week of the semester; Annie dragged me out for pho at the new place near campus and we traded new-semester worries.",
+      "valence": 0.66, "arousal": 0.40,
+      "stamp": "food", "note": "Hot soup, honest talk. A good way to start.",
+      "body": {
+        "today": "I printed the two papers I'm supposed to read this week and got halfway through the first one in the lab before Annie texted that the new pho place by the back gate was finally open. The broth was rich and I added way too much basil, as usual. We talked about our classes. She said her experiments are still warming up; I admitted my thesis topic doesn't even have a shadow yet.",
+        "feelings": "Saying \"not even a shadow\" out loud made me feel a little exposed, but Annie laughed and said anyone with a shadow by week three would be terrifying. The soup warmed me all the way through. It was a very concrete kind of comfort.",
+        "reflections": "I'm not the only one still figuring things out. Worries get smaller once I say them to someone.",
+        "tomorrow": "Finish the first paper and write three questions in the margins. That's enough for now. The topic will grow a little at a time."
+      }
+    },
+    {
+      "day": -19, "time": "22:45",
+      "title": "Night run along the river",
+      "summary": "Went for a night run with Annie along the river trail; the last stretch wiped me out, but my head felt clear again.",
+      "valence": 0.72, "arousal": 0.62,
+      "stamp": "ball", "note": "You ran the fog right out of your head tonight.",
+      "body": {
+        "today": "Classes felt stuffy all day, so at nine Annie and I laced up and ran from campus down to the river trail and back. She runs faster than me, and on the last stretch I fell way behind. She jogged in place under a streetlight until I caught up.",
+        "feelings": "Being too out of breath to talk was strangely satisfying, like the heaviness I'd carried all day got blown off by the wind. Sitting on the steps afterwards, looking at the lights across the water, I felt like I had energy again.",
+        "reflections": "I seem to need moments where my body moves first. Things I can't think my way through feel less tangled after a run.",
+        "tomorrow": "One more run this week, no pace goals. Stretch afterwards, because my calves are definitely going to complain."
+      }
+    },
+    {
+      "day": -16, "time": "01:20",
+      "title": "Sleepless before my first presentation",
+      "summary": "My first seminar presentation is tomorrow; after a whole week of preparing I still couldn't sleep, so I got up and ran through the talk again.",
+      "valence": 0.50, "arousal": 0.66,
+      "stamp": "moon", "note": "Sleepless, but every slide is ready. You care.",
+      "body": {
+        "today": "Tomorrow afternoon I give my first presentation at the department seminar. I've spent the whole week preparing it, and the slides are on version eleven, but tonight I just lay in bed with my eyes wide open. Around one I gave up, got up, and whispered the whole talk to myself from the first slide to the last. Annie woke up, mumbled \"you sound great, go to sleep,\" and rolled over. At our last meeting my advisor said first talks don't need to be perfect, just clear.",
+        "feelings": "The nerves sat in my stomach like a small stone, and the harder I tried to sleep, the more awake I felt. But after running through it once, something settled. At least I know what I want to say on every slide.",
+        "reflections": "I always seem to lose sleep before the things that matter. It doesn't mean I'm unprepared. It means I care.",
+        "tomorrow": "Have something warm for breakfast, and only look at the first and last slides before I leave. If I trip over a sentence, I can just pick up with the next one."
+      }
+    },
+    {
+      "day": -13, "time": "22:30",
+      "title": "Midterm review session",
+      "summary": "Midterm week: I ran the Intro Stats review session, got stumped by one question, then read my research methods notes at the library until closing.",
+      "valence": 0.58, "arousal": 0.55,
+      "stamp": "gradcap", "note": "\"I'll find out and tell you\" is what good TAs say.",
+      "body": {
+        "today": "This morning's recitation turned into a midterm review. I went over confidence intervals and hypothesis tests one more time. One student asked something I couldn't answer on the spot, so I told him I'd look it up and get back to him. After class I stayed at the library until it closed, going through my own research methods notes for tomorrow afternoon's exam.",
+        "feelings": "My face went warm when I got stumped, but after I emailed him the answer tonight I felt like I'd actually done the job right. The library AC was freezing, and I studied wrapped in my jacket with that very specific midterm-week focus.",
+        "reflections": "Saying \"I don't know yet\" is so much lighter than bluffing. Being a TA is also practice in being honest.",
+        "tomorrow": "Look over the old exams once more before the test, and be in bed before midnight. Good luck, and eat breakfast."
+      }
+    },
+    {
+      "day": -12, "time": "21:50",
+      "title": "Didn't finish my research methods midterm",
+      "summary": "Ran out of time on my research methods midterm and left the last two questions half-done; felt deflated and barely ate dinner.",
+      "valence": 0.38, "arousal": 0.48,
+      "stamp": "heal", "note": "Tough exam. Eat something warm and rest now.",
+      "body": {
+        "today": "The research methods midterm was this afternoon. I lingered too long on the early questions, and the last two only got a few lines each before time was called. When I walked out it was already dark. I stood outside the building for a long time, not sure whether to get dinner or just go home. I ended up buying a sandwich and only ate half of it.",
+        "feelings": "Deflated, and a little annoyed at myself, because I knew the material and still didn't finish. The \"I messed it up again\" feeling kept looping, and it wore me out.",
+        "reflections": "Running out of time isn't the same as not knowing it. What I needed tonight was probably just a warm meal and a real night's sleep.",
+        "tomorrow": "Sleep in, then go get something hot to eat. Until the exam comes back, try not to retake it in my head."
+      }
+    },
+    {
+      "day": -11, "time": "22:20",
+      "title": "Piano after midterms",
+      "summary": "Midterm week is finally over; I slept in, played for an hour and a half in a practice room, and my mind finally went quiet.",
+      "valence": 0.70, "arousal": 0.35,
+      "stamp": "music", "note": "Missed notes and all, the piano held you today.",
+      "body": {
+        "today": "Midterm week is finally over, so today had no alarm. I slept until almost noon, then booked a practice room in the music building and played through a few pieces I used to know. One passage kept tripping me up, so I worked on it slowly, one bar at a time.",
+        "feelings": "The moment my fingers touched the keys, my mind got quieter. Even the missed notes didn't bother me. It felt like being held.",
+        "reflections": "I can't change how the exam went, but I can choose how I treat myself after it. Piano isn't practice for me. It's rest.",
+        "tomorrow": "Book the practice room again this week and keep smoothing out that one passage."
+      }
+    },
+    {
+      "day": -10, "time": "22:40",
+      "title": "Singing to Mom over video",
+      "summary": "Mom's birthday: graded my Intro Stats recitation quizzes, then video-called home to sing; the cake I ordered arrived right on time.",
+      "valence": 0.80, "arousal": 0.58,
+      "stamp": "cake", "note": "You sent love home by cake and by song.",
+      "body": {
+        "today": "Today was Mom's birthday. I finished grading the Intro Stats recitation quizzes in the afternoon and video-called home at seven sharp. The cake I'd secretly ordered arrived right then, and Mom laughed so hard her eyes disappeared. We sang happy birthday on both sides of the screen, and halfway through, Dumpling strolled right across the camera like he owned the place. Everyone lost it.",
+        "feelings": "Seeing Mom that happy made my chest feel warm. I missed home a little, since I couldn't hug her through a screen, but mostly I felt loved.",
+        "reflections": "Since moving away, I've learned to turn caring into small, concrete things. A cake and a call on time are things I can give.",
+        "tomorrow": "Next time I'm home, take Mom to her favorite breakfast place. Today, the love got delivered."
+      }
+    },
+    {
+      "day": -9, "time": "23:10",
+      "title": "Sixty homework sets and one coffee",
+      "summary": "Graded sixty stats homework sets until my eyes ached; Annie pulled me into the café on the corner for an hour so I could breathe.",
+      "valence": 0.48, "arousal": 0.40,
+      "stamp": "coffee", "note": "Pausing was the most useful thing you did today.",
+      "body": {
+        "today": "The first homework after midterms came back all at once, sixty sets. I graded from morning to mid-afternoon until my red pen was nearly dry. Annie took one look at my face and dragged me to the café on the corner. I ordered a hot latte and did absolutely nothing for an hour except stare out the window.",
+        "feelings": "Not sad, just tired. Too tired to even complain. That hour of staring felt like someone pressed pause for me.",
+        "reflections": "I keep thinking I can only rest after everything is done, but stopping first actually makes the rest go faster.",
+        "tomorrow": "Split the last twenty sets into two sessions. Get up and walk around every hour, and drink some water."
+      }
+    },
+    {
+      "day": -7, "time": "22:50",
+      "title": "Rainy day, missing home",
+      "summary": "It rained all day; alone in the apartment I couldn't focus on my reading, missed home badly, and started doubting myself.",
+      "valence": 0.30, "arousal": 0.30,
+      "stamp": "umbrella", "note": "Rainy and lonely. Rest now; I'm right here.",
+      "body": {
+        "today": "It rained from morning to night. Annie was at her lab late, so it was just me. My one-on-one this afternoon was short; I didn't have much new to show, so I just listed what I'd read. Back home I opened a paper and read the same paragraph three times without taking any of it in. In the end I just sat by the window and listened to the rain.",
+        "feelings": "It was quiet, quiet enough to feel a little empty. I suddenly missed home so much: Mom's soup, Dumpling's weight curled against my feet. A small voice kept asking whether I'm really cut out for research.",
+        "reflections": "That doubt always seems loudest when it's raining and I'm alone. It's a real feeling, but it isn't necessarily the real answer.",
+        "tomorrow": "Take a hot shower tonight and go to bed early. When the rain stops tomorrow, go out and get a bowl of something warm. Today was a lot."
+      }
+    },
+    {
+      "day": -6, "time": "22:15",
+      "title": "Sunset hike with Annie",
+      "summary": "After recitation, Annie and I drove out to the overlook for sunset; I took far too many photos and we shared warm pretzels after.",
+      "valence": 0.82, "arousal": 0.64,
+      "stamp": "camera", "note": "Wind in your hair, sunset in your camera roll.",
+      "body": {
+        "today": "The minute recitation ended, Annie texted that it was too nice a day to stay inside. We drove almost an hour to the overlook and made it just in time for sunset. The sky went from orange to a soft purple, and I took so many photos that Annie started yelling \"one more!\" before I even asked. On the way back we stopped for warm pretzels, still salty on our fingers.",
+        "feelings": "The wind was wild and my hair was a disaster, but I couldn't stop smiling. The empty feeling from yesterday got filled in, bit by bit, by wind and light.",
+        "reflections": "Having someone who drags you outside is real luck. I want to be that person for someone too.",
+        "tomorrow": "Pick a few photos to send Mom. Next time I'm the one inviting Annie, to the dessert place she keeps talking about."
+      }
+    },
+    {
+      "day": -5, "time": "21:35",
+      "title": "No cavities, and a long walk home",
+      "summary": "Dentist check-up: no new cavities! The sun was out, so I skipped the bus and walked home the long way, past yards full of flowers.",
+      "valence": 0.62, "arousal": 0.35,
+      "stamp": "flower", "note": "Small good news, taken the long way home.",
+      "body": {
+        "today": "Dentist check-up this afternoon: I've been taking good care of my teeth, and there were no new cavities. The sun was out when I left, so I skipped the bus and walked home the long way, past front yards full of flowers. I kept stopping to take pictures.",
+        "feelings": "A light, quiet kind of happy, like setting down a small worry. Walking slowly made my thoughts slow down too.",
+        "reflections": "Happiness doesn't have to be big. \"No cavities\" deserves a little celebration too.",
+        "tomorrow": "Before I start reading tomorrow, take a ten-minute walk first. Keep today's good mood in my pocket."
+      }
+    },
+    {
+      "day": -4, "time": "22:05",
+      "title": "Finally finished my literature notes",
+      "summary": "Up early for a run on a bright morning, then finished the literature notes I'd put off for two weeks in one go; ran again at dusk.",
+      "valence": 0.80, "arousal": 0.70,
+      "stamp": "sun", "note": "Sunny outside, and you had the energy to match.",
+      "body": {
+        "today": "I woke up at seven with sunlight pouring in, so I laced up and ran three laps around the track. After a shower I sat down in the lab and finished the literature notes I'd been putting off for two weeks: twelve papers, each with a summary and my own questions. The sun was still out in the evening, so I went back for one more lap.",
+        "feelings": "I had energy all day, like my body and my brain were finally on the same side. When I hit save I let out a tiny cheer at my screen.",
+        "reflections": "It wasn't that I couldn't do it. I just needed a good start. Moving first thing in the morning really does make the rest of the day go smoother.",
+        "tomorrow": "Back up the notes somewhere safe. Try waking up early again tomorrow. No run needed, just step outside into the sun for a bit."
+      }
+    },
+    {
+      "day": -3, "time": "22:25",
+      "title": "Mom sent videos of Dumpling",
+      "summary": "Mom sent a batch of videos of Dumpling chasing a feather toy in circles; I laughed for ages and started counting down to going home.",
+      "valence": 0.64, "arousal": 0.40,
+      "stamp": "paw", "note": "A dizzy cat and a sweet kind of homesick.",
+      "body": {
+        "today": "I was in the middle of homework when Mom sent five videos of Dumpling. He chased the feather toy in circles until he got dizzy, then flopped onto the floor looking completely innocent. I laughed so hard that Annie came over to see what was going on, and we ended up watching all of them three times.",
+        "feelings": "So soothing, and a little homesick too. But this kind of homesick was sweet, because in a few days I get to hold him again.",
+        "reflections": "When I miss a place, it steadies me to remember there are people, and a cat, waiting for me there.",
+        "tomorrow": "Finish grading before I go home. Remember to buy Dumpling's favorite treats to bring back."
+      }
+    },
+    {
+      "day": -2, "time": "23:20",
+      "title": "Comparing myself again",
+      "summary": "A senior labmate's thesis draft is almost done; I was genuinely happy for her but couldn't stop comparing, and felt heavy all evening.",
+      "valence": 0.42, "arousal": 0.45,
+      "stamp": "sprout", "note": "Different seasons. Your sprout is still growing.",
+      "body": {
+        "today": "This afternoon in the lab, a second-year labmate mentioned her thesis draft is almost done, and everyone congratulated her. I was genuinely happy for her, but back at my desk, looking at a file with only a few pages of notes, my chest got tight. I still finished the recitation handout tonight and answered two students' emails.",
+        "feelings": "Envy, anxiety, and a little annoyance at myself for comparing at all. The heaviness stayed with me even after my shower.",
+        "reflections": "She's in her second year and I'm in my first. We're simply in different seasons. And I still did what I needed to do today. That counts.",
+        "tomorrow": "Just one thing tomorrow: write my research idea down as a single paragraph. It doesn't have to be good yet. First it exists, then it gets better."
+      }
+    },
+    {
+      "day": -1, "time": "22:35",
+      "title": "Annie's tomato soup night",
+      "summary": "Annie made a big pot of tomato soup to cheer me up; we talked over toast until late, and I played her the piece I've been practicing.",
+      "valence": 0.68, "arousal": 0.35,
+      "stamp": "heart", "note": "Letting someone care for you is a strength too.",
+      "body": {
+        "today": "When I got home tonight, Annie had already made a huge pot of tomato soup, which she said was a reward for how hard I've been working lately. We dipped toast in it and talked about everything from our research to our favorite childhood cartoons. After dinner I unplugged my keyboard's headphones and played her the piece I've been practicing, and she clapped like we were in a concert hall.",
+        "feelings": "Being taken care of felt so warm. Yesterday's heaviness hasn't completely lifted, but tonight's soup made it a lot lighter.",
+        "reflections": "I don't have to carry everything alone. Letting people be kind to me is a skill too.",
+        "tomorrow": "Find a moment to thank Annie tomorrow; pho is on me next time. Write down tomorrow's to-do list before bed, then actually sleep."
+      }
+    }
+  ],
+  "calendar_events": [
+    {"title": "Advisor meeting", "category": "study", "day": -21, "time": "14:00", "recurrence": "weekly"},
+    {"title": "Intro Stats recitation (TA)", "category": "work", "day": -20, "time": "10:00", "recurrence": "weekly"},
+    {"title": "Midterm week", "category": "study", "day": -14, "end_day": -12, "color": "#e8836f"},
+    {"title": "Department seminar: my first talk", "category": "study", "day": -15, "time": "13:00"},
+    {"title": "Mom's birthday", "category": "anniversary", "day": -10, "recurrence": "yearly"},
+    {"title": "Sunset hike with Annie", "category": "travel", "day": -6, "time": "15:30"},
+    {"title": "Dentist check-up", "category": "health", "day": -5, "time": "16:30"},
+    {"title": "Home to Columbus", "category": "family", "day": 3, "end_day": 4, "color": "#5fd0a0"}
+  ],
+  "memory": {
+    "_about": "Ledger batches in time order. {date} = the batch's day (for review_pass: the source diary's day); {day:-21} = 21 days before D0. Section headers stay in Chinese because the app's memory_files.SECTIONS are language-independent (the en review pass must use them too). The seeder applies every op with the app's own memory_files.apply_op, so file contents, ledger and undo all line up.",
+    "batches": [
+      {"source": "onboarding", "day": -21, "time": "19:58", "ops": [
+        {"file": "user_profile", "action": "add", "section": "稱呼與身分", "text": "- Maya, lives in Pittsburgh, grad student ({date})"},
+        {"file": "user_profile", "action": "add", "section": "四大生活領域", "text": "- Mom + cat Dumpling in Columbus; roommate Annie ({date})"},
+        {"file": "user_profile", "action": "add", "section": "四大生活領域", "text": "- Night runs, piano, pho ({date})"},
+        {"file": "user_profile", "action": "add", "section": "優勢與關鍵洞察", "text": "- Careful; keeps promises ({date})"}
+      ]},
+      {"source": "review_pass", "diary_day": -16, "ops": [
+        {"file": "user_profile", "action": "add", "section": "重要事件時間線", "text": "- [{date}] Sleepless before first seminar presentation"},
+        {"file": "user_profile", "action": "add", "section": "情緒模式", "text": "- Big moments cost her sleep; prep calms her ({date})"},
+        {"file": "companion_notes", "action": "add", "section": "有效的支持方式", "text": "- Nervous: rehearse the talk with her; skip \"don't worry\" ({date})"}
+      ]},
+      {"source": "review_pass", "diary_day": -10, "ops": [
+        {"file": "user_profile", "action": "add", "section": "重要事件時間線", "text": "- [{date}] Mom's birthday: sang over video, sent cake"},
+        {"file": "user_profile", "action": "replace", "target": "- Maya, lives in Pittsburgh, grad student ({day:-21})", "text": "- Maya, Pittsburgh; 1st-yr master's, stats TA ({date})"}
+      ]},
+      {"source": "review_pass", "diary_day": -7, "ops": [
+        {"file": "user_profile", "action": "add", "section": "情緒模式", "text": "- Rainy days alone: homesick, self-doubt ({date})"},
+        {"file": "companion_notes", "action": "add", "section": "有效的支持方式", "text": "- Low days: listen first, no rush to fix ({date})"},
+        {"file": "companion_notes", "action": "add", "section": "觀察與提醒", "text": "- \"I'm fine\" often means she's tired ({date})"}
+      ]},
+      {"source": "user_edit", "day": -5, "time": "21:50", "file": "user_profile", "find": "piano, pho", "replace": "piano, pho (extra basil)"},
+      {"source": "review_pass", "diary_day": -3, "ops": [
+        {"file": "companion_notes", "action": "add", "section": "進行中的關注", "text": "- Going home soon; ask about Dumpling ({date})"},
+        {"file": "user_profile", "action": "add", "section": "優勢與關鍵洞察", "text": "- Piano and runs steady her ({date})"}
+      ]}
+    ]
+  },
+  "demo_messages": {
+    "_about": "Messages to type during recording (the seeder checks: no crisis words; the D-16 diary ranks top-3 in keyword recall for both the U03 turn and the U03+U04 turn). Recall on the U04 turn only uses the first 12 terms of \"previous user message + this one\", so when U03 is long, U04's own words are cut off: U03 itself must contain \"presentation\".",
+    "u03": "I had my meeting with my advisor today. I spent the whole week preparing my progress presentation, and he just said my direction is wrong and that I should rethink the whole thing. Walking back to my apartment, I kept wondering if I'm even cut out for grad school. I worked so hard on it, and it still doesn't feel like enough.",
+    "u04": "And I have another presentation next week. I'm already sleepless just thinking about it.",
+    "u10": [
+      "I ran into the student who stumped me in recitation, and he said confidence intervals finally clicked for him!",
+      "And Annie is treating me to pho tonight to celebrate. Honestly, such a good day."
+    ]
+  }
+}
