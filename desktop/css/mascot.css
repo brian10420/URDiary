@@ -27,6 +27,44 @@
 .mascot-egg:not(.mascot-egg-night) svg { animation: mascot-pop .45s ease-out; }
 @keyframes mascot-pop { 0% { transform: translateY(18px) scale(.85); } 60% { transform: translateY(-6px) scale(1.04); } 100% { transform: translateY(0) scale(1); } }
 
+/* 存日記彩蛋升級（v2.6 motion Task 8）：開心版（.mascot-egg-happy）多了書籤飄動、兩張翻頁、
+   金星依序亮起。晚安版（.mascot-egg-night）與安靜版（根本沒有彩蛋）維持原樣。時間軸：0–450ms 既有的
+   mascot-pop 進場；翻頁 150–850／330–1030ms；1200ms 起淡出（mascot.js 的計時器不變）。 */
+.mascot-egg-happy .mm-bookmark {
+    transform-box: fill-box; transform-origin: 50% 0%;
+    animation: mm-flutter 900ms ease-in-out 120ms 1 both;
+}
+.mascot-egg-happy .mm-flip-page {
+    transform-box: fill-box; transform-origin: 0% 100%;
+    animation: mm-page-flip 700ms ease-in-out 150ms 1 both;
+}
+.mascot-egg-happy .mm-flip-page + .mm-flip-page { animation-delay: 330ms; }
+.mascot-egg-happy .mm-stars path {
+    transform-box: fill-box; transform-origin: 50% 50%;
+    animation: mm-twinkle 500ms ease-out 1 both;
+}
+.mascot-egg-happy .mm-stars path:nth-child(2) { animation-delay: 120ms; }
+.mascot-egg-happy .mm-stars path:nth-child(3) { animation-delay: 240ms; }
+@keyframes mm-flutter {
+    0%, 100% { transform: rotate(0deg); }
+    20% { transform: rotate(-14deg); }
+    45% { transform: rotate(10deg); }
+    70% { transform: rotate(-6deg); }
+    85% { transform: rotate(3deg); }
+}
+@keyframes mm-page-flip {
+    0%   { transform: scaleX(1) translateY(0); opacity: 0; }
+    12%  { opacity: 1; }
+    50%  { transform: scaleX(0) translateY(-10px); }
+    88%  { opacity: 1; }
+    100% { transform: scaleX(-1) translateY(0); opacity: 0; }
+}
+@keyframes mm-twinkle {
+    0%   { transform: scale(0); }
+    60%  { transform: scale(1.3); }
+    100% { transform: scale(1); }
+}
+
 .mascot-cat-icon { vertical-align: middle; }
 
 /* ---- v2.6 motion：rig 部件的共同設定 ----------------------------------------
@@ -106,7 +144,9 @@ html.mm-paused svg[data-mm-idle] .mm-rig, html.mm-paused svg[data-mm-idle] .mm-z
     svg[data-mm-idle] .mm-rig, svg[data-mm-idle][data-mm-pose="sleep"] .mm-zzz,
     svg.mm-blink .mm-eyes[data-mm-eyes="dot"],
     svg.mm-react .mm-rig, .mm-heart,
-    svg[data-mm-pose="wave"] .mm-arm-r { animation: none !important; }
+    svg[data-mm-pose="wave"] .mm-arm-r,
+    .mascot-egg-happy .mm-bookmark, .mascot-egg-happy .mm-flip-page,
+    .mascot-egg-happy .mm-stars path { animation: none !important; }
     svg[data-mm-follow] .mm-face .mm-eyes, svg[data-mm-follow] .mm-face .mm-mouth,
     svg[data-mm-follow] .mm-blush { transition: none !important; }
 }

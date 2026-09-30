@@ -100,13 +100,18 @@ const MascotModule = (function () {
         `<circle cx="169" cy="86" r="7" fill="#b98d6d" stroke="${OUTLINE}" stroke-width="5"/>`) +
       BASE_BOOK + FACE_HAPPY + BLUSH;
 
+    // 存日記彩蛋升級（v2.6 motion Task 8）：兩張從書頂翻起的書頁（同形，第二張晚一拍）。
+    // 靜止畫面不畫——opacity="0" 簡報屬性，mascot.css 的 mm-page-flip 動畫才把它們帶出來；
+    // 頁的左緣就是書脊 x=100，CSS 以 fill-box 的 0% 為翻頁軸。
+    const FLIP_PAGE = `<path class="mm-flip-page" opacity="0" d="M100 80 q20 -26 44 -16 l-2 16 q-22 -8 -42 12 z" fill="#f9f3e6" stroke="${OUTLINE}" stroke-width="5" stroke-linejoin="round"/>`;
+
     const POSE_JUMP =
       part('shadow', `<ellipse cx="100" cy="176" rx="34" ry="7" fill="#d8c5ae"/>`) +
       part('stars',
         `<path d="M42 70 l3 7 7 3 -7 3 -3 7 -3 -7 -7 -3 7 -3 z" fill="#f5c542" stroke="${OUTLINE}" stroke-width="3"/>` +
         `<path d="M172 56 l3.5 8 8 3.5 -8 3.5 -3.5 8 -3.5 -8 -8 -3.5 8 -3.5 z" fill="#f5c542" stroke="${OUTLINE}" stroke-width="3"/>` +
         `<path d="M186 118 l2.5 6 6 2.5 -6 2.5 -2.5 6 -2.5 -6 -6 -2.5 6 -2.5 z" fill="#f5c542" stroke="${OUTLINE}" stroke-width="3"/>`) +
-      `<g transform="translate(0 -18)">${BASE_BOOK}${FACE_HAPPY}</g>`;
+      `<g transform="translate(0 -18)">${BASE_BOOK}${FACE_HAPPY}${part('flip', FLIP_PAGE + FLIP_PAGE)}</g>`;
 
     const POSE_TEA =
       part('prop',
@@ -220,7 +225,8 @@ const MascotModule = (function () {
         if (kind === 'quiet') return; // 沉重的日記：安靜，不慶祝
         const pose = kind === 'goodnight' ? 'goodnight' : 'jump';
         const wrap = document.createElement('div');
-        wrap.className = 'mascot-egg' + (kind === 'goodnight' ? ' mascot-egg-night' : '');
+        // mascot-egg-happy（v2.6 motion Task 8）：翻頁／書籤／金星的 CSS 只認這個 class
+        wrap.className = 'mascot-egg ' + (kind === 'goodnight' ? 'mascot-egg-night' : 'mascot-egg-happy');
         wrap.innerHTML = svg220(POSES[pose], 150, pose);
         document.body.appendChild(wrap);
         setTimeout(() => { wrap.classList.add('fade'); }, 1200);
