@@ -3,7 +3,8 @@
  * S7a: G4 full frame (morning light, tea raised). 53.2–54.2 the phone frame slides into the
  * right third (eased, no bounce); S7b 54.2–59.6: U12 on the phone — the morning greeting with the
  * tea-holding mascot (it appears at 54.8) — while the camera eases toward the phone. S7 tail (U13,
- * optional): 58.9 a tap on the 「行事曆」 tab, 59.0 the phone's month grid with today's 10:00 class.
+ * optional, the same session): from 58.6 on the identical frame, 58.82 the 「行事曆」 tab is tapped and the
+ * app crossfades to the phone's month grid with today's 10:00 class (up by 59.05).
  * Caption 55.0–59.5. Out 59.6–60.1: the phone enlarges and dissolves into S8's desktop window.
  */
 import {AbsoluteFill} from 'remotion';
@@ -26,7 +27,7 @@ const PHONE_Y = (1080 - PHONE_H) / 2;
 const PHONE_CENTER: [number, number] = [1600, 540];
 /** Phone recording CSS px → phone screen px. */
 const REC_TO_PHONE = PHONE.screenW / RECORDING_SIZE.phone.w;
-const CALENDAR_TAP = 58.88; // the tab tap; U13 (already switched) takes over at 59.0
+const CALENDAR_TAP = 58.82; // the tab tap in U13 (source 1.57); the app's crossfade follows
 
 // Pushes toward the phone are clamped to the stage (coveringPush): the phone sits in the right
 // third, and centring it would pull the stage's right edge into the frame (black beyond it).
@@ -60,7 +61,7 @@ export const S7 = ({lang}: {lang: Lang}) => {
           {u13 ? (
             <>
               <MediaSlot placement={introPlacement('S7.U13')} lang={lang} tone="ui" compact labelPosition="top-left" />
-              {/* after the slot, so the ripple stays on top across the 59.0 switch */}
+              {/* after the slot, so the ripple is drawn over the screen */}
               <TapRipple at={CALENDAR_TAP} x={(tx + tw / 2) * REC_TO_PHONE} y={(ty + th / 2) * REC_TO_PHONE} />
             </>
           ) : null}

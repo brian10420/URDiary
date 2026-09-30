@@ -76,7 +76,7 @@
 
 原始錄影在 `/mnt/Data_SSD/urdiary-media/recordings/<U>/<lang>-take<N>.mov`（ProRes 422 HQ；桌面 3840×2160、手機 1170×2532，都是 CFR 60），每個 take 的事件時間與 LLM 原文在同目錄的 `SHOTLOG.md`／`<take>.json`。`src/data/shots.ts` 是唯一的對照表：
 
-- **`CLIPS`**：一列一個中間檔——用哪個 ★ take（全部是修正 UI 後重錄的 take：zh 主線 U03／U04 take26 → U06／U07 take10 → U15 take6；en 主線 U03／U04 take26 → U06／U07 take11 → U15 take7；S7 用 D+1 早上的 U12 zh-take7／en-take4，尾巴接 U13 zh-take8／en-take4；其他鏡頭用 `_picks.json` 的 ★）、保留哪一段（`in`／`out`，已含 0.5 s 前後餘量，腳本會取整到 1/60 s 的整幀）、要不要裁切（`crop`，錄影的 CSS px）與輸出倍率（`scale`：桌面整張 1＝1920×1080；手機 2＝780×1688——585 是奇數寬、x264 yuv420p 不收，S7 出場又會推到 1.75 倍；回憶卡／印章卡／彩蛋小窗／供應商小窗的裁切 2＝4K 原生解析度，放大成浮卡也清楚）。
+- **`CLIPS`**：一列一個中間檔——用哪個 ★ take（全部是修正 UI 後重錄的 take：zh 主線 U03／U04 take26 → U06／U07 take10 → U15 take6；en 主線 U03／U04 take26 → U06／U07 take11 → U15 take7；S7 用真的台北早上（10-01 05:0x）重錄的 U12 zh-take10／en-take7，尾巴接同一個 session 的 U13 zh-take11／en-take8；其他鏡頭用 `_picks.json` 的 ★）、保留哪一段（`in`／`out`，已含 0.5 s 前後餘量，腳本會取整到 1/60 s 的整幀）、要不要裁切（`crop`，錄影的 CSS px）與輸出倍率（`scale`：桌面整張 1＝1920×1080；手機 2＝780×1688——585 是奇數寬、x264 yuv420p 不收，S7 出場又會推到 1.75 倍；回憶卡／印章卡／彩蛋小窗／供應商小窗的裁切 2＝4K 原生解析度，放大成浮卡也清楚）。
 - **`SPEED_MAPS`**：每個 placement（`media.ts` 的 key）在時間軸上放 take 的哪一段，寫成節點 `[時間軸秒, take 秒]`；節點之間線性，斜率 1＝原速、>1＝分鏡寫的「加速」（打字、等回覆、生成日記）、兩個節點 take 秒相同＝定格。take 秒就是 SHOTLOG 的時間，直接對得起來。`<MediaSlot>` 每一幀算出 take 秒、減掉中間檔的 `in`，用一個起點位移過的 `<Sequence>` 把 `<OffthreadVideo>` 釘在那一幀（不用 `<Freeze>`：它的幀號會被夾到合成長度，600 幀的循環裡後段會拿到錯的幀）——**加速不燒進檔案**，改節點就好，不必重轉。
 - **MG 目標**（`media.ts` 的 `TARGETS`／`QUOTE_SPANS`）：圈選、螢光筆、推鏡、點擊波紋的位置，錄影 CSS px，zh／en 分開（按鈕寬度、引用句換行都不同：en 的 “September 14 in “Sleepless before my first / presentation,”” 跨兩行，螢光筆一行接一行掃），在 take 上實測。
 - **跳接**：速度曲線裡兩個節點同一個時間軸秒＝在那一刻換到 take 的另一秒。用來跳過 App 自己的「加載中」深色遮罩（S5 切日記頁、U10 彩蛋）與游標經過時閃一下的 hover（U07 點今天）；跳點前後的畫面相同或只差頁面切換。
@@ -110,7 +110,6 @@ scripts/make-intermediates.sh ui/U12-zh U05  # 只轉某幾個（id 或鏡頭名
 ## 還沒做的事
 
 - ComfyUI 鏡頭（G1–G6）、配樂、音效——目前是佔位／靜音（配樂閃避的邏輯已接好，有檔就生效）。UI 錄影與旁白已接上（第二版剪輯）。
-- U12（S7 手機早安，D+1 早上錄）的輸入列麥克風鍵是空圓（zh-take7、en-take4 都是）。推測原因：照 SHOTLOG，手機 session 在台北 20:4x 就載入頁面、停在密碼框，比圖示修正（677fa88，21:24）早，23:05 登入時沒有重新載入。要修只能重拍 U12（重新載入頁面）；桌面鏡頭都是修正後的。
 - `G1_PHONE_POINT`（S1 → S2 的光從哪裡出發）要等 G1。
 - 響度（整合 −16 LUFS、真峰值 ≤ −1.5 dBTP，§5.1）留到混音時處理，Remotion 這邊只做相對音量。
 - ReadmeLoop 的 GIF（800×450、15 fps、palettegen）與 animated WebP（960×540）輸出是 Stage 3 的事；這裡先出 mp4 母帶。

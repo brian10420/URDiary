@@ -122,18 +122,22 @@ export const CLIPS: readonly Clip[] = [
     note: 'diary 44.60: egg jumps over the chat 44.6–45.1, 「加載中」 45.12–45.43, then sits on the diary page with sparkles, fading 45.95–46.3'},
   {id: 'ui/U10-en', shot: 'U10', lang: 'en', take: 'en-take2', device: 'desktop', in: 62.45, out: 64.25, scale: 2, crop: EGG,
     note: 'diary 62.20: egg jumps over the chat 62.2–62.65, "Loading…" 62.68–62.92, then on the diary page with sparkles, fading 63.5–63.75'},
-  // S7 手機早安問候 — the D+1 morning take (first open of the day, tea mascot). The row carries the greeting
-  // event as its anchor: after another re-shoot, change `take` and re-run the script; the trim follows the event.
-  {id: 'ui/U12-zh', shot: 'U12', lang: 'zh', take: 'zh-take7', device: 'phone', in: 2.3, out: 14.383, scale: 2,
-    anchor: {event: 'check-in greeting shown', at: 10.71}, note: 'sign-in 1.79 → chat 2.37–2.6 → thinking → greeting fades in 10.28–10.57'},
-  {id: 'ui/U12-en', shot: 'U12', lang: 'en', take: 'en-take4', device: 'phone', in: 1.8, out: 11.3, scale: 2,
-    anchor: {event: 'check-in greeting shown', at: 7.63}, note: 'sign-in 1.63 → chat 1.83 → thinking → greeting fades in 7.17–7.43'},
-  // S7 尾（選用）— the calendar tab on the phone: October, today's 10:00 class. Used from after the tab switch,
-  // so the chat page under it (en-take4 shows the en-take3 greeting) never appears.
-  {id: 'ui/U13-zh', shot: 'U13', lang: 'zh', take: 'zh-take8', device: 'phone', in: 1.32, out: 3.42, scale: 2,
-    note: 'chat → 行事曆 tab 1.57 → month grid 1.68–1.80: 2026年10月, today 10:00 大一統計習題課（助教）'},
-  {id: 'ui/U13-en', shot: 'U13', lang: 'en', take: 'en-take4', device: 'phone', in: 1.32, out: 3.42, scale: 2,
-    note: 'chat → Calendar tab 1.57 → month grid 1.77–1.80: October 2026, today 10:00 Intro Stats recitation (TA)'},
+  // S7 手機早安問候 — the D+1 morning re-shoot at the real Taipei morning (2026-10-01 05:0x, first open of the day,
+  // tea mascot, the mic button shows its glyph). Both greetings name yesterday and today's 10:00 class. The row
+  // carries the greeting event as its anchor: after another re-shoot, change `take` and re-run the script.
+  {id: 'ui/U12-zh', shot: 'U12', lang: 'zh', take: 'zh-take10', device: 'phone', in: 1.8, out: 11.617, scale: 2,
+    anchor: {event: 'check-in greeting shown', at: 7.95},
+    note: 'sign-in 1.57 → chat 1.77 → thinking → greeting 「早安語晴，今天有大一統計的助教課吧？…」 fades in 7.52–7.80'},
+  {id: 'ui/U12-en', shot: 'U12', lang: 'en', take: 'en-take7', device: 'phone', in: 1.7, out: 9.817, scale: 2,
+    anchor: {event: 'check-in greeting shown', at: 6.15},
+    note: 'sign-in 1.57 → chat 1.77 → thinking → greeting "Morning Maya. Recitation at 10 today — …" fades in 5.77–6.03'},
+  // S7 尾（選用）— the calendar tab on the phone: October, today's 10:00 class. Same session as the U12 take above:
+  // its first 1.5 s are pixel-identical to U12's last frame, so the cut to it is invisible and the app's own tab
+  // tap + crossfade plays.
+  {id: 'ui/U13-zh', shot: 'U13', lang: 'zh', take: 'zh-take11', device: 'phone', in: 0.85, out: 3.35, scale: 2,
+    note: 'chat (= U12 zh-take10 end) → 行事曆 tab 1.57 → crossfade 1.60–1.80: 2026年10月, today 10:00 大一統計習題課（助教）'},
+  {id: 'ui/U13-en', shot: 'U13', lang: 'en', take: 'en-take8', device: 'phone', in: 0.85, out: 3.35, scale: 2,
+    note: 'chat (= U12 en-take7 end) → Calendar tab 1.57 → crossfade 1.63–1.80: October 2026, today 10:00 Intro Stats recitation (TA)'},
   // S8 核可通知 → 使用者檔案 → 帳本
   {id: 'ui/U15-zh', shot: 'U15', lang: 'zh', take: 'zh-take6', device: 'desktop', in: 2.2, out: 15.68, scale: 1,
     note: 'chat 2.63 → memory dialog 4.80 → text box 7.52 → ledger 10.28 → approve 13.80 → 已生效'},
@@ -186,13 +190,13 @@ export const SPEED_MAPS: Readonly<Record<string, Partial<Record<Lang, readonly K
   'S6.card': {zh: [[47.2, 3.0], [51.2, 7.0]], en: [[47.2, 3.0], [51.2, 7.0]]},
   // the egg on the diary page (after the loading overlay): sparkles, then its own fade-out
   'S6.U10': {zh: [[44.6, 45.45], [45.4, 46.25]], en: [[44.6, 62.95], [45.4, 63.75]]},
-  // S7: the phone slides in 53.2 on the thinking bubble; the wait sped; greeting at 54.8; held until the
-  // calendar tab is tapped at 59.0 (U13 on top), then the phone enlarges into S8.
+  // S7: the phone slides in 53.2 on the thinking bubble; the wait sped; greeting at 54.8, then held; U13 (same
+  // frame) takes over at 58.6, the calendar tab is tapped at 58.82 and the grid is up by 59.05; the phone enlarges into S8.
   'S7.U12': {
-    zh: [[53.2, 2.8], [54.4, 4.0], [54.8, 10.28], [58.9, 14.38]], // 1× | 16× | 1× (greeting event 10.71)
-    en: [[53.2, 2.3], [54.4, 3.5], [54.8, 7.17], [58.9, 11.27]], // 1× | 9.2× | 1× (greeting event 7.63)
+    zh: [[53.2, 2.3], [54.4, 3.5], [54.8, 7.52], [58.6, 11.32]], // 1× | 10× | 1× (greeting event 7.95)
+    en: [[53.2, 2.2], [54.4, 3.4], [54.8, 5.77], [58.6, 9.57]], // 1× | 5.9× | 1× (greeting event 6.15)
   },
-  'S7.U13': {zh: [[59.0, 1.82], [60.1, 2.92]], en: [[59.0, 1.82], [60.1, 2.92]]},
+  'S7.U13': {zh: [[58.6, 1.35], [60.1, 2.85]], en: [[58.6, 1.35], [60.1, 2.85]]},
   // S8: notice clicked 61.4 → 使用者檔案 61.5 → text box 62.9 → 帳本 64.2 → 核可 66.8 → 已生效.
   'S8.U15': {
     zh: [[59.6, 2.7], [61.5, 4.78], [62.9, 7.5], [64.2, 10.26], [66.8, 13.78], [68.2, 15.18]], // 1.1× | 1.9× | 2.1× | 1.35× | 1×

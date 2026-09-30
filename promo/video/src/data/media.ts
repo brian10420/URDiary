@@ -132,7 +132,7 @@ export const INTRO_PLACEMENTS: readonly Placement[] = [
   {key: 'S6.card', shot: 'U07', variant: 'card', fallback: 'U11', at: [47.2, 51.2], srcIn: 0, rate: 1, note: 'S6 右格下方：S5 錄到的鼓勵組印章卡（U07 日面板裁切 ui/U07-<lang>-card；沒蓋到就換 U11）'},
   {key: 'S7.G4', shot: 'G4', at: [50.6, 60.1], srcIn: 0, rate: 1, note: 'S7a 全畫面，之後當手機底圖'},
   {key: 'S7.U12', shot: 'U12', at: [53.2, 60.1], srcIn: 0, rate: 1, note: 'S7b 手機畫面（54.2 起）：思考泡泡 → 早安問候'},
-  {key: 'S7.U13', shot: 'U13', at: [59.0, 60.1], srcIn: 0, rate: 1, note: 'S7 尾（選用）：點「行事曆」→ 10 月月格＋今天的課，蓋在 U12 上；沒有檔案就一直是 U12'},
+  {key: 'S7.U13', shot: 'U13', at: [58.6, 60.1], srcIn: 0, rate: 1, note: 'S7 尾（選用）：同一個 session，從和 U12 最後一幀相同的畫面接上 → 點「行事曆」→ 10 月月格＋今天的課；沒有檔案就一直是 U12'},
   {key: 'S8.U15', shot: 'U15', at: [59.6, 68.2], srcIn: 0, rate: 1, note: 'S8 視窗內'},
   {key: 'S9.U16', shot: 'U16', at: [73.6, 74.6], srcIn: 0, rate: 1, note: 'S9 可選 1 s（storyboard 寫在 75.0–80.0 那段；放在供應商段，Grok 亮起時）：真實的「AI: Grok (xAI)」'},
   {key: 'S10.G5', shot: 'G5', at: [79.8, 88.5], srcIn: 0, rate: 1, freezeFrom: 85.0, note: 'S10 左三分之一；85.0 起定格在尾幀'},
