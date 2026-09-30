@@ -12,7 +12,8 @@
  *
  * 用法（在 repo 根目錄；URDIARY_DATA_DIR＝seed_demo.py 種好的目錄，demo 後端已在 8124 跑著）：
  *   node promo/record/record_shots.js --list                              # session 與鏡頭一覽
- *   node promo/record/record_shots.js --session chain --lang zh [--role copy] [--attempts 3]
+ *   node promo/record/record_shots.js --session chain --lang zh [--role copy] [--attempts 3] [--strict-recall]
+ *     （zh 的 recall 閘門也接受清楚指向 D-16 的轉述式回憶；--strict-recall 改回只認「日期＋《標題》」）
  *   node promo/record/record_shots.js --session phone --lang en           # 其餘：hello whatever login phonecal browse happy
  *   node promo/record/record_shots.js --assemble [--shot U03,U04] [--codec prores|h264] [--threads N] [--keep-raw]
  *   node promo/record/record_shots.js --retrim                            # 修正 -t 之前組裝、尾巴多一段的檔
@@ -229,6 +230,151 @@ function crisisWords() {
   return words;
 }
 
+// 記憶檔的節標題（兩種語言）：直接從後端原始碼讀 SECTION_TITLES（同上，不 import 後端）
+function sectionTitles() {
+  const src = fs.readFileSync(path.join(REPO, 'backend/app/services/memory_files.py'), 'utf8');
+  const m = src.match(/SECTION_TITLES\s*=\s*\{([\s\S]*?)\n\}/);
+  const out = { 'zh-TW': [], en: [] };
+  if (m) for (const q of m[1].matchAll(/"zh-TW":\s*"([^"]+)",\s*"en":\s*"([^"]+)"/g)) { out['zh-TW'].push(q[1]); out.en.push(q[2]); }
+  if (!out.en.length) throw new Error('could not parse SECTION_TITLES from memory_files.py');
+  return out;
+}
+
+// 每日問候的時段稱呼：和後端 interaction_service._time_of_day_label 同一張表（後端時區的牆上小時）
+function timeOfDayLabel(hour, lang) {
+  const en = lang === 'en';
+  if (hour >= 5 && hour < 11) return en ? 'morning' : '早上';
+  if (hour >= 11 && hour < 14) return en ? 'midday' : '中午';
+  if (hour >= 14 && hour < 18) return en ? 'afternoon' : '下午';
+  if (hour >= 18 && hour < 23) return en ? 'evening' : '晚上';
+  return en ? 'late night' : '深夜';
+}
+function tzClock(epochSec, tz) {
+  const s = new Intl.DateTimeFormat('en-GB', { timeZone: tz, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })
+    .format(new Date(epochSec * 1000));
+  return { hhmm: s, hour: Number(s.slice(0, 2)) };
+}
+// 問候裡和「晚上」衝突的「打招呼」字眼（只做提示，最後仍看原文）。只抓問候語本身：
+// 「今天下午的 meeting」「the meeting this afternoon」是在說 14:00 那場會，不算衝突
+const TIME_CONFLICTS = {
+  zh: [/早安/, /早上好/, /早啊/, /午安/, /中午好/, /下午好/, /晚安/, /深夜/, /凌晨/, /這麼晚/],
+  en: [/^\W*(good\s+)?(morning|afternoon)\b/i, /\bgood\s+(morning|afternoon|night)\b/i, /\blate\s+night\b/i, /\bup so late\b/i, /\bstill up\b/i],
+};
+function timeConflicts(text, lang) {
+  return [...new Set(TIME_CONFLICTS[lang].map((re) => (String(text || '').match(re) || [])[0]).filter(Boolean))];
+}
+
+// 麥克風鍵的像素驗收：從「真的錄到的那一幀」裁出按鈕（裝置像素），灰階化後找出墨跡。
+// FA6 的 microphone（f130）是實心膠囊＋U 形支架＋底座：墨跡外框高寬比約 1.45，外框中上段
+// （膠囊）幾乎全是墨。修好之前的空圓沒有這個實心核心。回傳量測值與 ok。
+let FF = null;
+function ff() { return FF || (FF = ffmpegPaths()); }
+function micPixelCheck(pngPath, box, dpr) {
+  const x = Math.max(0, Math.round(box.x * dpr)), y = Math.max(0, Math.round(box.y * dpr));
+  const w = Math.round(box.w * dpr), h = Math.round(box.h * dpr);
+  if (w < 8 || h < 8) return { ok: false, reason: 'button box too small' };
+  const r = spawnSync(ff().ffmpeg, ['-v', 'error', '-i', pngPath, '-vf', `crop=${w}:${h}:${x}:${y},format=gray`,
+    '-f', 'rawvideo', '-pix_fmt', 'gray', '-'], { encoding: 'buffer', maxBuffer: 1 << 24 });
+  if (r.status !== 0 || !r.stdout || r.stdout.length < w * h) return { ok: false, reason: `ffmpeg crop failed: ${String(r.stderr || '').trim()}` };
+  const px = r.stdout;
+  const sorted = Array.from(px.subarray(0, w * h)).sort((a, b) => a - b);
+  const bg = sorted[Math.floor(sorted.length / 2)];
+  let ink = 0, x0 = w, y0 = h, x1 = -1, y1 = -1;
+  for (let j = 0; j < h; j++) for (let i = 0; i < w; i++) {
+    if (Math.abs(px[j * w + i] - bg) > 48) { ink++; if (i < x0) x0 = i; if (i > x1) x1 = i; if (j < y0) y0 = j; if (j > y1) y1 = j; }
+  }
+  if (!ink) return { ok: false, bg, ink: 0, reason: 'no ink in the button (empty)' };
+  const bw = x1 - x0 + 1, bh = y1 - y0 + 1;
+  let core = 0, coreN = 0;
+  for (let j = y0 + Math.round(bh * 0.12); j <= y0 + Math.round(bh * 0.45); j++) {
+    for (let i = x0 + Math.round(bw * 0.38); i <= x0 + Math.round(bw * 0.62); i++) { coreN++; if (Math.abs(px[j * w + i] - bg) > 48) core++; }
+  }
+  const coreRatio = coreN ? core / coreN : 0;
+  const aspect = bh / bw;
+  const ok = coreRatio >= 0.6 && aspect >= 1.2 && aspect <= 1.8 && bh >= h * 0.2;
+  return { ok, bg, ink, ink_ratio: +(ink / (w * h)).toFixed(3), glyph_px: `${bw}x${bh}`, aspect: +aspect.toFixed(2),
+    core_ink: +coreRatio.toFixed(2), crop: `${w}x${h}+${x}+${y}` };
+}
+
+// 錄影中的唯讀探針（不改 DOM）：麥克風鍵、頁尾、記憶視窗的節標題、畫面上的文字
+function probePage(page) {
+  return page.evaluate(() => {
+    const vis = (el) => {
+      if (!el) return false;
+      const cs = getComputedStyle(el);
+      if (cs.display === 'none' || cs.visibility === 'hidden') return false;
+      const b = el.getBoundingClientRect();
+      return b.width > 0 && b.height > 0 && b.bottom > 0 && b.right > 0 && b.top < innerHeight && b.left < innerWidth;
+    };
+    const rect = (el) => { const b = el.getBoundingClientRect(); return { x: b.left, y: b.top, w: b.width, h: b.height }; };
+    const out = {};
+    const btn = document.getElementById('mic-button');
+    const icon = btn && btn.querySelector('i');
+    let rule = false;
+    for (const sh of Array.from(document.styleSheets)) {
+      let rules = null;
+      try { rules = sh.cssRules; } catch (e) { continue; }
+      for (const ru of Array.from(rules || [])) {
+        if (ru.selectorText && /\.fa-microphone::?before/.test(ru.selectorText) && ru.style &&
+          (ru.style.content.includes('\uf130') || /f130/i.test(ru.style.content))) rule = true;
+      }
+    }
+    let onTop = false;
+    if (btn && vis(btn)) {
+      const b = btn.getBoundingClientRect();
+      const el = document.elementFromPoint(b.left + b.width / 2, b.top + b.height / 2);
+      onTop = !!el && (el === btn || btn.contains(el));
+    }
+    const before = icon ? getComputedStyle(icon, '::before').content : null;
+    out.mic = { present: !!btn, visible: vis(btn), on_top: onTop, css_rule: rule,
+      before_is_f130: !!before && (before.includes('\uf130') || /f130/i.test(before)),
+      font_loaded: document.fonts.check('900 16px "Font Awesome 6 Free"', '\uf130'),
+      icon_w: icon ? +icon.getBoundingClientRect().width.toFixed(1) : 0,
+      button_box: btn && vis(btn) ? rect(btn) : null, dpr: devicePixelRatio };
+    const f = document.querySelector('.app-footer');
+    out.footer = f ? { visible: vis(f), text: f.textContent.trim() } : null;
+    const md = document.getElementById('memory-dialog');
+    if (md && vis(md)) {
+      const heads = (id) => { const ta = document.getElementById(id); return ta ? (ta.value.match(/^##[ \t]+.+$/gm) || []).map((s) => s.replace(/^##[ \t]+/, '').trim()) : []; };
+      out.memory = { profile_headings: heads('memory-profile-text'), companion_headings: heads('memory-companion-text'),
+        ledger_rows: Array.from(document.querySelectorAll('#memory-ledger-list .memory-op-text')).map((n) => n.textContent.trim()).slice(0, 40) };
+    }
+    out.page_text = document.body.innerText || '';
+    return out;
+  });
+}
+
+// 一個 take 開頭與結尾的探針 → 驗收資料（麥克風像素取「按鈕在最上層」的那一端的真實幀）
+function acceptanceFromProbes(start, end, meta, rawDir) {
+  CRISIS_WORDS = CRISIS_WORDS || crisisWords();
+  const ends = [['end', end], ['start', start]].filter(([, p]) => p && !p.error);
+  const texts = ends.map(([, p]) => (p.page_text || '').toLowerCase());
+  const out = {
+    page: { stub: ends.some(([, p]) => (p.page_text || '').includes(STUB_MARK)),
+      crisis: CRISIS_WORDS.filter((w) => texts.some((t) => t.includes(w))) },
+    errors: [start && start.error, end && end.error].filter(Boolean),
+  };
+  const anyMic = ends.map(([, p]) => p.mic).find(Boolean);
+  if (anyMic) {
+    out.mic = { css_rule: anyMic.css_rule, before_is_f130: anyMic.before_is_f130, font_loaded: anyMic.font_loaded,
+      icon_w: anyMic.icon_w, sampled: null, pixel: null };
+    const frames = meta.frames.slice().sort((a, b) => a.t - b.t);
+    for (const [which, p] of ends) {
+      if (!(p.mic && p.mic.visible && p.mic.on_top && p.mic.button_box)) continue;
+      const f = which === 'end' ? frames[frames.length - 1] : frames[0];
+      out.mic.sampled = `${which} frame ${f.file}`;
+      try { out.mic.pixel = micPixelCheck(path.join(rawDir, f.file), p.mic.button_box, p.mic.dpr || 1); } catch (e) { out.mic.pixel = { ok: false, reason: String(e.message || e) }; }
+      break;
+    }
+  }
+  const foot = ends.map(([, p]) => p.footer).find((x) => x && x.visible) || ends.map(([, p]) => p.footer).find(Boolean);
+  if (foot) out.footer = foot;
+  const mem = ends.map(([, p]) => p.memory).find(Boolean);
+  if (mem) out.memory = mem;
+  return out;
+}
+let CRISIS_WORDS = null;
+
 // ---------------------------------------------------------------------------
 // 錄影（CDP screencast → 逐幀 PNG＋時間戳）
 // ---------------------------------------------------------------------------
@@ -317,6 +463,7 @@ class Runner {
     this.device = { ...DEVICES[this.session.device] };
     if (this.session.device === 'phone' && this.phoneDpr) this.device.dpr = Number(this.phoneDpr);
     this.d0 = this.manifest.personas[this.lang].d0;
+    this.backendTz = this.manifest.timezone || 'Asia/Taipei';   // 後端 URDIARY_TIMEZONE（種子寫進 manifest）
     this.responses = [];          // 關心的 API 回應（checkin/chat/end）
     this.cur = null;              // 目前這個鏡頭 {shot, take, capture, events, llm, notes}
     this.done = [];               // 已錄完的鏡頭記錄
@@ -475,13 +622,18 @@ class Runner {
       startedAt: new Date().toISOString() };
     await capture.start();
     this.event('recording started');
+    // 畫面最上方的每日問候（主線：再登入那一刻產生）跟著 U03 記下來，驗收它是不是晚上版
+    if (shot === 'U03' && this.state.opening) this.cur.llm.opening_checkin = this.state.opening;
+    this.cur.probeStart = await probePage(this.page).catch((e) => ({ error: String(e.message || e) }));
   }
 
   async stop(status = 'ok', error = null) {
     const c = this.cur;
     if (!c) return;
+    const probeEnd = await probePage(this.page).catch((e) => ({ error: String(e.message || e) }));
     this.event('recording stopped');
     const meta = await c.capture.stop();
+    const probe = acceptanceFromProbes(c.probeStart, probeEnd, meta, c.capture.dir);
     const rec = {
       shot: c.shot, lang: this.lang, take: c.take, session: this.sessionName, device: this.session.device,
       account: this.acct.username, ui_lang: UI_LANG[this.lang], timezone: this.tz || 'Asia/Taipei',
@@ -489,7 +641,7 @@ class Runner {
       started_at: c.startedAt, ended_at: new Date().toISOString(),
       raw_dir: path.relative(this.out, c.capture.dir), raw_duration_s: +(meta.tEnd - meta.t0).toFixed(2),
       frames: meta.stats, events: c.events, llm: c.llm, notes: c.notes, status, error,
-      file: null, ffprobe: null,
+      file: null, ffprobe: null, probe,
     };
     rec.checks = runChecks(rec, this);
     writeJson(path.join(this.out, c.shot, `${this.lang}-take${c.take}.json`), rec);
@@ -549,7 +701,15 @@ const ACTIONS = {
   // 登入後的開場：等 /chat/checkin/ 回來、畫面安定（真問候或靜態歡迎詞都算）
   async awaitOpening(r) {
     const hit = await r.waitResponse(/^\/chat\/checkin\/$/, r.state.loginIdx || 0, 240000).catch(() => null);
-    if (hit && hit.body && hit.body.checkin) r.state.lastCheckin = hit.body.message;
+    if (hit && hit.body && hit.body.checkin) {
+      r.state.lastCheckin = hit.body.message;
+      const clock = tzClock(hit.t, r.backendTz);
+      r.state.opening = { status: hit.status, checkin: true, text: hit.body.message || null, model: hit.body.model_used,
+        at: new Date(hit.t * 1000).toISOString(), backend_tz: r.backendTz, local_hhmm: clock.hhmm,
+        label: timeOfDayLabel(clock.hour, r.lang) };
+    } else {
+      r.state.opening = null;
+    }
     await r.noThinking(3300, 60000);
     await r.page.waitForLoadState('networkidle').catch(() => {});
   },
@@ -841,10 +1001,13 @@ const ACTIONS = {
   async gate(r, kind) {
     if (kind === 'recall') {
       const last = r.done.filter((d) => d.shot === 'U03' || d.shot === 'U04');
-      const ok = last.some((d) => d.checks && d.checks.recall && d.checks.recall.date && d.checks.recall.title);
+      const verbatim = last.some((d) => d.checks && d.checks.recall && d.checks.recall.date && d.checks.recall.title);
+      // zh 旁白不再宣稱「日期＋標題」：清楚指向 D-16 的轉述式回憶也算（--strict-recall 改回只認完整引用）
+      const para = r.lang === 'zh' && !r.strictRecall && last.some((d) => d.checks && d.checks.recall && d.checks.recall.paraphrase);
+      const ok = verbatim || para;
       r.state.recallOk = ok;
-      if (!ok && r.attemptsLeft > 0) { log('gate recall: no date+title citation yet → retry from U03'); return 'abort'; }
-      log(`gate recall: ${ok ? 'cited' : 'not cited, attempts exhausted → continue'}`);
+      if (!ok && r.attemptsLeft > 0) { log(`gate recall: no ${r.lang === 'zh' && !r.strictRecall ? 'D-16 recall' : 'date+title citation'} yet → retry from U03`); return 'abort'; }
+      log(`gate recall: ${verbatim ? 'cited (date+title)' : para ? 'paraphrased recall of D-16' : 'not cited, attempts exhausted → continue'}`);
     }
     if (kind === 'pending') {
       const mr = r.state.endChat && r.state.endChat.memory_review;
@@ -864,6 +1027,7 @@ function llmTexts(rec) {
   const out = [];
   const l = rec.llm || {};
   if (l.checkin && l.checkin.text) out.push(l.checkin.text);
+  if (l.opening_checkin && l.opening_checkin.text) out.push(l.opening_checkin.text);
   for (const x of l.replies || []) if (x.text) out.push(x.text);
   if (l.end_chat) {
     const d = l.end_chat.diary || {};
@@ -884,8 +1048,20 @@ function recallCheck(texts, r) {
     new RegExp(`${mon}\\s+${d}(st|nd|rd|th)?\\b`, 'i'), new RegExp(`${mon.slice(0, 3)}\\.?\\s+${d}\\b`, 'i'), new RegExp(`\\b${d}(st|nd|rd|th)?\\s+(of\\s+)?${mon}`, 'i')];
   const norm = (s) => s.toLowerCase().replace(/[“”"'‘’《》「」]/g, '');
   const all = texts.join('\n');
-  return { target: `${iso} 《${spec.title}》`, date: dateRes.some((re) => re.test(all)), title: norm(all).includes(norm(spec.title)) };
+  // 轉述式回憶：同一句裡同時有「過去」的指涉和 D-16 那篇才有的細節（不在 U04 訊息裡的詞）
+  const para = PARAPHRASE[r.lang];
+  const sentences = all.split(r.lang === 'zh' ? /(?<=[。！？!?])|\n/ : /(?<=[.!?])\s+|\n/).map((s) => s.trim()).filter(Boolean);
+  const hits = sentences.filter((s) => { const t = s.toLowerCase(); return para.past.some((w) => t.includes(w)) && para.details.some((w) => t.includes(w)); });
+  return { target: `${iso} 《${spec.title}》`, date: dateRes.some((re) => re.test(all)), title: norm(all).includes(norm(spec.title)),
+    paraphrase: hits.length > 0, paraphrase_lines: hits.slice(0, 3) };
 }
+const PARAPHRASE = {
+  zh: { details: ['書報討論', '半夜', '爬起來', '講稿', '第一次上台', '第一次報告', '第一次在'],
+    past: ['之前', '上次', '那次', '那天', '那晚', '那時', '記得', '上回', '9 月 14', '9月14', '九月十四', '兩週前', '兩個禮拜前', '前陣子'] },
+  en: { details: ['seminar', 'first presentation', 'ran through', 'the talk', 'got up', "couldn't sleep", 'could not sleep'],
+    past: ['remember', 'last time', 'back on', 'back in', 'that night', 'before your first', 'september 14', 'the 14th', 'earlier this month',
+      'couple of weeks ago', 'two weeks ago', 'wrote'] },
+};
 function runChecks(rec, r) {
   CRISIS = CRISIS || crisisWords();
   const texts = llmTexts(rec);
@@ -901,10 +1077,54 @@ function runChecks(rec, r) {
     checks.egg = e.eggs && e.eggs.length ? e.eggs.join(',') : null;
     checks.pending_ops = e.memory_review ? e.memory_review.pending : null;
     if (rec.shot === 'U06' && checks.egg && /happy|night/.test(checks.egg)) rec.notes.push('EGG POPPED after the heavy chat → discard this take (storyboard S5)');
+    if (rec.shot === 'U06' && typeof checks.valence === 'number' && checks.valence >= 0.45) rec.notes.push(`U06 valence ${checks.valence} ≥ 0.45 → not a heavy-day diary (storyboard S5)`);
     if (rec.shot === 'U10' && !checks.egg) rec.notes.push('no happy egg (valence below 0.45?) → not usable for U10');
+  }
+  // --- 畫面驗收（修好的 UI）：麥克風圖示、頁尾年份、記憶檔節標題的語言、畫面上的 stub／危機詞、問候時段
+  const pr = rec.probe || {};
+  const year = String(new Date(rec.started_at).getFullYear());
+  if (pr.mic) {
+    const px = pr.mic.pixel;
+    checks.mic_glyph = { ok: px ? !!px.ok : !!(pr.mic.css_rule && pr.mic.before_is_f130 && pr.mic.icon_w > 0),
+      how: px ? `pixels (${pr.mic.sampled})` : 'css rule + computed ::before (button not on screen)',
+      css_rule: pr.mic.css_rule, before_is_f130: pr.mic.before_is_f130, font_loaded: pr.mic.font_loaded, icon_w: pr.mic.icon_w,
+      ...(px ? { core_ink: px.core_ink, aspect: px.aspect, glyph_px: px.glyph_px, ink_ratio: px.ink_ratio, reason: px.reason } : {}) };
+    if (!checks.mic_glyph.ok) rec.notes.push(`mic glyph check FAILED (${checks.mic_glyph.how}${px && px.reason ? ': ' + px.reason : ''})`);
+  }
+  if (pr.footer) {
+    checks.footer_year = { ok: pr.footer.text.includes(year) && !/20(1\d|2[0-5])/.test(pr.footer.text), visible: pr.footer.visible, text: pr.footer.text };
+    if (!checks.footer_year.ok) rec.notes.push(`footer does not say ${year}: ${pr.footer.text}`);
+  }
+  if (pr.memory) {
+    TITLES = TITLES || sectionTitles();
+    const want = rec.ui_lang === 'en' ? 'en' : 'zh-TW';
+    const other = want === 'en' ? 'zh-TW' : 'en';
+    const heads = pr.memory.profile_headings || [];
+    const bad = heads.filter((h) => !TITLES[want].includes(h));
+    const ledgerOther = (pr.memory.ledger_rows || []).filter((t) => TITLES[other].some((x) => t.includes(x)));
+    checks.memory_titles = { ok: heads.length > 0 && !bad.length && !ledgerOther.length, lang: want, profile_headings: heads,
+      not_in_lang: bad, ledger_rows_other_lang: ledgerOther };
+    if (!checks.memory_titles.ok) rec.notes.push(`memory section titles not all ${want}: ${JSON.stringify({ bad, ledgerOther, heads })}`);
+  }
+  if (pr.page) {
+    checks.page_stub = pr.page.stub;
+    checks.page_crisis = pr.page.crisis;
+    if (pr.page.stub) rec.notes.push('STUB TEXT ON SCREEN → discard');
+    if (pr.page.crisis.length) rec.notes.push(`crisis word(s) on screen: ${pr.page.crisis.join(', ')}`);
+  }
+  const oc = rec.llm.opening_checkin;
+  if (oc) {
+    const want = rec.lang === 'en' ? 'evening' : '晚上';
+    const conflicts = timeConflicts(oc.text, rec.lang);
+    // 問候本身有沒有明說「晚上」（晚上好／今晚、Evening／tonight）：挑 take 時優先
+    const says = rec.lang === 'en' ? /\bevening\b|\btonight\b/i.test(oc.text || '') : /晚上|今晚/.test(oc.text || '');
+    checks.checkin_time = { label: oc.label, local: `${oc.local_hhmm} ${oc.backend_tz}`, evening: oc.label === want, says_evening: says, conflicts };
+    if (oc.label !== want) rec.notes.push(`opening check-in is the ${oc.label} version, not ${want}`);
+    if (conflicts.length) rec.notes.push(`opening check-in mentions ${conflicts.join(', ')}`);
   }
   return checks;
 }
+let TITLES = null;
 
 // ---------------------------------------------------------------------------
 // 執行一個 session（chain 可以重試）
@@ -925,7 +1145,7 @@ async function runSession(args) {
   for (let attempt = 1; attempt <= attempts; attempt++) {
     const r = new Runner({ session, sessionName: name, lang, role: args.role || session.role, out, dataDir, persona, manifest,
       take: args.take, fixedTake: !!args.take, phoneDpr: args['phone-dpr'], attemptsLeft: attempts - attempt,
-      tz: args.tz || manifest.timezone || 'Asia/Taipei', at: args.at });
+      tz: args.tz || manifest.timezone || 'Asia/Taipei', at: args.at, strictRecall: !!args['strict-recall'] });
     log(`=== session ${name} (${lang}, ${r.acct.username}) attempt ${attempt}/${attempts}`);
     let aborted = false;
     try {
@@ -973,13 +1193,40 @@ function ffprobeJson(ffprobe, file) {
     color_space: s.color_space, color_primaries: s.color_primaries, color_transfer: s.color_transfer };
 }
 
+// 平行組裝（幾個 --assemble 行程同時跑）：每個 take 一把鎖（raw 目錄裡的 .assembling，內容＝pid），
+// 拿不到就跳過；鎖的主人已經不在（被中斷）就接手
+function takeLock(rawDir) {
+  const lock = path.join(rawDir, '.assembling');
+  for (let i = 0; i < 2; i++) {
+    try { fs.writeFileSync(lock, String(process.pid), { flag: 'wx' }); return lock; } catch (e) { if (e.code !== 'EEXIST') throw e; }
+    const pid = Number(fs.readFileSync(lock, 'utf8')) || 0;
+    let alive = false;
+    try { if (pid) { process.kill(pid, 0); alive = true; } } catch (e) { alive = e.code === 'EPERM'; }
+    if (alive) return null;
+    fs.rmSync(lock, { force: true });
+  }
+  return null;
+}
+
 function assembleTake(recPath, opts) {
-  const { ffmpeg, ffprobe } = opts.paths;
-  const rec = readJson(recPath);
+  let rec = readJson(recPath);
   if (rec.file && !opts.force) return rec;
   const rawDir = path.join(opts.out, rec.raw_dir);
+  if (!fs.existsSync(path.join(rawDir, 'frames.json'))) { log(`skip ${recPath}: no raw frames`); return rec; }
+  const lock = takeLock(rawDir);
+  if (!lock) { log(`skip ${path.relative(opts.out, recPath)}: another assembler has it`); return rec; }
+  try {
+    rec = readJson(recPath);   // 拿到鎖之後重讀：別的行程可能剛組裝完
+    if (rec.file && !opts.force) return rec;
+    return assembleLocked(recPath, rec, rawDir, opts);
+  } finally {
+    fs.rmSync(lock, { force: true });
+  }
+}
+
+function assembleLocked(recPath, rec, rawDir, opts) {
+  const { ffmpeg, ffprobe } = opts.paths;
   const metaPath = path.join(rawDir, 'frames.json');
-  if (!fs.existsSync(metaPath)) { log(`skip ${recPath}: no raw frames`); return rec; }
   const meta = readJson(metaPath);
   const frames = meta.frames.slice().sort((a, b) => a.t - b.t);
   const kept = [];
@@ -1126,7 +1373,10 @@ function assembleAll(args) {
   const paths = ffmpegPaths();
   const codec = args.codec === 'h264' ? 'h264' : 'prores';
   const touched = new Set();
-  for (const { path: p, rec } of takeRecords(out, args.shot)) {
+  let todo = takeRecords(out, args.shot).filter(({ rec }) => !args.lang || rec.lang === args.lang);
+  // --longest-first：幾個組裝行程平行跑時，長的先做，尾巴比較短
+  if (args['longest-first']) todo = todo.slice().sort((a, b) => (b.rec.raw_duration_s || 0) - (a.rec.raw_duration_s || 0));
+  for (const { path: p, rec } of todo) {
     if (rec.file && !args.force) continue;
     if (rec.status !== 'ok' && !args['include-failed']) { log(`skip failed take ${p}`); continue; }
     try {
@@ -1134,6 +1384,7 @@ function assembleAll(args) {
       touched.add(rec.shot);
     } catch (e) { log(`ASSEMBLY ERROR ${p}: ${e.message}`); }
   }
+  if (args['no-sheets']) return;   // 平行組裝時各行程不寫 contact sheet，最後用 --sheets 一次重做
   const shots = args.sheets === 'all' ? fs.readdirSync(out).filter((d) => /^U\d\d$/.test(d)) : Array.from(touched);
   for (const s of shots.sort()) contactSheet(out, s, paths);
 }
@@ -1189,6 +1440,10 @@ function buildShotlog(args) {
       const l = rec.llm || {};
       if (l.script) for (const s of l.script) L.push(`- 腳本訊息（i18n \`${s.key}\`，非 LLM）：「${s.text}」`);
       if (l.checkin) { L.push(`- 每日問候（${l.checkin.model || ''}，checkin=${l.checkin.checkin}${l.checkin.tea_mascot_rendered ? '，帶端茶吉祥物' : ''}）：`, '', quote(l.checkin.text || '（無）'), ''); }
+      if (l.opening_checkin) {
+        const oc = l.opening_checkin;
+        L.push(`- 畫面上方的每日問候（${oc.model || ''}；後端 ${oc.backend_tz} 當地 ${oc.local_hhmm}＝${oc.label}版）：`, '', quote(oc.text || '（無）'), '');
+      }
       for (const [i, x] of (l.replies || []).entries()) { L.push(`- 回覆 ${i + 1}（${x.model || ''}）：`, '', quote(x.text || '（無）'), ''); }
       if (l.end_chat) {
         const e = l.end_chat; const d = e.diary || {};
@@ -1205,7 +1460,16 @@ function buildShotlog(args) {
       if (l.approved_op) L.push(`- 核可的那一筆：${l.approved_op.text}${l.approved_op.isAdd ? '' : '（不是「新增到」）'}`);
       const c = rec.checks || {};
       const bits = [`stub 字樣 ${c.stub_text ? '⚠️有' : '無'}`, `危機詞 ${c.crisis_words && c.crisis_words.length ? '⚠️' + c.crisis_words.join('、') : '無'}`];
-      if (c.recall) bits.push(`引用 ${c.recall.target}：日期 ${c.recall.date ? '✓' : '✗'}、標題 ${c.recall.title ? '✓' : '✗'}`);
+      if (c.recall) bits.push(`引用 ${c.recall.target}：日期 ${c.recall.date ? '✓' : '✗'}、標題 ${c.recall.title ? '✓' : '✗'}` +
+        ('paraphrase' in c.recall ? `、轉述式回憶 ${c.recall.paraphrase ? '✓「' + c.recall.paraphrase_lines.join('」「') + '」' : '✗'}` : ''));
+      if (c.checkin_time) bits.push(`上方問候 ${c.checkin_time.label}版（${c.checkin_time.local}）${c.checkin_time.evening ? '✓' : '⚠️'}` +
+        (c.checkin_time.says_evening ? '、問候明說晚上' : c.checkin_time.says_evening === false ? '、問候沒明說晚上' : '') +
+        (c.checkin_time.conflicts.length ? `，⚠️ 提到 ${c.checkin_time.conflicts.join('、')}` : ''));
+      if (c.mic_glyph) bits.push(`麥克風圖示 ${c.mic_glyph.ok ? '✓' : '⚠️✗'}（` + (c.mic_glyph.core_ink !== undefined
+        ? `像素：膠囊核心墨 ${c.mic_glyph.core_ink}、圖形 ${c.mic_glyph.glyph_px}、高寬比 ${c.mic_glyph.aspect}` : `按鈕不在畫面上；CSS 規則 ${c.mic_glyph.css_rule ? '有' : '無'}、::before＝f130 ${c.mic_glyph.before_is_f130 ? '是' : '否'}`) + '）');
+      if (c.footer_year) bits.push(`頁尾「${c.footer_year.text}」${c.footer_year.ok ? '✓' : '⚠️'}${c.footer_year.visible ? '' : '（不在畫面上）'}`);
+      if (c.memory_titles) bits.push(`記憶檔節標題 ${c.memory_titles.lang} ${c.memory_titles.ok ? '✓' : '⚠️✗'}（${c.memory_titles.profile_headings.join('／')}）`);
+      if ('page_stub' in c) bits.push(`畫面文字 stub ${c.page_stub ? '⚠️有' : '無'}、危機詞 ${c.page_crisis && c.page_crisis.length ? '⚠️' + c.page_crisis.join('、') : '無'}`);
       if ('valence' in c) bits.push(`valence ${c.valence}`);
       if ('egg' in c) bits.push(`彩蛋 ${c.egg || '無'}`);
       if ('pending_ops' in c) bits.push(`待核可 ${c.pending_ops}`);

@@ -30,8 +30,11 @@ node promo/record/record_shots.js --session happy  --lang zh  # U10 開心彩蛋
 node promo/record/record_shots.js --session hello  --lang en  # U02；whatever＝U17；login＝U01；phonecal＝只有 U13
 
 # 2) 組裝成 60 fps 中間檔＋ffprobe 驗證＋contact sheet（預設 ProRes 422 HQ；--codec h264 改 H.264 CRF 12）
-node promo/record/record_shots.js --assemble [--shot U03,U04] [--threads 3] [--keep-raw]
-#    4K ProRes 很吃 CPU（實測單一工作約 5–14 倍實際長度，看機器忙不忙）；可以按鏡頭分成幾個工作平行跑
+node promo/record/record_shots.js --assemble [--shot U03,U04] [--lang zh] [--threads 3] [--keep-raw]
+#    4K ProRes 很吃 CPU（實測單一工作約 5–14 倍實際長度，看機器忙不忙）。可以同時開幾個組裝行程：
+#    每個 take 有一把鎖（raw 目錄裡的 .assembling），別的行程會跳過；--longest-first 長的先做，
+#    --no-sheets 讓各行程不寫 contact sheet（最後用 --sheets 一次重做）。例：8 核開 4 個
+#    node promo/record/record_shots.js --assemble --threads 2 --longest-first --no-sheets
 node promo/record/record_shots.js --sheets     # 只重做每個鏡頭的 contact sheet
 
 # 3) 產生 SHOTLOG.md（挑選建議寫在 <out>/_picks.json，會併進去）
@@ -69,6 +72,40 @@ node promo/record/record_shots.js --session morning2 --lang en --at 2026-10-01T0
 
 鐵律：05:00 之後，在錄影開始之前**不能有任何登入**（登入就會呼叫 check-in，把「今天第一次」用掉）。
 所以設定階段（登入、開關設定、停在密碼框）一律在 05:00 之前做完，時間到了只按「登入」。
+
+## 晚上版：S3／S4 要在晚上（台北已過 23:00 也能錄）
+
+分鏡 §3 的 S3／S4 發生在晚上：U03 畫面最上方的每日問候要是「晚上好／Evening」（`_time_of_day_label`：18:00–22:59，
+看後端的 `URDIARY_TIMEZONE`）。台北太晚時，把整個隔離環境放到一個「現在是 18:xx–20:xx、而且和台北同一天」的時區，
+例如 Europe/Moscow（UTC+3：台北 23:20＝莫斯科 18:20）。種子、demo 後端、錄影器（seed 維護旗標）用同一個
+`URDIARY_TIMEZONE`；瀏覽器時區預設取種子 manifest 的時區，不必另給 `--tz`：
+
+```bash
+TZ=Europe/Moscow date                                  # 先確認：18:xx–20:xx，而且日期和台北一樣
+export URDIARY_TIMEZONE=Europe/Moscow
+export URDIARY_DATA_DIR=$(mktemp -d /tmp/urdiary-rec-XXXXXX)
+.venv/bin/python promo/demo/seed_demo.py               # 摘要要印出 D0＝今天、D-16＝錄 S4 的那一篇
+promo/demo/run_demo_backend.sh                          # 另一個終端機（同樣 export 那個時區）
+```
+
+U06（結束對話）與 U10（開心彩蛋）要在當地 22:00 以前：22:00 之後存日記會跳晚安版彩蛋。主線要在當地 23:00 以前錄完。
+zh 的 `chain` 閘門也接受「清楚指向 D-16 的轉述式回憶」（同一句裡有過去的指涉＋D-16 才有的細節，例如
+「你之前也因為第一次書報討論失眠過，那時候是準備到半夜還爬起來再順講稿」）；`--strict-recall` 改回只認「日期＋《標題》」。
+
+## 自動驗收（每個 take 的 JSON `checks`，SHOTLOG 會列出）
+
+開錄與停錄的那一刻各跑一次唯讀探針（不改 DOM），再加上錄到的真實幀：
+
+- **麥克風圖示**：按鈕在畫面最上層時，從那一端的真實幀裁出按鈕（裝置像素）做像素驗收——FA6 microphone
+  是實心膠囊：墨跡外框高寬比約 1.45，外框中上段幾乎全是墨（修好之前的空圓裁出來是 0 墨）。按鈕不在畫面上的
+  鏡頭（日記頁、行事曆、記憶視窗）改驗 CSS 規則 `.fa-microphone::before`＋按鈕上計算出的 `::before` 是 U+F130。
+- **頁尾年份**：`.app-footer` 的文字要有錄影當年（2026），不能有 2010–2025。
+- **記憶檔節標題**：記憶視窗開著時（U14／U15），使用者檔案的 `## ` 標題要全部是介面語言那一套
+  （`memory_files.SECTION_TITLES`：en＝Name & identity…、zh＝稱呼與身分…），帳本列不能出現另一種語言的節名。
+- **畫面文字**：`document.body.innerText` 裡沒有 stub 字樣、沒有危機詞（另外 LLM 原文照舊檢查）。
+- **問候時段**：主線 U03 記下再登入那一刻的每日問候原文、後端時區的當地時間與時段（要是晚上／evening），
+  並列出問候裡和晚上衝突的字眼（早安、下午、深夜…）。
+- U06 的 valence ≥ 0.45 或跳了彩蛋會寫進備註（S5 要安靜版）。
 
 ## 鏡頭表是資料
 
