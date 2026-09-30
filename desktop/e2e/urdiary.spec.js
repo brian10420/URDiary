@@ -386,7 +386,10 @@ test.describe.serial('URDiary mobile E2E journey', () => {
     // html.vt-running 已清掉。finally 切回 reduce，後面若再加 test 也不受影響。
     test('view transitions: tab switches animate with motion allowed and settle into the single-pane layout', async () => {
         // 前面整段都在 reduce 下（這個頁面自 reload 後）：一次轉場都不該開過
-        expect(await page.evaluate(() => window.__vtCalls)).toBe(0);
+        const vtCalls = await page.evaluate(() => window.__vtCalls);
+        test.skip(typeof vtCalls !== 'number',
+            'window.__vtCalls is not a number: the startViewTransition counter was not installed (init script missing or browser lacks the API)');
+        expect(vtCalls).toBe(0);
 
         await page.emulateMedia({ reducedMotion: 'no-preference' });
         try {

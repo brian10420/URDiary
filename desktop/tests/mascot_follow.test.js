@@ -101,6 +101,18 @@ describe('跟隨的 DOM 接線', () => {
         expect(document.querySelector('#login svg').classList.contains('mm-settle')).toBe(true);
     });
 
+    it('混合裝置：觸控看向後 700ms 內改動滑鼠——臉繼續跟滑鼠，不會在 700ms 時被舊計時器拉回正中', () => {
+        MascotMotion.init();
+        pointer('pointerdown', 500, -2000, 'touch');
+        vi.advanceTimersByTime(300);
+        pointer('pointermove', 3000, 300, 'mouse');
+        vi.advanceTimersByTime(20);
+        expect(t('.mm-face .mm-eyes')).toBe('translate(6.00px, 0.00px)');
+        vi.advanceTimersByTime(700);                    // 已過原本的回正時間點
+        expect(t('.mm-face .mm-eyes')).toBe('translate(6.00px, 0.00px)');
+        expect(document.querySelector('#login svg').classList.contains('mm-settle')).toBe(false);
+    });
+
     it('觸控的 pointermove 不觸發滑鼠式跟隨（手指拖曳時不亂轉）', () => {
         MascotMotion.init();
         pointer('pointermove', 3000, 300, 'touch');

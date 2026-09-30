@@ -117,6 +117,26 @@ describe('行事曆接線：urdiary:diary-saved → 下一次載入壓印一次'
         expect(pressed().length).toBe(0);
     });
 
+    test('重繪途中丟錯：catch 裡的重繪與之後的重繪都不重播壓印', async () => {
+        saved({ diaryId: 7, quiet: false, dayNote: true });
+        const real = MascotModule.stampIcon;
+        let threw = false;
+        vi.spyOn(MascotModule, 'stampIcon').mockImplementation(function (stamp, size) {
+            if (size === 40 && !threw) { threw = true; throw new Error('render boom'); }   // 日面板的章卡：第一次丟錯
+            return real.apply(this, arguments);
+        });
+        window.UIManager = { showToast: vi.fn() };
+        const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+        await CalendarModule.loadMonth();
+        expect(threw).toBe(true);
+        expect(pressed().length).toBe(0);      // catch 內重繪不該再帶壓印 class
+        document.querySelector(`[data-date="${NOTE.date}"]`).click();
+        expect(pressed().length).toBe(0);
+        errSpy.mockRestore();
+        MascotModule.stampIcon.mockRestore();
+        delete window.UIManager;
+    });
+
     test('換帳號（reset）：前一個帳號等著壓的章清空', async () => {
         saved({ diaryId: 7, quiet: false, dayNote: true });
         CalendarModule.reset();

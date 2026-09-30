@@ -62,4 +62,16 @@ describe('排程器 × 真模板（jsdom）', () => {
         expect(document.querySelector('#diary svg').classList.contains('mm-blink')).toBe(false);
         expect(document.querySelector('#tea svg').classList.contains('mm-blink')).toBe(false);
     });
+
+    it('執行期排除：就算 idle 旗標的吉祥物被放進聊天訊息區或彩蛋浮層，也不眨眼', () => {
+        const inChat = document.querySelector('.chat-messages');
+        inChat.insertAdjacentHTML('beforeend', `<div id="flagged">${MascotModule.emptyHtml('calendar', 'x')}</div>`);
+        document.body.insertAdjacentHTML('beforeend',
+            `<div class="mascot-egg"><div id="flagged-egg">${MascotModule.emptyHtml('calendar', 'x')}</div></div>`);
+        expect(document.querySelector('#flagged svg').hasAttribute('data-mm-idle')).toBe(true);
+        vi.advanceTimersByTime(3000);
+        expect(document.querySelector('#cal svg').classList.contains('mm-blink')).toBe(true);   // 對照：正常的仍眨
+        expect(document.querySelector('#flagged svg').classList.contains('mm-blink')).toBe(false);
+        expect(document.querySelector('#flagged-egg svg').classList.contains('mm-blink')).toBe(false);
+    });
 });

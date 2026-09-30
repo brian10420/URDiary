@@ -110,7 +110,7 @@ const UIManager = (function() {
     // 以「待套用的狀態」為準做決策：View Transition 的 DOM 更新是非同步的，程式觸發的
     // 連續導覽（例如 endChat 500ms 後自動 .click() 日記頁籤）不能拿過期的 currentViewState 判斷。
     function handleNavigation(view) {
-        console.log(`處理導航點擊: ${view}, 當前狀態: ${currentViewState}`);
+        console.log(`處理導航點擊: ${view}, 當前狀態: ${pendingViewState || currentViewState}`);
 
         try {
             const next = resolveNavigation(pendingViewState || currentViewState, view);

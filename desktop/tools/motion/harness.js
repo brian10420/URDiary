@@ -107,6 +107,9 @@
             setup: (stage) => {
                 mount(stage, `<div class="h-pane h-chat">${MascotModule.welcomeHtml()}</div>` +
                     `<div class="h-pane h-cal" hidden>${MascotModule.emptyHtml('calendar', '')}</div>`);
+                if (typeof document.startViewTransition !== 'function') {
+                    throw new Error('view-transition scene needs document.startViewTransition (Chromium 111+); this browser lacks it');
+                }
                 const transition = document.startViewTransition(() => {
                     stage.querySelector('.h-chat').hidden = true;
                     stage.querySelector('.h-cal').hidden = false;

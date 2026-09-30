@@ -39,6 +39,7 @@ const OnboardingModule = (function () {
      * typeof 守衛：測試可不載 mascot.js。
      */
     function celebrate(kind, name) {
+        if (!active) return;   // reset()（換帳號）之後才觸發的腳本回呼不能替下一位使用者畫浮層
         if (typeof MascotModule === 'undefined') return;
         if (kind === 'wave' && typeof MascotModule.showOnboardingEgg === 'function') {
             MascotModule.showOnboardingEgg();

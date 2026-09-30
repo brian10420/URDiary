@@ -114,6 +114,7 @@ const MascotMotion = (function () {
     let lastPointer = null;                // 最近一次滑鼠／筆的位置（rAF 合併後才計算）
     let lookFrame = null;
     let settleTimers = new WeakMap();      // 觸控回正計時器（每次觸控一次性，不是常駐）
+    const reactTimers = new Map();         // svg → 反應收尾計時器（重播時先清舊的；reduced-motion 生效時全清）
 
     function isReducedMotion() { return reduced; }
 
@@ -136,7 +137,8 @@ const MascotMotion = (function () {
     /** 待機吉祥物（模板加了 data-mm-idle 的 <svg>）中，此刻在畫面上、臉上是睜眼的那些。 */
     function collectIdle() {
         return Array.prototype.filter.call(document.querySelectorAll('svg[data-mm-idle]'), function (svg) {
-            return isShown(svg) && !!svg.querySelector('.mm-face:not(.mm-face-alt) .mm-eyes[data-mm-eyes="dot"]');
+            // 執行期排除（同 isTapAllowed）：模板旗標之外再擋一次放錯位置的吉祥物
+            return !svg.closest('.chat-messages, .mascot-egg') && isShown(svg) && !!svg.querySelector('.mm-face:not(.mm-face-alt) .mm-eyes[data-mm-eyes="dot"]');
         });
     }
 
@@ -184,10 +186,12 @@ const MascotMotion = (function () {
         if (typeof MascotModule !== 'undefined' && typeof MascotModule.reactionHeartSvg === 'function') {
             svg.insertAdjacentHTML('beforeend', MascotModule.reactionHeartSvg());
         }
-        setTimeout(function () {
+        clearTimeout(reactTimers.get(svg));
+        reactTimers.set(svg, setTimeout(function () {
+            reactTimers.delete(svg);
             svg.classList.remove('mm-react');
             removeHearts(svg);
-        }, REACT_MS);
+        }, REACT_MS));
         return true;
     }
 
@@ -230,6 +234,7 @@ const MascotMotion = (function () {
         const c = faceCenter(svg);
         if (!c) return false;
         svg.classList.remove('mm-settle');
+        clearTimeout(settleTimers.get(svg));   // 混合裝置：觸控後改用滑鼠，舊的回正計時器不能再把臉拉回正中
         applyLook(svg, computeLookOffset(c, { x: x, y: y }, LOOK_MAX, LOOK_REACH_PX));
         return true;
     }
@@ -273,6 +278,8 @@ const MascotMotion = (function () {
             document.querySelectorAll('.' + cls).forEach(function (el) { el.classList.remove(cls); });
         });
         removeHearts(document);
+        reactTimers.forEach(function (id) { clearTimeout(id); });
+        reactTimers.clear();
         document.querySelectorAll('svg[data-mm-follow]').forEach(function (svg) { applyLook(svg, null); });
     }
 

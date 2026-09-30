@@ -489,6 +489,7 @@ const CalendarModule = (function() {
             pressDates = new Set();
             scheduleReminders();
         } catch (error) {
+            pressDates = new Set();   // 重繪途中丟錯：catch 內的重繪與之後的重繪都不能重播壓印
             console.error('載入行事曆事件失敗:', error);
             // 載入失敗時不留舊月份的殘影，避免使用者誤以為新月份沒有事件。
             // 注意：**不動 todaysOccurrences** —— 提醒是背景功能，不該被某次
@@ -498,6 +499,7 @@ const CalendarModule = (function() {
             renderDayPanel(selectedDate);
             UIManager.showToast(I18N.t('calendar.loadFailed'));
         } finally {
+            pressDates = new Set();
             isLoading = false;
         }
     }

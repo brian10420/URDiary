@@ -87,6 +87,24 @@ describe('揮手進場：綁在 onboarding 啟動', () => {
     });
 });
 
+describe('換帳號（reset）之後遲到的腳本回呼', () => {
+    it('reset 後才觸發的揮手回呼：不畫浮層（celebrate 先看 active）', async () => {
+        ChatModule.setScriptDelayRange(30, 30);
+        try {
+            installApi({ completed: false, answered_keys: [] });
+            ChatModule.init();
+            await new Promise((r) => setTimeout(r, 5));   // 流程已啟動、腳本回呼還在假思考延遲裡
+            expect(OnboardingModule.isActive()).toBe(true);
+            OnboardingModule._test.reset();
+            await new Promise((r) => setTimeout(r, 80));  // 回呼此時才觸發
+            expect(MascotModule.showOnboardingEgg).not.toHaveBeenCalled();
+            expect(document.querySelector('.mascot-egg')).toBeNull();
+        } finally {
+            ChatModule.setScriptDelayRange(0, 0);
+        }
+    });
+});
+
 describe('取名慶祝：綁在取名定案', () => {
     it('給了名字：namingAck 出現之後才慶祝，帶剝好的名字', async () => {
         await start({ completed: false, answered_keys: [] });

@@ -116,6 +116,31 @@ describe('MascotMotion.react＋點擊委派', () => {
         expect(MascotMotion.react(login())).toBe(true);
     });
 
+    it('再次反應不被前一輪的收尾計時器截斷（每隻各自追蹤、重播時先清掉舊計時器）', () => {
+        MascotMotion.init();
+        expect(MascotMotion.react(login())).toBe(true);        // t=0，舊計時器排在 900
+        vi.advanceTimersByTime(500);
+        MascotMotion._test.teardown();                         // 限流表重建（模擬限流已過）
+        MascotMotion.init();
+        expect(MascotMotion.react(login())).toBe(true);        // t=500，新的收尾在 1400
+        vi.advanceTimersByTime(400);                           // t=900：舊計時器原本會在這裡截斷
+        expect(login().classList.contains('mm-react')).toBe(true);
+        expect(login().querySelectorAll('[data-mm-heart]').length).toBe(1);
+        vi.advanceTimersByTime(500);                           // t=1400
+        expect(login().classList.contains('mm-react')).toBe(false);
+        expect(login().querySelectorAll('[data-mm-heart]').length).toBe(0);
+    });
+
+    it('reduced-motion 生效時一併清掉待收的計時器（沒有殘留）', () => {
+        setReduced(false);
+        MascotMotion.init();
+        MascotMotion.react(login());
+        const before = vi.getTimerCount();
+        reducedListeners.forEach((fn) => fn({ matches: true }));
+        expect(vi.getTimerCount()).toBe(before - 2);   // 待機排程器＋反應收尾計時器
+        expect(login().classList.contains('mm-react')).toBe(false);
+    });
+
     it('聊天訊息區與彩蛋浮層裡的吉祥物：點了也不反應', () => {
         MascotMotion.init();
         clickOn(document.querySelector('#in-chat svg'));
