@@ -1,0 +1,507 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>URDiary — An AI diary companion that remembers you</title>
+    <meta name="description" content="URDiary is a free, open-source AI diary companion: it listens first, remembers the days you wrote about, and turns a conversation into a diary entry. Your diary is stored on your own computer.">
+    <meta name="color-scheme" content="light dark">
+    <meta name="theme-color" content="#f9f3e6" media="(prefers-color-scheme: light)">
+    <meta name="theme-color" content="#1c1511" media="(prefers-color-scheme: dark)">
+    <!--
+      The four absolute URLs below are link-preview / search metadata only. Everything the page
+      loads or links to inside the site is relative — it is served from /URDiary/ on GitHub Pages.
+    -->
+    <link rel="canonical" href="https://brian10420.github.io/URDiary/">
+    <meta property="og:type" content="website">
+    <meta property="og:site_name" content="URDiary">
+    <meta property="og:title" content="URDiary — An AI diary companion that remembers you">
+    <meta property="og:description" content="URDiary is a free, open-source AI diary companion: it listens first, remembers the days you wrote about, and turns a conversation into a diary entry. Your diary is stored on your own computer.">
+    <meta property="og:url" content="https://brian10420.github.io/URDiary/">
+    <meta property="og:image" content="https://brian10420.github.io/URDiary/assets/og-image.png">
+    <meta property="og:image:width" content="1200">
+    <meta property="og:image:height" content="630">
+    <meta property="og:image:alt" content="URDiary — the book mascot waving hello, with the line “An AI diary companion that remembers you” in English and Chinese.">
+    <meta property="og:locale" content="en_US">
+    <meta property="og:locale:alternate" content="zh_TW">
+    <meta name="twitter:card" content="summary_large_image">
+    <link rel="icon" href="vendor/favicon.ico" sizes="any">
+    <link rel="icon" href="vendor/icon-192.png" type="image/png" sizes="192x192">
+    <link rel="apple-touch-icon" href="vendor/apple-touch-icon-180.png">
+    <script>
+        /* Before first paint: saved language → browser language (zh* → zh-TW, else en).
+           The body stays hidden until app.js has filled in the text (no flash of empty copy);
+           the timeout makes sure a failed app.js can never leave the page blank. */
+        (function () {
+            var d = document.documentElement, l = null;
+            try { l = localStorage.getItem('urdiary-site-lang'); } catch (e) { /* storage off */ }
+            if (l !== 'zh-TW' && l !== 'en') l = /^zh/i.test(navigator.language || '') ? 'zh-TW' : 'en';
+            d.lang = l;
+            d.className += ' js';
+            setTimeout(function () { d.className += ' is-ready'; }, 3000);
+        })();
+    </script>
+    <link rel="stylesheet" href="vendor/mascot.css">
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <a class="skip-link" href="#main" data-i18n="a11y.skip"></a>
+
+    <header class="site-header" id="site-header">
+        <div class="wrap header-inner">
+            <a class="brand" href="#top">
+                <img class="brand-icon" src="vendor/icon-192.png" alt="" width="32" height="32">
+                <span class="wordmark" data-i18n="brand"></span>
+            </a>
+            <nav class="site-nav" data-i18n-attr="aria-label:nav.label">
+                <ul>
+                    <li><a href="#features" data-i18n="nav.features"></a></li>
+                    <li><a href="#playground" data-i18n="nav.playground"></a></li>
+                    <li><a href="#video" data-i18n="nav.video"></a></li>
+                    <li><a href="#start" data-i18n="nav.start"></a></li>
+                </ul>
+            </nav>
+            <div class="header-actions">
+                <button id="lang-toggle" class="lang-toggle" type="button" data-i18n-attr="aria-label:lang.toggleLabel">
+                    <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.6 2.8 3.9 5.8 3.9 9s-1.3 6.2-3.9 9c-2.6-2.8-3.9-5.8-3.9-9S9.4 5.8 12 3z"/></svg>
+                    <span data-i18n="lang.toggle"></span>
+                </button>
+                <a class="icon-link" href="https://github.com/brian10420/URDiary" data-i18n-attr="aria-label:nav.github;title:nav.github">
+                    <svg class="icon-fill" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M8 0c4.42 0 8 3.58 8 8a8.013 8.013 0 0 1-5.45 7.59c-.4.08-.55-.17-.55-.38 0-.27.01-1.13.01-2.2 0-.75-.25-1.23-.54-1.48 1.78-.2 3.65-.88 3.65-3.95 0-.88-.31-1.59-.82-2.15.08-.2.36-1.02-.08-2.12 0 0-.67-.22-2.2.82-.64-.18-1.32-.27-2-.27-.68 0-1.36.09-2 .27-1.53-1.03-2.2-.82-2.2-.82-.44 1.1-.16 1.92-.08 2.12-.51.56-.82 1.28-.82 2.15 0 3.06 1.86 3.75 3.64 3.95-.23.2-.44.55-.51 1.07-.46.21-1.61.55-2.33-.66-.15-.24-.6-.83-1.23-.82-.67.01-.27.38.01.53.34.19.73.9.82 1.13.16.45.68 1.31 2.69.94 0 .67.01 1.3.01 1.49 0 .21-.15.45-.55.38A7.995 7.995 0 0 1 0 8c0-4.42 3.58-8 8-8Z"/></svg>
+                </a>
+            </div>
+        </div>
+    </header>
+
+    <main id="main" tabindex="-1">
+        <!-- 1 · Hero ------------------------------------------------------------------ -->
+        <section class="hero" id="top" aria-labelledby="hero-title">
+            <div class="wrap hero-grid">
+                <div class="hero-copy">
+                    <p class="eyebrow-pill"><span class="dot" aria-hidden="true"></span><span data-i18n="hero.eyebrow"></span></p>
+                    <h1 class="hero-title" id="hero-title">
+                        <span class="wordmark" data-i18n="brand"></span>
+                        <span class="promise" data-i18n-html="hero.promise"></span>
+                    </h1>
+                    <p class="hero-lead" data-i18n="hero.lead"></p>
+                    <div class="cta-row">
+                        <a class="btn btn-primary" href="https://github.com/brian10420/URDiary">
+                            <svg class="icon-fill" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M8 0c4.42 0 8 3.58 8 8a8.013 8.013 0 0 1-5.45 7.59c-.4.08-.55-.17-.55-.38 0-.27.01-1.13.01-2.2 0-.75-.25-1.23-.54-1.48 1.78-.2 3.65-.88 3.65-3.95 0-.88-.31-1.59-.82-2.15.08-.2.36-1.02-.08-2.12 0 0-.67-.22-2.2.82-.64-.18-1.32-.27-2-.27-.68 0-1.36.09-2 .27-1.53-1.03-2.2-.82-2.2-.82-.44 1.1-.16 1.92-.08 2.12-.51.56-.82 1.28-.82 2.15 0 3.06 1.86 3.75 3.64 3.95-.23.2-.44.55-.51 1.07-.46.21-1.61.55-2.33-.66-.15-.24-.6-.83-1.23-.82-.67.01-.27.38.01.53.34.19.73.9.82 1.13.16.45.68 1.31 2.69.94 0 .67.01 1.3.01 1.49 0 .21-.15.45-.55.38A7.995 7.995 0 0 1 0 8c0-4.42 3.58-8 8-8Z"/></svg>
+                            <span data-i18n="hero.ctaGithub"></span>
+                        </a>
+                        <a class="btn btn-ghost" href="#features">
+                            <span data-i18n="hero.ctaTour"></span>
+                            <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 5v14M6.5 13.5 12 19l5.5-5.5"/></svg>
+                        </a>
+                    </div>
+                    <p class="hero-trust">
+                        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="5" y="10.5" width="14" height="10" rx="2.5"/><path d="M8.5 10.5V8a3.5 3.5 0 0 1 7 0v2.5"/></svg>
+                        <span><span data-i18n="hero.trust"></span> <a href="#f-local" data-i18n="hero.trustLink"></a></span>
+                    </p>
+                </div>
+
+                <div class="hero-visual">
+                    <div class="stage-wrap" id="hero-stage">
+                        <div class="stage">
+                            <video class="stage-video" id="hero-video" muted loop playsinline preload="auto" hidden data-i18n-attr="aria-label:hero.videoLabel"></video>
+                            <span class="sticker s1" data-stamp="sun" aria-hidden="true"></span>
+                            <span class="sticker s2" data-stamp="music" aria-hidden="true"></span>
+                            <span class="sticker s3" data-stamp="coffee" aria-hidden="true"></span>
+                            <span class="sticker s4" data-stamp="flower" aria-hidden="true"></span>
+                        </div>
+                        <button type="button" class="stage-mascot mascot-btn" id="hero-mascot" data-pose="welcome" data-i18n-attr="aria-label:hero.mascotLabel"></button>
+                        <p class="tap-hint" id="tap-hint" aria-hidden="true">
+                            <span data-i18n="hero.tapHint"></span>
+                            <svg viewBox="0 0 56 44" focusable="false"><path d="M50 5C38 4 24 9 17 19c-3.4 4.8-4.8 10-4.8 16"/><path d="M5.5 29.5 12 37.5l7.5-7"/></svg>
+                        </p>
+                        <button type="button" class="video-toggle" id="hero-video-toggle" hidden>
+                            <svg class="icon-fill i-pause" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M7.5 5h3v14h-3zM13.5 5h3v14h-3z"/></svg>
+                            <svg class="icon-fill i-play" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M8 5.5v13l11-6.5z"/></svg>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Heard · Remembered · Seen --------------------------------------------------- -->
+        <section class="pillars" aria-labelledby="pillars-title">
+            <div class="wrap">
+                <h2 class="pillars-title reveal" id="pillars-title" data-i18n="pillars.title"></h2>
+                <ul class="pillar-grid">
+                    <li class="pillar reveal">
+                        <span class="badge" data-stamp="coffee" aria-hidden="true"></span>
+                        <h3 data-i18n="pillars.heard.title"></h3>
+                        <p data-i18n="pillars.heard.body"></p>
+                    </li>
+                    <li class="pillar reveal">
+                        <span class="badge" data-stamp="book" aria-hidden="true"></span>
+                        <h3 data-i18n="pillars.remembered.title"></h3>
+                        <p data-i18n="pillars.remembered.body"></p>
+                    </li>
+                    <li class="pillar reveal">
+                        <span class="badge" data-stamp="rainbow" aria-hidden="true"></span>
+                        <h3 data-i18n="pillars.seen.title"></h3>
+                        <p data-i18n="pillars.seen.body"></p>
+                    </li>
+                </ul>
+            </div>
+        </section>
+
+        <!-- 2 · Feature tour ---------------------------------------------------------- -->
+        <section class="features" id="features" aria-labelledby="features-title">
+            <div class="wrap">
+                <header class="section-head reveal">
+                    <p class="eyebrow" data-i18n="features.eyebrow"></p>
+                    <h2 id="features-title" data-i18n="features.title"></h2>
+                    <p class="section-note" data-i18n="features.note"></p>
+                </header>
+
+                <article class="feature" id="f-chat" aria-labelledby="f-chat-title">
+                    <div class="feature-copy reveal">
+                        <p class="kicker"><span class="kicker-num">01</span><span class="badge badge-s" data-stamp="coffee" aria-hidden="true"></span></p>
+                        <h3 id="f-chat-title" data-i18n="f.chat.title"></h3>
+                        <p data-i18n="f.chat.p1"></p>
+                        <p data-i18n="f.chat.p2"></p>
+                    </div>
+                    <div class="feature-media reveal">
+                        <div class="illus illus-chat" role="img" data-i18n-attr="aria-label:illus.chat.label">
+                            <div class="illus-bar"><span data-i18n="illus.chat.name"></span></div>
+                            <div class="illus-body">
+                                <p class="bubble bubble-user" data-i18n="illus.chat.user"></p>
+                                <div class="illus-row">
+                                    <img class="avatar" src="vendor/icon-192.png" alt="" width="36" height="36">
+                                    <p class="bubble bubble-ai" id="illus-thinking"></p>
+                                    <p class="illus-note"><svg viewBox="0 0 48 32" focusable="false"><path d="M44 24C36 12 24 8.5 11 12.5"/><path d="M17.5 5.5 10.2 12.6l7 5.4"/></svg><span data-i18n="illus.chat.note"></span></p>
+                                </div>
+                            </div>
+                            <div class="illus-input">
+                                <span class="illus-field" data-i18n="illus.chat.input"></span>
+                                <span class="illus-send"><svg viewBox="0 0 24 24" focusable="false"><path d="M21 3 10.2 13.8M21 3l-6.8 18-4-7.2-7.2-4z"/></svg></span>
+                            </div>
+                        </div>
+                        <p class="media-caption" aria-hidden="true"><svg class="icon" viewBox="0 0 24 24" focusable="false"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13.5 6.5l4 4"/></svg><span data-i18n="tag.illustration"></span></p>
+                    </div>
+                </article>
+
+                <article class="feature is-flipped" id="f-onboarding" aria-labelledby="f-onboarding-title">
+                    <div class="feature-copy reveal">
+                        <p class="kicker"><span class="kicker-num">02</span><span class="badge badge-s" data-stamp="flower" aria-hidden="true"></span></p>
+                        <h3 id="f-onboarding-title" data-i18n="f.onboarding.title"></h3>
+                        <p data-i18n="f.onboarding.p1"></p>
+                        <p data-i18n="f.onboarding.p2"></p>
+                    </div>
+                    <div class="feature-media reveal">
+                        <figure class="shot">
+                            <button type="button" class="zoom"><img data-shot="onboarding" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" width="1576" height="1274" loading="lazy" decoding="async" data-i18n-attr="alt:shot.onboarding.alt"></button>
+                        </figure>
+                        <p class="media-caption" aria-hidden="true"><svg class="icon" viewBox="0 0 24 24" focusable="false"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5 20 20M10.5 7.5v6M7.5 10.5h6"/></svg><span data-i18n="tag.screenshot"></span></p>
+                    </div>
+                </article>
+
+                <article class="feature" id="f-diary" aria-labelledby="f-diary-title">
+                    <div class="feature-copy reveal">
+                        <p class="kicker"><span class="kicker-num">03</span><span class="badge badge-s" data-stamp="book" aria-hidden="true"></span></p>
+                        <h3 id="f-diary-title" data-i18n="f.diary.title"></h3>
+                        <p data-i18n="f.diary.p1"></p>
+                        <p data-i18n="f.diary.p2"></p>
+                    </div>
+                    <div class="feature-media reveal">
+                        <div class="media-stack">
+                        <figure class="shot shot-back">
+                            <button type="button" class="zoom"><img data-shot="diary-list" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" width="992" height="1380" loading="lazy" decoding="async" data-i18n-attr="alt:shot.diaryList.alt"></button>
+                        </figure>
+                        <figure class="shot shot-front">
+                            <button type="button" class="zoom"><img data-shot="diary-detail" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" width="992" height="1380" loading="lazy" decoding="async" data-i18n-attr="alt:shot.diaryDetail.alt"></button>
+                        </figure>
+                        </div>
+                        <p class="media-caption" aria-hidden="true"><svg class="icon" viewBox="0 0 24 24" focusable="false"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5 20 20M10.5 7.5v6M7.5 10.5h6"/></svg><span data-i18n="tag.screenshot"></span></p>
+                    </div>
+                </article>
+
+                <article class="feature is-flipped" id="f-calendar" aria-labelledby="f-calendar-title">
+                    <div class="feature-copy reveal">
+                        <p class="kicker"><span class="kicker-num">04</span><span class="badge badge-s" data-stamp="sun" aria-hidden="true"></span></p>
+                        <h3 id="f-calendar-title" data-i18n="f.calendar.title"></h3>
+                        <p data-i18n="f.calendar.p1"></p>
+                        <p data-i18n="f.calendar.p2"></p>
+                    </div>
+                    <div class="feature-media reveal">
+                        <div class="media-cal">
+                        <figure class="shot shot-main">
+                            <button type="button" class="zoom"><img data-shot="calendar-month" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" width="1344" height="1148" loading="lazy" decoding="async" data-i18n-attr="alt:shot.calendarMonth.alt"></button>
+                        </figure>
+                        <figure class="shot shot-pop">
+                            <button type="button" class="zoom"><img data-shot="calendar-day" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" width="640" height="500" loading="lazy" decoding="async" data-i18n-attr="alt:shot.calendarDay.alt"></button>
+                        </figure>
+                        </div>
+                        <p class="media-caption" aria-hidden="true"><svg class="icon" viewBox="0 0 24 24" focusable="false"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5 20 20M10.5 7.5v6M7.5 10.5h6"/></svg><span data-i18n="tag.screenshot"></span></p>
+                    </div>
+                </article>
+
+                <article class="feature" id="f-memory" aria-labelledby="f-memory-title">
+                    <div class="feature-copy reveal">
+                        <p class="kicker"><span class="kicker-num">05</span><span class="badge badge-s" data-stamp="heart" aria-hidden="true"></span></p>
+                        <h3 id="f-memory-title" data-i18n="f.memory.title"></h3>
+                        <p data-i18n="f.memory.p1"></p>
+                        <p data-i18n="f.memory.p2"></p>
+                    </div>
+                    <div class="feature-media media-portrait reveal">
+                        <figure class="shot">
+                            <button type="button" class="zoom"><img data-shot="memory-ledger" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" width="1228" height="1388" loading="lazy" decoding="async" data-i18n-attr="alt:shot.memory.alt"></button>
+                        </figure>
+                        <p class="media-caption is-center" aria-hidden="true"><svg class="icon" viewBox="0 0 24 24" focusable="false"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5 20 20M10.5 7.5v6M7.5 10.5h6"/></svg><span data-i18n="tag.screenshot"></span></p>
+                    </div>
+                </article>
+
+                <article class="feature is-flipped" id="f-voice" aria-labelledby="f-voice-title">
+                    <div class="feature-copy reveal">
+                        <p class="kicker"><span class="kicker-num">06</span><span class="badge badge-s" data-stamp="music" aria-hidden="true"></span></p>
+                        <h3 id="f-voice-title" data-i18n="f.voice.title"></h3>
+                        <p data-i18n="f.voice.p1"></p>
+                        <p data-i18n="f.voice.p2"></p>
+                    </div>
+                    <div class="feature-media reveal">
+                        <div class="illus illus-voice" role="img" data-i18n-attr="aria-label:illus.voice.label">
+                            <span class="via-chip"><svg viewBox="0 0 24 24" focusable="false"><path d="M4 12h13M13 7l5 5-5 5"/></svg><span data-i18n="illus.voice.via"></span></span>
+                            <div class="illus-body">
+                                <div class="illus-row">
+                                    <img class="avatar" src="vendor/icon-192.png" alt="" width="36" height="36">
+                                    <div class="bubble bubble-ai bubble-lines"><i></i><i></i><i></i></div>
+                                </div>
+                                <div class="voice-action voice-play">
+                                    <span class="round-btn"><svg viewBox="0 0 24 24" focusable="false"><path d="M4 9.5h3.6L12.5 5.5v13l-4.9-4H4z"/><path d="M15.8 9a4.2 4.2 0 0 1 0 6M18.4 6.6a7.6 7.6 0 0 1 0 10.8"/></svg></span>
+                                    <span class="voice-label" data-i18n="illus.voice.play"></span>
+                                </div>
+                                <div class="voice-input">
+                                    <span class="round-btn is-rec"><svg viewBox="0 0 24 24" focusable="false"><rect x="9" y="3.5" width="6" height="10.5" rx="3"/><path d="M5.8 11.2a6.2 6.2 0 0 0 12.4 0M12 17.4V20.5M8.8 20.5h6.4"/></svg></span>
+                                    <span class="wave" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span>
+                                    <span class="voice-label" data-i18n="illus.voice.mic"></span>
+                                </div>
+                            </div>
+                        </div>
+                        <p class="media-caption" aria-hidden="true"><svg class="icon" viewBox="0 0 24 24" focusable="false"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13.5 6.5l4 4"/></svg><span data-i18n="tag.illustration"></span></p>
+                    </div>
+                </article>
+
+                <article class="feature" id="f-pwa" aria-labelledby="f-pwa-title">
+                    <div class="feature-copy reveal">
+                        <p class="kicker"><span class="kicker-num">07</span><span class="badge badge-s" data-stamp="plane" aria-hidden="true"></span></p>
+                        <h3 id="f-pwa-title" data-i18n="f.pwa.title"></h3>
+                        <p data-i18n="f.pwa.p1"></p>
+                        <p data-i18n="f.pwa.p2"></p>
+                        <p><a class="text-link" href="https://github.com/brian10420/URDiary/blob/main/docs/deployment-mobile.md"><span data-i18n="f.pwa.link"></span><svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M5 12h14M13 6l6 6-6 6"/></svg></a></p>
+                    </div>
+                    <div class="feature-media reveal">
+                        <div class="media-phones">
+                        <figure class="phone">
+                            <button type="button" class="zoom"><img data-shot="mobile-diary" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" width="780" height="1688" loading="lazy" decoding="async" data-i18n-attr="alt:shot.mobileDiary.alt"></button>
+                        </figure>
+                        <figure class="phone">
+                            <button type="button" class="zoom"><img data-shot="mobile-calendar" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" width="780" height="1688" loading="lazy" decoding="async" data-i18n-attr="alt:shot.mobileCalendar.alt"></button>
+                        </figure>
+                        </div>
+                        <p class="media-caption is-center" aria-hidden="true"><svg class="icon" viewBox="0 0 24 24" focusable="false"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5 20 20M10.5 7.5v6M7.5 10.5h6"/></svg><span data-i18n="tag.screenshot"></span></p>
+                    </div>
+                </article>
+
+                <article class="feature is-flipped" id="f-local" aria-labelledby="f-local-title">
+                    <div class="feature-copy reveal">
+                        <p class="kicker"><span class="kicker-num">08</span><span class="badge badge-s" data-stamp="sprout" aria-hidden="true"></span></p>
+                        <h3 id="f-local-title" data-i18n="f.local.title"></h3>
+                        <p data-i18n="f.local.p1"></p>
+                        <ul class="facts">
+                            <li data-i18n="f.local.li1"></li>
+                            <li data-i18n="f.local.li2"></li>
+                            <li data-i18n="f.local.li3"></li>
+                            <li data-i18n="f.local.li4"></li>
+                        </ul>
+                    </div>
+                    <div class="feature-media reveal">
+                        <div class="media-local">
+                        <figure class="shot">
+                            <button type="button" class="zoom"><img data-shot="settings-provider" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" width="1000" height="1218" loading="lazy" decoding="async" data-i18n-attr="alt:shot.settings.alt"></button>
+                        </figure>
+                        <div class="file-chip" aria-hidden="true">
+                            <svg viewBox="0 0 24 24" focusable="false"><ellipse cx="12" cy="6" rx="7" ry="2.8"/><path d="M5 6v12c0 1.55 3.13 2.8 7 2.8s7-1.25 7-2.8V6M5 12c0 1.55 3.13 2.8 7 2.8s7-1.25 7-2.8"/></svg>
+                            <span><strong data-i18n="illus.local.file"></strong><small data-i18n="illus.local.fileNote"></small></span>
+                        </div>
+                        </div>
+                        <p class="media-caption is-center" aria-hidden="true"><svg class="icon" viewBox="0 0 24 24" focusable="false"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5 20 20M10.5 7.5v6M7.5 10.5h6"/></svg><span data-i18n="tag.screenshot"></span></p>
+                    </div>
+                </article>
+            </div>
+        </section>
+
+        <!-- 3 · Mascot playground ----------------------------------------------------- -->
+        <section class="playground band" id="playground" aria-labelledby="playground-title">
+            <div class="wrap">
+                <header class="section-head reveal">
+                    <p class="eyebrow" data-i18n="playground.eyebrow"></p>
+                    <h2 id="playground-title" data-i18n="playground.title"></h2>
+                    <p data-i18n="playground.lead"></p>
+                    <p class="motion-note" id="motion-note" role="status"><span class="motion-dot" aria-hidden="true"></span><span id="motion-note-text"></span></p>
+                </header>
+                <ul class="pg-grid">
+                    <li class="pg-card reveal">
+                        <div class="pg-stage">
+                            <button type="button" class="pg-mascot mascot-btn" data-pose="welcome" data-i18n-attr="aria-label:pg.welcome.label"></button>
+                            <span class="pg-chip" aria-hidden="true" data-i18n="pg.tapChip"></span>
+                        </div>
+                        <div class="pg-body"><h3 data-i18n="pg.welcome.title"></h3><p data-i18n="pg.welcome.body"></p></div>
+                    </li>
+                    <li class="pg-card reveal">
+                        <div class="pg-stage">
+                            <button type="button" class="pg-mascot mascot-btn" data-pose="diary" data-i18n-attr="aria-label:pg.sleep.label"></button>
+                            <p class="mascot-empty-caption pg-caption" data-i18n="pg.sleep.caption"></p>
+                            <span class="pg-chip" aria-hidden="true" data-i18n="pg.tapChip"></span>
+                        </div>
+                        <div class="pg-body"><h3 data-i18n="pg.sleep.title"></h3><p data-i18n="pg.sleep.body"></p></div>
+                    </li>
+                    <li class="pg-card reveal">
+                        <div class="pg-stage">
+                            <button type="button" class="pg-mascot mascot-btn" data-pose="calendar" data-i18n-attr="aria-label:pg.calendar.label"></button>
+                            <p class="mascot-empty-caption pg-caption" data-i18n="pg.calendar.caption"></p>
+                            <span class="pg-chip" aria-hidden="true" data-i18n="pg.tapChip"></span>
+                        </div>
+                        <div class="pg-body"><h3 data-i18n="pg.calendar.title"></h3><p data-i18n="pg.calendar.body"></p></div>
+                    </li>
+                    <li class="pg-card reveal">
+                        <div class="pg-stage">
+                            <button type="button" class="pg-mascot mascot-btn" data-pose="question" data-i18n-attr="aria-label:pg.question.label"></button>
+                            <p class="mascot-empty-caption pg-caption" data-i18n="pg.question.caption"></p>
+                            <span class="pg-chip" aria-hidden="true" data-i18n="pg.tapChip"></span>
+                        </div>
+                        <div class="pg-body"><h3 data-i18n="pg.question.title"></h3><p data-i18n="pg.question.body"></p></div>
+                    </li>
+                    <li class="pg-card reveal">
+                        <div class="pg-stage"><span class="pg-static" data-pose="tea"></span></div>
+                        <div class="pg-body"><h3 data-i18n="pg.tea.title"></h3><p data-i18n="pg.tea.body"></p></div>
+                    </li>
+                    <li class="pg-card reveal">
+                        <div class="pg-stage pg-egg-stage" id="pg-egg-happy"><span class="pg-static" data-egg="happy"></span></div>
+                        <div class="pg-body">
+                            <h3 data-i18n="pg.jump.title"></h3><p data-i18n="pg.jump.body"></p>
+                            <button type="button" class="btn btn-egg" data-egg="happy" aria-controls="pg-egg-happy"><span data-i18n="pg.jump.button"></span></button>
+                        </div>
+                    </li>
+                    <li class="pg-card reveal">
+                        <div class="pg-stage pg-egg-stage is-night" id="pg-egg-night"><span class="pg-static mascot-egg-night" data-egg="goodnight"></span></div>
+                        <div class="pg-body">
+                            <h3 data-i18n="pg.night.title"></h3><p data-i18n="pg.night.body"></p>
+                            <button type="button" class="btn btn-egg" data-egg="goodnight" aria-controls="pg-egg-night"><span data-i18n="pg.night.button"></span></button>
+                        </div>
+                    </li>
+                    <li class="pg-card reveal">
+                        <div class="pg-stage pg-stamps-stage"><ul class="stamp-sheet" id="stamp-sheet" data-i18n-attr="aria-label:pg.stamps.label"></ul></div>
+                        <div class="pg-body"><h3 data-i18n="pg.stamps.title"></h3><p data-i18n="pg.stamps.body"></p></div>
+                    </li>
+                </ul>
+            </div>
+        </section>
+
+        <!-- 4 · Full video ------------------------------------------------------------ -->
+        <section class="video-section" id="video" aria-labelledby="video-title">
+            <div class="wrap">
+                <header class="section-head reveal">
+                    <p class="eyebrow" data-i18n="video.eyebrow"></p>
+                    <h2 id="video-title" data-i18n="video.title"></h2>
+                    <p data-i18n="video.lead"></p>
+                </header>
+                <div class="video-frame is-soon reveal" id="intro-frame">
+                    <video id="intro-video" controls preload="metadata" playsinline hidden data-i18n-attr="aria-label:video.label"></video>
+                    <div class="video-soon" id="intro-soon">
+                        <span class="soon-mascot" id="soon-mascot" aria-hidden="true"></span>
+                        <p class="soon-title" data-i18n="video.soonTitle"></p>
+                        <p class="soon-body" data-i18n="video.soonBody"></p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 5 · Get started ----------------------------------------------------------- -->
+        <section class="start band" id="start" aria-labelledby="start-title">
+            <div class="wrap">
+                <header class="section-head reveal">
+                    <p class="eyebrow" data-i18n="start.eyebrow"></p>
+                    <h2 id="start-title" data-i18n="start.title"></h2>
+                    <p data-i18n="start.lead"></p>
+                </header>
+                <ol class="steps reveal">
+                    <li class="step">
+                        <h3 data-i18n="start.step1"></h3>
+                        <div class="code"><pre><code id="cmd-1">git clone https://github.com/brian10420/URDiary.git
+cd URDiary</code></pre><button type="button" class="copy-btn" data-copy="cmd-1" data-i18n="start.copy" data-i18n-attr="aria-label:start.copyLabel"></button></div>
+                    </li>
+                    <li class="step">
+                        <h3 data-i18n="start.step2"></h3>
+                        <div class="code"><pre><code id="cmd-2">cd backend
+./start-backend.sh     # Windows: start-backend.bat</code></pre><button type="button" class="copy-btn" data-copy="cmd-2" data-i18n="start.copy" data-i18n-attr="aria-label:start.copyLabel"></button></div>
+                    </li>
+                    <li class="step">
+                        <h3 data-i18n="start.step3"></h3>
+                        <div class="code"><pre><code id="cmd-3">cd desktop
+npm install
+npm start</code></pre><button type="button" class="copy-btn" data-copy="cmd-3" data-i18n="start.copy" data-i18n-attr="aria-label:start.copyLabel"></button></div>
+                    </li>
+                </ol>
+                <p class="start-then reveal" data-i18n="start.then"></p>
+                <div class="start-links reveal">
+                    <a class="btn btn-primary" href="https://github.com/brian10420/URDiary">
+                        <svg class="icon-fill" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M8 0c4.42 0 8 3.58 8 8a8.013 8.013 0 0 1-5.45 7.59c-.4.08-.55-.17-.55-.38 0-.27.01-1.13.01-2.2 0-.75-.25-1.23-.54-1.48 1.78-.2 3.65-.88 3.65-3.95 0-.88-.31-1.59-.82-2.15.08-.2.36-1.02-.08-2.12 0 0-.67-.22-2.2.82-.64-.18-1.32-.27-2-.27-.68 0-1.36.09-2 .27-1.53-1.03-2.2-.82-2.2-.82-.44 1.1-.16 1.92-.08 2.12-.51.56-.82 1.28-.82 2.15 0 3.06 1.86 3.75 3.64 3.95-.23.2-.44.55-.51 1.07-.46.21-1.61.55-2.33-.66-.15-.24-.6-.83-1.23-.82-.67.01-.27.38.01.53.34.19.73.9.82 1.13.16.45.68 1.31 2.69.94 0 .67.01 1.3.01 1.49 0 .21-.15.45-.55.38A7.995 7.995 0 0 1 0 8c0-4.42 3.58-8 8-8Z"/></svg>
+                        <span data-i18n="start.github"></span>
+                    </a>
+                    <a class="btn btn-ghost" href="https://github.com/brian10420/URDiary#readme"><span data-i18n="start.readme"></span></a>
+                    <a class="btn btn-ghost" href="https://github.com/brian10420/URDiary/blob/main/LICENSE.txt"><span data-i18n="start.license"></span></a>
+                </div>
+                <div class="notes reveal">
+                    <p class="note-cost" data-i18n="start.cost"></p>
+                    <div class="care-card">
+                        <span class="badge" data-stamp="heal" aria-hidden="true"></span>
+                        <div>
+                            <p class="care-title" data-i18n="start.disclaimer"></p>
+                            <p data-i18n="start.crisis"></p>
+                        </div>
+                    </div>
+                    <p class="ai-disclosure" id="ai-disclosure" hidden data-i18n="start.aiDisclosure"></p>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <footer class="site-footer">
+        <div class="wrap footer-inner">
+            <p class="footer-brand">
+                <img src="vendor/icon-192.png" alt="" width="28" height="28">
+                <span class="wordmark" data-i18n="brand"></span>
+                <span class="footer-tagline" data-i18n="footer.tagline"></span>
+            </p>
+            <p class="footer-privacy" data-i18n="footer.privacy"></p>
+            <ul class="footer-links">
+                <li><a href="https://github.com/brian10420/URDiary" data-i18n="footer.github"></a></li>
+                <li><a href="https://github.com/brian10420/URDiary/blob/main/LICENSE.txt" data-i18n="footer.license"></a></li>
+            </ul>
+        </div>
+    </footer>
+
+    <dialog class="lightbox" id="lightbox">
+        <form method="dialog"><button class="lightbox-close" type="submit" data-i18n-attr="aria-label:zoom.close"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M6 6l12 12M18 6 6 18"/></svg></button></form>
+        <img id="lightbox-img" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" alt="">
+    </dialog>
+    <p class="visually-hidden" id="live" aria-live="polite"></p>
+
+    <noscript>
+        <style>.site-header, main, .site-footer { display: none !important; }</style>
+        <div class="noscript">
+            <p><strong>URDiary</strong> — 一個會記得你的 AI 日記夥伴 · An AI diary companion that remembers you.</p>
+            <p>這個頁面需要 JavaScript 才能顯示完整內容。 This page needs JavaScript to show its content.</p>
+            <p><a href="https://github.com/brian10420/URDiary">github.com/brian10420/URDiary</a></p>
+        </div>
+    </noscript>
+
+    <script src="vendor/mascot.js"></script>
+    <script src="vendor/mascot_motion.js"></script>
+    <script src="config.js"></script>
+    <script src="i18n.js"></script>
+    <script src="app.js"></script>
+</body>
+</html>
