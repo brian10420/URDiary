@@ -1,0 +1,226 @@
+{
+  "source": "promo/video/STORYBOARD.md §1.2",
+  "lines": [
+    {
+      "id": "S1",
+      "zh": "有些話，說不出口；就這樣一直收著。",
+      "en": "Some things are hard to say. So you keep them in.",
+      "in_point_s": {
+        "zh": 1.0,
+        "en": 1.0
+      },
+      "latest_end_s": {
+        "zh": 5.1,
+        "en": 6.0
+      },
+      "budget_s": {
+        "zh": 4.1,
+        "en": 5.0
+      }
+    },
+    {
+      "id": "S2",
+      "zh": "第一次見面，它會自我介紹，也問你想不想幫它取名字。",
+      "en": "When you first meet, it introduces itself and asks if you'd like to name it.",
+      "in_point_s": {
+        "zh": 8.1,
+        "en": 8.1
+      },
+      "latest_end_s": {
+        "zh": 14.1,
+        "en": 14.6
+      },
+      "budget_s": {
+        "zh": 6.0,
+        "en": 6.5
+      }
+    },
+    {
+      "id": "S3",
+      "zh": "它會先聽你說完，接住你的心情，不急著給建議。",
+      "en": "It listens first, sits with how you feel, and doesn't rush to give advice.",
+      "in_point_s": {
+        "zh": 16.6,
+        "en": 16.6
+      },
+      "latest_end_s": {
+        "zh": 21.9,
+        "en": 23.0
+      },
+      "budget_s": {
+        "zh": 5.3,
+        "en": 6.4
+      }
+    },
+    {
+      "id": "S4",
+      "zh": "聊到相關的事，它會想起你寫過的某一天，連日期和標題都記得。",
+      "en": "When it's relevant, it recalls a day you wrote about — by its date and title.",
+      "in_point_s": {
+        "zh": 24.7,
+        "en": 24.7
+      },
+      "latest_end_s": {
+        "zh": 31.7,
+        "en": 31.6
+      },
+      "budget_s": {
+        "zh": 7.0,
+        "en": 6.9
+      }
+    },
+    {
+      "id": "S5",
+      "zh": "按一下，這段對話就成了一篇日記；行事曆那天，也多一枚小印章。",
+      "en": "One tap, and the chat becomes a diary entry — plus a little stamp on your calendar.",
+      "in_point_s": {
+        "zh": 33.7,
+        "en": 33.7
+      },
+      "latest_end_s": {
+        "zh": 41.0,
+        "en": 41.0
+      },
+      "budget_s": {
+        "zh": 7.3,
+        "en": 7.3
+      }
+    },
+    {
+      "id": "S6-A",
+      "zh": "開心的日子，有個小小的慶祝；",
+      "en": "Good days get a little celebration.",
+      "in_point_s": {
+        "zh": 43.1,
+        "en": 43.1
+      },
+      "latest_end_s": {
+        "zh": 46.35,
+        "en": 45.6
+      },
+      "budget_s": {
+        "zh": 3.25,
+        "en": 2.5
+      }
+    },
+    {
+      "id": "S6-B",
+      "zh": "難過的日子，只有安靜的陪伴。",
+      "en": "Hard days get quiet company.",
+      "in_point_s": {
+        "zh": 46.8,
+        "en": 46.8
+      },
+      "latest_end_s": {
+        "zh": 50.05,
+        "en": 48.9
+      },
+      "budget_s": {
+        "zh": 3.25,
+        "en": 2.1
+      }
+    },
+    {
+      "id": "S7",
+      "zh": "每天第一次打開，它會先問候你——記得昨天，也知道今天的安排。",
+      "en": "First open of the day? It checks in — remembering yesterday, aware of today's plans.",
+      "in_point_s": {
+        "zh": 51.6,
+        "en": 51.6
+      },
+      "latest_end_s": {
+        "zh": 58.7,
+        "en": 58.45
+      },
+      "budget_s": {
+        "zh": 7.1,
+        "en": 6.85
+      }
+    },
+    {
+      "id": "S8",
+      "zh": "它對你的記憶，你看得到、改得了，也能讓它記之前先問你。",
+      "en": "You can read and edit its memory of you — or have it ask first.",
+      "in_point_s": {
+        "zh": 60.6,
+        "en": 60.6
+      },
+      "latest_end_s": {
+        "zh": 67.0,
+        "en": 66.8
+      },
+      "budget_s": {
+        "zh": 6.4,
+        "en": 6.2
+      }
+    },
+    {
+      "id": "S9-A",
+      "zh": "日記存在你自己的電腦。",
+      "en": "Your diary is stored on your own computer.",
+      "in_point_s": {
+        "zh": 68.6,
+        "en": 68.6
+      },
+      "latest_end_s": {
+        "zh": 71.1,
+        "en": 71.95
+      },
+      "budget_s": {
+        "zh": 2.5,
+        "en": 3.35
+      }
+    },
+    {
+      "id": "S9-B",
+      "zh": "聊天內容，會送到你選的 AI；",
+      "en": "Chats go to the AI you choose —",
+      "in_point_s": {
+        "zh": 71.4,
+        "en": 72.1
+      },
+      "latest_end_s": {
+        "zh": 74.65,
+        "en": 75.0
+      },
+      "budget_s": {
+        "zh": 3.25,
+        "en": 2.9
+      }
+    },
+    {
+      "id": "S9-C",
+      "zh": "想讓聊天留在本機，就改用本地模型。",
+      "en": "or keep chats at home with a local model.",
+      "in_point_s": {
+        "zh": 75.0,
+        "en": 75.3
+      },
+      "latest_end_s": {
+        "zh": 79.0,
+        "en": 79.05
+      },
+      "budget_s": {
+        "zh": 4.0,
+        "en": 3.75
+      }
+    },
+    {
+      "id": "S10",
+      "zh": "讓每天寫日記，成為一件療癒自己的事吧！",
+      "en": "Let writing each day become a little way to care for yourself.",
+      "in_point_s": {
+        "zh": 81.0,
+        "en": 81.0
+      },
+      "latest_end_s": {
+        "zh": 85.5,
+        "en": 86.0
+      },
+      "budget_s": {
+        "zh": 4.5,
+        "en": 5.0
+      }
+    }
+  ]
+}
