@@ -11,7 +11,9 @@
  *                  exactly, zh ≤ 16 字 / en ≤ 42 characters per line, ≤ 2 lines per step.
  *   3 captions   — every on-screen text inside its scene, both languages present
  *   4 loop       — §2 loop math (P = 5.125 s, phase(17) = 2.125, phase(20) = 0 …)
- *   5 media      — the manifest: which slots have files; present files have the right shape
+ *   5 media      — the manifest: which slots have files; present files have the right shape; the
+ *                  UI clips (src/data/shots.ts): every speed map stays inside its clip, every
+ *                  present intermediate has the size / fps / frame count the table implies
  *   6 layout     — renders the CaptionAudit still (zh, en) at 1080p in Chrome with the real
  *                  fonts: no caption / end-card line / loop card wraps past two lines, no subtitle
  *                  line wraps at all
@@ -29,7 +31,8 @@ import {CAPTIONS} from '../src/data/captions.ts';
 import {expectedMedia} from '../src/data/expected-media.ts';
 import {loopProblems, HERO_PERIOD_SEC, heroPhase, LOOP, LOOP_MIN_PX, G6} from '../src/data/loop.ts';
 import {ROLES} from '../src/components/typography.ts';
-import {narrationMediaId} from '../src/data/media.ts';
+import {INTRO_PLACEMENTS, LOOP_PLACEMENTS, narrationMediaId, shotMediaId} from '../src/data/media.ts';
+import {CLIPS, DEVICES, SPEED_MAPS, clipInFrame, clipOutFrame, mapRangeProblems, shotsProblems} from '../src/data/shots.ts';
 import {NARRATION, estimateSpeechSec, joinSubtitle} from '../src/data/narration.ts';
 import {INTRO, LANGS, SCENES, TRANSITIONS, renderWindow, sceneById, timelineProblems} from '../src/data/timeline.ts';
 import {MEDIA_MANIFEST} from '../src/generated/media-manifest.ts';
@@ -142,8 +145,41 @@ section('5 media manifest (public/media → src/generated/media-manifest.ts)');
     check(g6.fps === G6.fps && (g6.frames === null || g6.frames === G6.generatedFrames), `G6: ${g6.frames} frames @ ${g6.fps} fps (loop math expects ${G6.generatedFrames} @ ${G6.fps}, first = last)`);
   }
   for (const [id, m] of Object.entries(MEDIA_MANIFEST)) {
-    if (/^U\d\d-/.test(id) && m.kind === 'video' && m.fps && Math.abs(m.fps - 60) > 0.01) fail(`${id}: ${m.fps} fps — UI recordings are converted to CFR 60 fps (§3.4 #11)`);
+    if (/^(ui\/)?U\d\d-/.test(id) && m.kind === 'video' && m.fps && Math.abs(m.fps - 60) > 0.01) fail(`${id}: ${m.fps} fps — UI recordings are converted to CFR 60 fps (§3.4 #11)`);
   }
+  // UI clips: the table, the maps, the files
+  const before = failures.length;
+  for (const pr of shotsProblems()) fail(`shots.ts: ${pr}`);
+  let maps = 0;
+  for (const [list, langs] of [[INTRO_PLACEMENTS, LANGS], [LOOP_PLACEMENTS, ['en']]]) {
+    for (const pl of list) {
+      if (!SPEED_MAPS[pl.key]) continue;
+      for (const lang of langs) {
+        const id = shotMediaId(pl.shot, lang, pl.variant);
+        if (!SPEED_MAPS[pl.key][lang]) {
+          fail(`${pl.key} ${lang}: no speed map`);
+          continue;
+        }
+        if (!CLIPS.some((c) => c.id === id)) fail(`${pl.key} ${lang}: no clip ${id} in shots.ts`);
+        for (const pr of mapRangeProblems(pl.key, lang, id)) fail(pr);
+        maps++;
+      }
+    }
+  }
+  let files = 0;
+  for (const c of CLIPS) {
+    const m = MEDIA_MANIFEST[c.id];
+    if (!m) continue;
+    files++;
+    const [cw, ch] = c.crop ? [c.crop[2], c.crop[3]] : DEVICES[c.device].css;
+    const w = Math.round(cw * c.scale);
+    const h = Math.round(ch * c.scale);
+    const n = clipOutFrame(c) - clipInFrame(c);
+    if (m.width !== w || m.height !== h) fail(`${c.id}: ${m.width}×${m.height}, shots.ts implies ${w}×${h} (re-run scripts/make-intermediates.sh ${c.id})`);
+    // the last frames may be cut by the take's end (U04, U12): allow fewer, never more
+    if (m.frames && (m.frames > n || m.frames < n - 90)) fail(`${c.id}: ${m.frames} frames, shots.ts implies ${n}`);
+  }
+  if (failures.length === before) pass(`shots.ts: ${CLIPS.length} clips, ${maps} speed maps inside their clips; ${files} intermediates match the table (size, 60 fps, frame count)`);
 }
 
 // ---------------------------------------------------------------- 6 + 7 need Chrome

@@ -9,7 +9,7 @@ import {AbsoluteFill} from 'remotion';
 import {introPlacement} from '../data/media.ts';
 import type {Lang} from '../data/timeline.ts';
 import {EASE_IN_OUT, lerp, ramp} from '../lib/anim.ts';
-import {camAt, camTransform, type CamKey} from '../lib/camera.ts';
+import {camAt, camTransform, coveringPush, type CamKey} from '../lib/camera.ts';
 import {useTime} from '../lib/time.tsx';
 import {PHONE, PHONE_SCREEN_H, PhoneFrame} from '../components/DeviceFrame.tsx';
 import {Mascot} from '../components/Mascot.tsx';
@@ -23,11 +23,14 @@ const PHONE_X = 1600 - PHONE_W / 2;
 const PHONE_Y = (1080 - PHONE_H) / 2;
 const PHONE_CENTER: [number, number] = [1600, 540];
 
+// Pushes toward the phone are clamped to the stage (coveringPush): the phone sits in the right
+// third, and centring it would pull the stage's right edge into the frame (black beyond it).
+// Every key is blend 1 (centre-based), so the covering property holds between keys too.
 const CAMERA: readonly CamKey[] = [
-  {t: 50.6, zoom: 1, target: [960, 540], blend: 0},
-  {t: 54.2, zoom: 1, target: PHONE_CENTER, blend: 0},
-  {t: 59.6, zoom: 1.08, target: PHONE_CENTER, blend: 0.3}, // 鏡頭慢慢推近手機
-  {t: 60.1, zoom: 1.75, target: PHONE_CENTER, blend: 0.9}, // 手機放大，溶進 S8
+  {t: 50.6, zoom: 1, target: [960, 540], blend: 1},
+  {t: 54.2, zoom: 1, target: [960, 540], blend: 1},
+  {t: 59.6, ...coveringPush(1.08, PHONE_CENTER)}, // 鏡頭慢慢推近手機
+  {t: 60.1, ...coveringPush(1.75, PHONE_CENTER)}, // 手機放大，溶進 S8
 ];
 
 export const S7 = ({lang}: {lang: Lang}) => {

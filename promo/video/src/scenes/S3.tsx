@@ -10,5 +10,5 @@ import {MediaSlot} from '../components/MediaSlot.tsx';
 import {windowBox} from './window-marks.ts';
 
 export const S3 = ({lang}: {lang: Lang}) => (
-  <MediaSlot placement={introPlacement('S3.U03')} lang={lang} tone="ui" targets={[windowBox('s3Reply')]} labelPosition="center" />
+  <MediaSlot placement={introPlacement('S3.U03')} lang={lang} tone="ui" targets={[windowBox('s3Reply', lang)]} labelPosition="center" />
 );

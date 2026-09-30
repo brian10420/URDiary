@@ -10,7 +10,7 @@ import {CaptionTrack} from '../components/Caption.tsx';
 import {IntroDraftOverlay} from '../components/DraftOverlay.tsx';
 import {SubtitleTrack} from '../components/Subtitle.tsx';
 import {FadeFromBlack, GlowMatch} from '../components/Transition.tsx';
-import {WIN_CENTER, S2_S5_CAMERA} from '../scenes/cameras.ts';
+import {WIN_CENTER, s2s5Camera} from '../scenes/cameras.ts';
 import {G1_PHONE_POINT, Layer} from '../scenes/shared.tsx';
 import {WindowSet} from '../scenes/WindowSet.tsx';
 import {S1} from '../scenes/S1.tsx';
@@ -57,7 +57,7 @@ export const IntroLong = ({lang, draft = false}: IntroProps) => {
         <S1 lang={lang} />
       </Layer>
       <Layer from={s2.from} to={s5.to} fadeIn={s2.fadeIn} name="S2–S5 one app window">
-        <WindowSet camera={S2_S5_CAMERA} floatIn={floatIn}>
+        <WindowSet camera={s2s5Camera(lang)} floatIn={floatIn}>
           <Layer {...s2} fadeIn={undefined} name="S2 初次見面，取個名字">
             <S2 lang={lang} />
           </Layer>
@@ -87,7 +87,7 @@ export const IntroLong = ({lang, draft = false}: IntroProps) => {
       <Layer {...s10} name="S10 療癒自己的事">
         <S10 lang={lang} />
       </Layer>
-      <StampMatchCut />
+      <StampMatchCut lang={lang} />
       <GlowMatch from={glow.start} to={glow.end} fromPt={G1_PHONE_POINT} toPt={WIN_CENTER} />
       <FadeFromBlack from={fromBlack.start} to={fromBlack.end} />
       <CaptionTrack lang={lang} />

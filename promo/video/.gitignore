@@ -7,3 +7,7 @@ public/media/
 src/generated/
 # Remotion caches (browser download, webpack cache)
 .remotion*
+# The repo-root .gitignore ignores every lib/ (Python packaging), which also swallowed this project's
+# scripts/lib/ (tools.mjs, used by every script) and src/lib/ (anim, camera, fonts, theme, time) — re-include them.
+!scripts/lib/
+!src/lib/

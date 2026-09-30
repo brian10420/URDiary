@@ -13,7 +13,8 @@ import {inWindow, windowBox} from './window-marks.ts';
 
 export const S2 = ({lang}: {lang: Lang}) => (
   <>
-    <MediaSlot placement={introPlacement('S2.U02')} lang={lang} tone="ui" targets={[windowBox('s2Title')]} labelPosition="center" />
-    <CircleMark rect={inWindow('s2Title')} from={12.8} drawSec={0.5} until={13.6} />
+    <MediaSlot placement={introPlacement('S2.U02')} lang={lang} tone="ui" targets={[windowBox('s2Title', lang)]} labelPosition="center" />
+    {/* the maps in shots.ts put the title switch at 12.7 in both languages (zh 9.42 / en 12.10 in the takes) */}
+    <CircleMark rect={inWindow('s2Title', lang)} from={12.8} drawSec={0.5} until={13.6} />
   </>
 );

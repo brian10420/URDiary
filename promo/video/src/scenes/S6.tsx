@@ -9,7 +9,7 @@
 import type {CSSProperties, ReactNode} from 'react';
 import {AbsoluteFill} from 'remotion';
 import {caption} from '../data/captions.ts';
-import {introPlacement, TARGETS} from '../data/media.ts';
+import {introPlacement, targetRect} from '../data/media.ts';
 import {RECORDED} from '../data/recorded.ts';
 import type {Lang} from '../data/timeline.ts';
 import {EASE_IN_OUT, EASE_OUT, lerp, presence, ramp} from '../lib/anim.ts';
@@ -19,15 +19,16 @@ import {useTime} from '../lib/time.tsx';
 import {CaptionText} from '../components/Caption.tsx';
 import {recToStage, REC_TO_WIN} from '../components/DeviceFrame.tsx';
 import {Stamp} from '../components/Mascot.tsx';
-import {MediaSlot, mediaFor} from '../components/MediaSlot.tsx';
+import {MediaSlot, clipAspect, mediaFor} from '../components/MediaSlot.tsx';
 import {Paper} from '../components/Paper.tsx';
-import {S2_S5_CAMERA} from './cameras.ts';
+import {s2s5Camera} from './cameras.ts';
 import {HappySketch, RainSketch} from './shared.tsx';
 
 type Box = {x: number; y: number; w: number; h: number};
 const LEFT: Box = {x: 64, y: 176, w: 880, h: 560};
 const RIGHT: Box = {x: 976, y: 176, w: 880, h: 560};
-const CARD = {w: 470, h: 143, overlap: 62} as const;
+/** Stamp cards under the panels: fixed height, width from the real card's aspect (zh / en cards wrap differently). */
+const CARD = {h: 190, overlap: 62} as const;
 const SPLIT = [42.5, 43.3] as const;
 const DIM = [46.8, 47.3] as const;
 
@@ -41,13 +42,13 @@ const Panel = ({box, radius, tone, paper, children, style}: {box: Box; radius: n
   </div>
 );
 
-const StampCard = ({under, children, opacity, dim}: {under: Box; children: ReactNode; opacity: number; dim: number}) => (
+const StampCard = ({under, aspect, children, opacity, dim}: {under: Box; aspect: number; children: ReactNode; opacity: number; dim: number}) => (
   <div
     style={{
       position: 'absolute',
-      left: under.x + (under.w - CARD.w) / 2,
+      left: under.x + (under.w - CARD.h * aspect) / 2,
       top: under.y + under.h - CARD.overlap,
-      width: CARD.w,
+      width: CARD.h * aspect,
       height: CARD.h,
       borderRadius: 18,
       overflow: 'hidden',
@@ -92,7 +93,7 @@ export const S6 = ({lang}: {lang: Lang}) => {
           <MediaSlot placement={introPlacement('S6.G2')} lang={lang} tone="day" illustration={<HappySketch size={300} />} labelPosition="top-left" />
           {u10 ? (
             <div style={{position: 'absolute', left: 24, bottom: 90, width: 300, height: 169, borderRadius: 14, overflow: 'hidden', boxShadow: C.shadow}}>
-              <MediaSlot placement={introPlacement('S6.U10')} lang={lang} tone="ui" compact />
+              <MediaSlot placement={introPlacement('S6.U10')} lang={lang} tone="ui" compact crop={{rect: targetRect('u10Egg', lang), box: {w: 300, h: 169}}} />
             </div>
           ) : null}
         </AbsoluteFill>
@@ -108,25 +109,24 @@ export const S6 = ({lang}: {lang: Lang}) => {
           }}
         />
       </Panel>
-      <StampCard under={LEFT} opacity={ramp(t, 43.4, 43.9, EASE_OUT)} dim={dim}>
+      {/* both cards are whole clips (U09 / U07 day-panel card, cropped at native 2× — shots.ts), so no crop here */}
+      <StampCard under={LEFT} aspect={clipAspect(introPlacement('S6.U09'), lang, 2.5)} opacity={ramp(t, 43.4, 43.9, EASE_OUT)} dim={dim}>
         <MediaSlot
           placement={introPlacement('S6.U09')}
           lang={lang}
           tone="paper"
           compact
-          crop={{rect: TARGETS.u09Card.rect, box: {w: CARD.w, h: CARD.h}}}
-          illustration={<Stamp id={RECORDED.goodDayStamp} size={64} style={{position: 'absolute', right: 24, top: 24}} />}
+          illustration={<Stamp id={RECORDED.goodDayStamp[lang]} size={64} style={{position: 'absolute', right: 24, top: 24}} />}
           labelPosition="top-left"
         />
       </StampCard>
-      <StampCard under={RIGHT} opacity={ramp(t, 47.2, 47.7, EASE_OUT)} dim={0}>
+      <StampCard under={RIGHT} aspect={clipAspect(introPlacement('S6.card'), lang, 2.5)} opacity={ramp(t, 47.2, 47.7, EASE_OUT)} dim={0}>
         <MediaSlot
           placement={introPlacement('S6.card')}
           lang={lang}
           tone="paper"
           compact
-          crop={{rect: TARGETS.u07Card.rect, box: {w: CARD.w, h: CARD.h}}}
-          illustration={<Stamp id={RECORDED.s5Stamp} size={64} style={{position: 'absolute', right: 24, top: 24}} />}
+          illustration={<Stamp id={RECORDED.s5Stamp[lang]} size={64} style={{position: 'absolute', right: 24, top: 24}} />}
           labelPosition="top-left"
         />
       </StampCard>
@@ -137,17 +137,18 @@ export const S6 = ({lang}: {lang: Lang}) => {
 };
 
 /**
- * The S5 → S6 配對剪接, drawn over both scenes (41.8–43.3): today's stamp lifts off the
- * calendar where the S5 camera shows it, grows to the centre on a cream disc that fills the frame
- * by the 42.5 cut, then its halves ride out with the splitting sheet and fade.
+ * The S5 → S6 配對剪接, drawn over both scenes (41.8–43.3): today's stamp lifts off the day
+ * panel's card where the S5 camera shows it (the 40 px stamp — U07 has the panel open), grows to
+ * the centre on a cream disc that fills the frame by the 42.5 cut, then its halves ride out with
+ * the splitting sheet and fade. The stamp is the one this language's take got (recorded.ts).
  */
-export const StampMatchCut = () => {
+export const StampMatchCut = ({lang}: {lang: Lang}) => {
   const t = useTime();
   if (t < 41.8 || t >= SPLIT[1]) return null;
-  const [x, y, w, h] = TARGETS.s5TodayCell.rect;
-  const cam = camAt(S2_S5_CAMERA, 41.8);
-  const [sx, sy] = camProject(cam, recToStage(x + w * 0.5, y + h * 0.45));
-  const size0 = 14 * REC_TO_WIN * cam.zoom;
+  const [x, y, w, h] = targetRect('s5PanelStamp', lang);
+  const cam = camAt(s2s5Camera(lang), 41.8);
+  const [sx, sy] = camProject(cam, recToStage(x + w * 0.5, y + h * 0.5));
+  const size0 = Math.max(w, h) * REC_TO_WIN * cam.zoom;
   const grow = ramp(t, 41.8, 42.5, EASE_IN_OUT);
   const cx = lerp(sx, 960, grow);
   const cy = lerp(sy, 500, grow);
@@ -172,7 +173,7 @@ export const StampMatchCut = () => {
           transform: `translate(${dx}px, ${dy}px) scale(${s})`,
         }}
       >
-        <Stamp id={RECORDED.s5Stamp} size={size} />
+        <Stamp id={RECORDED.s5Stamp[lang]} size={size} />
       </div>
     );
   };

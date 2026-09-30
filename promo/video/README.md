@@ -34,6 +34,9 @@
 | `npm run render:loop` | 循環母帶 `out/readme-loop.mp4`（無聲） |
 | `npm run typecheck` | TypeScript 型別檢查 |
 | `npm run contact-sheet -- <影片> <輸出.png> [--count=20]` | 平均取 N 格拼成一張總覽圖 |
+| `scripts/make-intermediates.sh [id…] [--dry-run]` | 把 `src/data/shots.ts` 列的 ★ take 轉成 `public/media/ui/*.mp4`（見下方「UI 錄影」） |
+| `node scripts/render.mjs --crf=18 --out-dir=<資料夾> --suffix=-interim intro-zh intro-en loop` | 給人看的全尺寸版本（中間剪輸出到 `/mnt/Data_SSD/urdiary-media/renders/interim/`）；先跑 `npm run gen` |
+| `node scripts/import-narration.mjs` | 把正規化旁白複製成 `public/media/narration/<lang>/<id>.wav`，先核對字、入點與 §0 的「到場尾留 0.8 s」 |
 
 每個指令都會先跑 `npm run gen`：從 `desktop/` 重新產生吉祥物、從 `public/media/` 重新產生素材清單（兩者都在 `src/generated/`，不進 git）。
 
@@ -46,10 +49,11 @@
 | `src/data/timeline.ts` | §1.1、§1.2 標題 | 十場的時間、幀號範圍、主來源；轉場表（沒有寫時間的三個轉場標 `timed: false`）。載入時就會驗算：場次首尾相接、幀號和分鏡標題一致、總和 5310 |
 | `src/data/narration.ts` | §1.2 旁白、§0 節奏規則 | zh／en 旁白原文、入點、「最晚」結束時間、字幕怎麼斷行分段；§0 的字數／停頓規則寫成 `estimateSpeechSec()`，check 會用它重算每一句 |
 | `src/data/captions.ts` | §1.2 畫面文字 | 每張字卡的中英文、進出時間、位置 |
-| `src/data/media.ts` | §3.1、§4.3 | 鏡頭表（G1–G6、U02–U16）、每個鏡頭放在哪裡（`INTRO_PLACEMENTS`／`LOOP_PLACEMENTS`：時間、來源入點 `srcIn`、速度 `rate`、定格）、MG 圈選／螢光筆／推鏡的目標座標（`TARGETS`，錄影的 CSS px） |
+| `src/data/media.ts` | §3.1、§4.3 | 鏡頭表（G1–G6、U02–U16）、每個鏡頭放在哪裡（`INTRO_PLACEMENTS`／`LOOP_PLACEMENTS`：時間；UI 錄影的來源時間由 `shots.ts` 的速度曲線決定，ComfyUI 鏡頭用 `srcIn`、`rate`、定格）、MG 圈選／螢光筆／推鏡的目標座標（`TARGETS`，錄影的 CSS px，zh／en 各一組） |
 | `src/data/audio.ts` | §5 | 配樂的淡入淡出與旁白下的 −9 dB 閃避（起音 150 ms、釋放 400 ms）、音效表 |
 | `src/data/loop.ts` | §2 | 循環的分段、字卡、相位公式（週期 P＝123/24＝5.125 s；開頭用 t、結尾用 (t−20) mod P） |
-| `src/data/recorded.ts` | S5、S6 | 要看實際錄到什麼才能定的值（S5 蓋到的印章、好日子的印章） |
+| `src/data/recorded.ts` | S5、S6 | 實際錄到的印章（zh／en 各自的 take 鏈：S5 的今天 heal／moon、好日子 sun） |
+| `src/data/shots.ts` | §3 | UI 錄影：每個中間檔用哪個 ★ take、保留哪一段、裁切；每個 placement 的速度曲線（時間軸秒 → take 秒） |
 
 十場各在 `src/scenes/S1.tsx`…`S10.tsx`；S2–S5 在分鏡裡是「同一個視窗內」溶接，所以共用一個視窗和一條連續的鏡頭軌（`src/scenes/cameras.ts`）。共用元件在 `src/components/`：`DeviceFrame`（桌面視窗、手機外框）、`Caption`（字卡）、`Subtitle`（旁白字幕）、`Transition`（溶接、紙張滑移、配對溶接的光）、`Placeholder`、`MediaSlot`、`Mascot`。
 
@@ -63,16 +67,28 @@
 |---|---|---|
 | `G1.mp4` … `G5.mp4` | ComfyUI 鏡頭（§4.3） | ≥1920×1080、補幀到 60 fps（§4.4）、靜音匯入 |
 | `G6.mp4` | README 搖擺循環 | 24 fps、**124 幀、首幀＝尾幀**（循環會丟掉最後一幀）；方形，疊在 16:9 奶油底上 |
-| `U02-zh.mp4`、`U02-en.mp4` …（`U##-<lang>`） | UI 錄影（§3） | 桌面 1920×1080 CSS @DPR2（3840×2160）、手機 390×844 @DPR3；一律轉成 CFR 60 fps。U05、U08、U09、U11、U16 可以用靜態圖（`.png`） |
-| `narration/zh/S1.mp3` …（`narration/<lang>/<id>`） | 旁白，一句一檔 | id＝`S1`–`S5`、`S6-A`、`S6-B`、`S7`、`S8`、`S9-A`、`S9-B`、`S9-C`、`S10`。有檔案之後，字幕長度、配樂閃避都改用檔案的實際長度 |
+| `ui/U02-zh.mp4`、`ui/U02-en.mp4` …（`ui/U##-<lang>[-變體]`） | UI 錄影（§3）的中間檔 | 由 `scripts/make-intermediates.sh` 產生，見下方「UI 錄影」 |
+| `narration/zh/S1.wav` …（`narration/<lang>/<id>`） | 旁白，一句一檔 | id＝`S1`–`S5`、`S6-A`、`S6-B`、`S7`、`S8`、`S9-A`、`S9-B`、`S9-C`、`S10`；由 `node scripts/import-narration.mjs` 複製（48 kHz WAV，檔頭約 0.12 s 靜音，WAV 的第 0 秒放在入點）。有檔案之後，字幕長度、配樂閃避都改用檔案的實際長度 |
 | `music/bed-90s.mp3` | 90 s 配樂床（§5.1） | 已剪到 88.5 s 對齊畫面 |
 | `sfx/<id>.mp3` | 音效（§5.1） | id 見 `src/data/audio.ts`：`room-tone`、`typing`、`chime`、`paper`、`click`、`page`、`stamp`、`rain`、`cup`（選用） |
 
-錄影進來之後要做的事（都是改資料，不用改元件）：
-1. 在 `media.ts` 把每個 placement 的 `srcIn`（從錄影第幾秒開始）與 `rate` 填好；一段錄影裡要跳剪或加速（例如 U06 那 30–90 s 的等待壓成 1.4 s），就拆成好幾個 placement。
-2. 把 `TARGETS` 的座標改成錄影裡的實際位置（草稿裡每個目標都畫成綠色虛線框，標「暫定位置」）。
-3. 依錄到的印章改 `recorded.ts` 與 `captions.ts` 的 `s6-left-stamp`／`s6-right-stamp`。
-4. 看 `G1` 的手機實際在哪，改 `src/scenes/shared.tsx` 的 `G1_PHONE_POINT`（S1→S2 配對溶接的光從那裡出發）。
+### UI 錄影（中間剪起）
+
+原始錄影在 `/mnt/Data_SSD/urdiary-media/recordings/<U>/<lang>-take<N>.mov`（ProRes 422 HQ；桌面 3840×2160、手機 1170×2532，都是 CFR 60），每個 take 的事件時間與 LLM 原文在同目錄的 `SHOTLOG.md`／`<take>.json`。`src/data/shots.ts` 是唯一的對照表：
+
+- **`CLIPS`**：一列一個中間檔——用哪個 ★ take（zh 主線 U03／U04 take16 → U06／U07 take4 → U15 take3；en 主線 U03／U04 take7 → U06／U07／U15 take3）、保留哪一段（`in`／`out`，已含 0.5 s 前後餘量，腳本會取整到 1/60 s 的整幀）、要不要裁切（`crop`，錄影的 CSS px）與輸出倍率（`scale`：桌面整張 1＝1920×1080；手機 2＝780×1688——585 是奇數寬、x264 yuv420p 不收，S7 出場又會推到 1.75 倍；回憶卡／印章卡的裁切 2＝4K 原生解析度，放大成浮卡也清楚）。
+- **`SPEED_MAPS`**：每個 placement（`media.ts` 的 key）在時間軸上放 take 的哪一段，寫成節點 `[時間軸秒, take 秒]`；節點之間線性，斜率 1＝原速、>1＝分鏡寫的「加速」（打字、等回覆、生成日記）、兩個節點 take 秒相同＝定格。take 秒就是 SHOTLOG 的時間，直接對得起來。`<MediaSlot>` 每一幀算出 take 秒、減掉中間檔的 `in`，用一個起點位移過的 `<Sequence>` 把 `<OffthreadVideo>` 釘在那一幀（不用 `<Freeze>`：它的幀號會被夾到合成長度，600 幀的循環裡後段會拿到錯的幀）——**加速不燒進檔案**，改節點就好，不必重轉。
+- **MG 目標**（`media.ts` 的 `TARGETS`）：圈選、螢光筆、推鏡、點擊波紋的位置，錄影 CSS px，zh／en 分開（按鈕寬度、引用句換行都不同），在 take 上實測。
+
+```bash
+scripts/make-intermediates.sh --dry-run      # 看要轉哪些、每個從第幾幀到第幾幀
+scripts/make-intermediates.sh                # 全部（23 個檔，幾分鐘；nice，錄影中也能跑）
+scripts/make-intermediates.sh ui/U12-zh U05  # 只轉某幾個（id 或鏡頭名）
+```
+
+輸出一律 H.264 CRF 14 slow、yuv420p、GOP 30、BT.709、faststart、60 fps、無聲，逐檔 ffprobe（尺寸、fps、幀數）。take 本身就是時間戳精確的 CFR 60，所以逐幀直通（中間檔第 k 幀＝take 第 in＋k 幀，已實測）。
+
+**換 take（例如 U12 早晨重拍）**：只改 `shots.ts` 那一列的 `take`，再跑 `scripts/make-intermediates.sh ui/U12-zh`。U12 的列帶 `anchor`（錄影器事件 `check-in greeting shown` 在原 take 的秒數），腳本會到新 take 的 JSON 找同一個事件、把裁切平移同樣的秒數，所以中間檔裡問候出現的時間不變、S7 的節點不用動。其他鏡頭換 take 時，照新 take 的 SHOTLOG 時間改該 placement 的節點。
 
 ## 檢查（`npm run check`）
 
@@ -92,7 +108,8 @@
 
 ## 還沒做的事
 
-- 真正的素材（ComfyUI、UI 錄影、旁白、配樂、音效）——目前全是佔位。
-- `TARGETS`、`G1_PHONE_POINT`、`recorded.ts` 的值都是暫定的，要等錄影。
+- ComfyUI 鏡頭（G1–G6）、配樂、音效——目前是佔位／靜音（配樂閃避的邏輯已接好，有檔就生效）。UI 錄影與旁白已接上（中間剪）。
+- U12（S7 手機早安）用的是下午錄的 ★ 暫代 take，早晨重拍後照上方「換 take」替換。
+- `G1_PHONE_POINT`（S1 → S2 的光從哪裡出發）要等 G1。
 - 響度（整合 −16 LUFS、真峰值 ≤ −1.5 dBTP，§5.1）留到混音時處理，Remotion 這邊只做相對音量。
 - ReadmeLoop 的 GIF（800×450、15 fps、palettegen）與 animated WebP（960×540）輸出是 Stage 3 的事；這裡先出 mp4 母帶。

@@ -10,7 +10,10 @@
  * Drafts (npm run render:draft): scale 0.5, CRF 28 (x264 veryfast), JPEG 70, and the burned-in
  * scene / time / frame overlay — for checking the timeline, never for publishing.
  *
- * Options: --concurrency=N (default: Remotion's, half the CPU threads).
+ * Options: --concurrency=N (default: Remotion's, half the CPU threads); --crf=N (masters: 16);
+ * --out-dir=DIR (masters: out/, drafts: out/draft/); --suffix=S (appended to the file name, e.g.
+ * -interim → intro-zh-interim.mp4). The interim cut for review:
+ *   node scripts/render.mjs --crf=18 --out-dir=/mnt/Data_SSD/urdiary-media/renders/interim --suffix=-interim intro-zh intro-en loop
  * Run through npm (`npm run render:zh` …) so the generated mascot / media manifest are fresh.
  */
 import {mkdirSync} from 'node:fs';
@@ -30,7 +33,10 @@ const TARGETS = {
 
 const args = process.argv.slice(2);
 const draft = args.includes('--draft');
-const concurrency = Number(args.find((a) => a.startsWith('--concurrency='))?.split('=')[1]) || null;
+const opt = (name) => args.find((a) => a.startsWith(`--${name}=`))?.split('=').slice(1).join('=');
+const concurrency = Number(opt('concurrency')) || null;
+const crfOpt = opt('crf') !== undefined ? Number(opt('crf')) : null;
+const suffix = opt('suffix') ?? '';
 const names = args.filter((a) => !a.startsWith('--'));
 const unknown = names.filter((n) => !TARGETS[n]);
 if (!names.length || unknown.length) {
@@ -38,7 +44,7 @@ if (!names.length || unknown.length) {
   process.exit(2);
 }
 
-const outDir = draft ? resolve(OUT, 'draft') : OUT;
+const outDir = opt('out-dir') ? resolve(opt('out-dir')) : draft ? resolve(OUT, 'draft') : OUT;
 mkdirSync(outDir, {recursive: true});
 
 const t0 = Date.now();
@@ -52,7 +58,7 @@ for (const name of names) {
   const target = TARGETS[name];
   const inputProps = {...target.props, draft};
   const composition = await selectComposition({serveUrl, id: target.id, inputProps});
-  const outputLocation = resolve(outDir, target.file);
+  const outputLocation = resolve(outDir, target.file.replace(/\.mp4$/, `${suffix}.mp4`));
   const started = Date.now();
   let last = -1;
   await renderMedia({
@@ -67,7 +73,7 @@ for (const name of names) {
     pixelFormat: 'yuv420p',
     imageFormat: 'jpeg',
     scale: draft ? 0.5 : 1,
-    crf: draft ? 28 : 16,
+    crf: crfOpt ?? (draft ? 28 : 16),
     x264Preset: draft ? 'veryfast' : 'slow',
     jpegQuality: draft ? 70 : 95,
     muted: !target.audio,

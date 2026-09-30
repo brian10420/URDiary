@@ -27,14 +27,15 @@ export const expectedMedia = (): ExpectedMedia[] => {
   for (const p of INTRO_PLACEMENTS) {
     for (const shot of p.fallback ? [p.shot, p.fallback] : [p.shot]) {
       const s = SHOTS[shot];
+      const variant = shot === p.shot ? p.variant : undefined;
       for (const lang of s.perLang ? LANGS : (['zh'] as const)) {
-        add({id: shotMediaId(shot, lang), kind: s.stillOk ? 'image-or-video' : 'video', required: !s.optional && shot === p.shot, usedBy: 'IntroLong'});
+        add({id: shotMediaId(shot, lang, variant), kind: s.stillOk ? 'image-or-video' : 'video', required: !s.optional && shot === p.shot, usedBy: 'IntroLong'});
       }
     }
   }
   for (const p of LOOP_PLACEMENTS) {
     const s = SHOTS[p.shot];
-    add({id: shotMediaId(p.shot, LOOP_UI_LANG), kind: s.stillOk ? 'image-or-video' : 'video', required: !s.optional, usedBy: 'ReadmeLoop'});
+    add({id: shotMediaId(p.shot, LOOP_UI_LANG, p.variant), kind: s.stillOk ? 'image-or-video' : 'video', required: !s.optional, usedBy: 'ReadmeLoop'});
   }
   for (const line of NARRATION) for (const lang of LANGS) add({id: narrationMediaId(line.id, lang), kind: 'audio', required: true, usedBy: `IntroLong ${lang}`});
   add({id: MUSIC_BED_ID, kind: 'audio', required: true, usedBy: 'IntroLong'});

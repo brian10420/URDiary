@@ -9,7 +9,7 @@
 import type {ReactNode} from 'react';
 import {AbsoluteFill} from 'remotion';
 import {MOTION} from '../generated/mascot.ts';
-import {TARGETS, loopPlacement, type TargetId} from '../data/media.ts';
+import {loopPlacement, targetRect, type TargetId} from '../data/media.ts';
 import {HERO_CARD, HERO_CARD_FADE, HERO_PERIOD_SEC, LOOP_SEGMENTS, LOOP_UI_LANG, SWAYS_PER_PERIOD, g6SourceTime, heroPhase} from '../data/loop.ts';
 import {UI} from '../data/ui-strings.ts';
 import {EASE_IN_OUT, keyframesAt, ramp, rotationOf} from '../lib/anim.ts';
@@ -82,9 +82,9 @@ const HeroSheet = ({phase, cardOpacity}: {phase: number; cardOpacity: number}) =
 
 /** A target rect (recording CSS px) inside the panel, through the panel's crop of that recording. */
 const inPanel = (crop: TargetId, id: TargetId): [number, number, number, number] => {
-  const [cx, cy, cw] = TARGETS[crop].rect;
+  const [cx, cy, cw] = targetRect(crop, LOOP_UI_LANG);
   const k = PANEL.w / cw;
-  const [x, y, w, h] = TARGETS[id].rect;
+  const [x, y, w, h] = targetRect(id, LOOP_UI_LANG);
   return [(x - cx) * k, (y - cy) * k, w * k, h * k];
 };
 
@@ -105,7 +105,7 @@ const UiSheet = () => {
   const chat = segment('chat');
   const memory = segment('memory');
   const stamp = segment('stamp');
-  const crop = (id: TargetId) => ({rect: TARGETS[id].rect, box: {w: PANEL.w, h: PANEL.h}});
+  const crop = (id: TargetId) => ({rect: targetRect(id, LOOP_UI_LANG), box: {w: PANEL.w, h: PANEL.h}});
   const card = t < memory.start ? chat.card : t < stamp.start ? memory.card : stamp.card;
   return (
     <AbsoluteFill style={{background: C.paper}}>
