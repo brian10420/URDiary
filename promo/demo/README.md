@@ -136,7 +136,7 @@ env -u URDIARY_DATA_DIR promo/demo/verify_demo.sh   # 全新煙霧測試：mkdte
 ## 已知限制（資料模型表達不了、或錄影時要留意的）
 
 - **U08 月格要 D0 在當月 14 號以後。** 日記只到 D-1，有 12 篇在 D-13～D-1，所以 D0 是某月 1–13 號時，當月月格不到 12 枚印章。種子腳本會印出實際數字。
-- **en 記憶檔的章節標題是中文**（`## 稱呼與身分`…）。這是 App 的真實行為：`memory_files.SECTIONS` 不分語言，en 的記憶收納也寫這些標題。en 的 U15 畫面會看到它們。
+- **記憶檔的章節標題跟著介面語言**（v2.6 起）：zh 是 `## 稱呼與身分`…，en 是 `## Name & identity`…（`memory_files.SECTION_TITLES`）。種子用人物的 `lang` 呼叫 `apply_op`，所以兩位人物的標題都跟 App 真的寫出來的一樣；帳本的 `section` 存語言無關的 key，API 依 `X-Language` 回該語言的標題。en 標題比中文長（使用者檔案多約 64 字元），為了守住 400–560 字，Maya 少了一條與「夜跑、鋼琴」重複的洞察（D-3 那批只剩 1 筆），D-16 的時間線也從 presentation 改成較短的 talk。
 - **en 小語上限 60 字元**：App 入庫時把小語截在 60 字元（`day_stamp.NOTE_MAX`），但 en 提示詞要的是約 15 個字。種子資料都在 60 字元內；U06 真實產生的 en 小語有可能在字中間被截斷。
 - U06／U07 的印章、U15 的待核可批次、所有問候與回覆，都是錄影當下由 grok-4.3 產生，無法預先種。
 - 後端自己的 log 會寫到 `backend/app/logs/*.log`（gitignored，路徑寫死在 `utils/logger.py`），跟 E2E 後端一樣。

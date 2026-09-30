@@ -242,32 +242,31 @@
     {"title": "Home to Columbus", "category": "family", "day": 3, "end_day": 4, "color": "#5fd0a0"}
   ],
   "memory": {
-    "_about": "Ledger batches in time order. {date} = the batch's day (for review_pass: the source diary's day); {day:-21} = 21 days before D0. Section headers stay in Chinese because the app's memory_files.SECTIONS are language-independent (the en review pass must use them too). The seeder applies every op with the app's own memory_files.apply_op, so file contents, ledger and undo all line up.",
+    "_about": "Ledger batches in time order. {date} = the batch's day (for review_pass: the source diary's day); {day:-21} = 21 days before D0. Sections use the app's English titles (memory_files.SECTION_TITLES); the seeder writes the files with lang=en, so the headers come out in English exactly as the app's en review pass writes them. The seeder applies every op with the app's own memory_files.apply_op, so file contents, ledger and undo all line up.",
     "batches": [
       {"source": "onboarding", "day": -21, "time": "19:58", "ops": [
-        {"file": "user_profile", "action": "add", "section": "稱呼與身分", "text": "- Maya, lives in Pittsburgh, grad student ({date})"},
-        {"file": "user_profile", "action": "add", "section": "四大生活領域", "text": "- Mom + cat Dumpling in Columbus; roommate Annie ({date})"},
-        {"file": "user_profile", "action": "add", "section": "四大生活領域", "text": "- Night runs, piano, pho ({date})"},
-        {"file": "user_profile", "action": "add", "section": "優勢與關鍵洞察", "text": "- Careful; keeps promises ({date})"}
+        {"file": "user_profile", "action": "add", "section": "Name & identity", "text": "- Maya, lives in Pittsburgh, grad student ({date})"},
+        {"file": "user_profile", "action": "add", "section": "Four life domains", "text": "- Mom + cat Dumpling in Columbus; roommate Annie ({date})"},
+        {"file": "user_profile", "action": "add", "section": "Four life domains", "text": "- Night runs, piano, pho ({date})"},
+        {"file": "user_profile", "action": "add", "section": "Strengths & key insights", "text": "- Careful; keeps promises ({date})"}
       ]},
       {"source": "review_pass", "diary_day": -16, "ops": [
-        {"file": "user_profile", "action": "add", "section": "重要事件時間線", "text": "- [{date}] Sleepless before first seminar presentation"},
-        {"file": "user_profile", "action": "add", "section": "情緒模式", "text": "- Big moments cost her sleep; prep calms her ({date})"},
-        {"file": "companion_notes", "action": "add", "section": "有效的支持方式", "text": "- Nervous: rehearse the talk with her; skip \"don't worry\" ({date})"}
+        {"file": "user_profile", "action": "add", "section": "Key events timeline", "text": "- [{date}] Sleepless before first seminar talk"},
+        {"file": "user_profile", "action": "add", "section": "Emotional patterns", "text": "- Big moments cost her sleep; prep calms her ({date})"},
+        {"file": "companion_notes", "action": "add", "section": "Support that works", "text": "- Nervous: rehearse the talk with her; skip \"don't worry\" ({date})"}
       ]},
       {"source": "review_pass", "diary_day": -10, "ops": [
-        {"file": "user_profile", "action": "add", "section": "重要事件時間線", "text": "- [{date}] Mom's birthday: sang over video, sent cake"},
+        {"file": "user_profile", "action": "add", "section": "Key events timeline", "text": "- [{date}] Mom's birthday: sang over video, sent cake"},
         {"file": "user_profile", "action": "replace", "target": "- Maya, lives in Pittsburgh, grad student ({day:-21})", "text": "- Maya, Pittsburgh; 1st-yr master's, stats TA ({date})"}
       ]},
       {"source": "review_pass", "diary_day": -7, "ops": [
-        {"file": "user_profile", "action": "add", "section": "情緒模式", "text": "- Rainy days alone: homesick, self-doubt ({date})"},
-        {"file": "companion_notes", "action": "add", "section": "有效的支持方式", "text": "- Low days: listen first, no rush to fix ({date})"},
-        {"file": "companion_notes", "action": "add", "section": "觀察與提醒", "text": "- \"I'm fine\" often means she's tired ({date})"}
+        {"file": "user_profile", "action": "add", "section": "Emotional patterns", "text": "- Rainy days alone: homesick, self-doubt ({date})"},
+        {"file": "companion_notes", "action": "add", "section": "Support that works", "text": "- Low days: listen first, no rush to fix ({date})"},
+        {"file": "companion_notes", "action": "add", "section": "Observations & reminders", "text": "- \"I'm fine\" often means she's tired ({date})"}
       ]},
       {"source": "user_edit", "day": -5, "time": "21:50", "file": "user_profile", "find": "piano, pho", "replace": "piano, pho (extra basil)"},
       {"source": "review_pass", "diary_day": -3, "ops": [
-        {"file": "companion_notes", "action": "add", "section": "進行中的關注", "text": "- Going home soon; ask about Dumpling ({date})"},
-        {"file": "user_profile", "action": "add", "section": "優勢與關鍵洞察", "text": "- Piano and runs steady her ({date})"}
+        {"file": "companion_notes", "action": "add", "section": "Ongoing follow-ups", "text": "- Going home soon; ask about Dumpling ({date})"}
       ]}
     ]
   },

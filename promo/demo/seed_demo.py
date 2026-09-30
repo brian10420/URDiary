@@ -362,14 +362,17 @@ def build_memory(persona: dict, d0: date, clock: Clock, b):
                 continue
             text = fill_dates(op.get("text"), day, d0)
             target = fill_dates(op.get("target"), day, d0)
+            # lang＝人物的介面語言：節標頭跟 App 的 review pass 一樣用該語言寫
             result = mf.apply_op(file_key, contents[file_key], action,
-                                 section=op.get("section"), target=target, text=text)
+                                 section=op.get("section"), target=target, text=text,
+                                 lang=persona["lang"])
             if not result.ok:
                 errors.append(f"memory batch #{index}: {action} on {file_key} failed ({result.error})")
                 continue
             section = op.get("section")
             if action == "remove" and not section:
                 section = mf.find_section_of(contents[file_key], target or "")
+            section = mf.canonical_section(file_key, section)  # 帳本存 key，同 App
             contents[file_key] = result.content
             touched[file_key] = when
             rows.append(dict(batch_key=index, file_key=file_key, action=action, section=section,
