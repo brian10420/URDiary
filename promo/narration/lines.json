@@ -54,18 +54,18 @@
     },
     {
       "id": "S4",
-      "zh": "聊到相關的事，它會想起你寫過的某一天，記得那時候的你。",
+      "zh": "聊到相關的事，它會想起你寫過的某一天，連日期和標題都記得。",
       "en": "When it's relevant, it recalls a day you wrote about — by its date and title.",
       "in_point_s": {
         "zh": 24.7,
         "en": 24.7
       },
       "latest_end_s": {
-        "zh": 31.2,
+        "zh": 31.7,
         "en": 31.6
       },
       "budget_s": {
-        "zh": 6.5,
+        "zh": 7.0,
         "en": 6.9
       }
     },

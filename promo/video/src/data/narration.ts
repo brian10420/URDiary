@@ -61,14 +61,14 @@ export const NARRATION: readonly NarrationLine[] = [
     },
   },
   {
-    id: 'S4', scene: 'S4', in: {zh: 24.7, en: 24.7}, latestEnd: {zh: 31.2, en: 31.6}, burnIn: true,
+    id: 'S4', scene: 'S4', in: {zh: 24.7, en: 24.7}, latestEnd: {zh: 31.7, en: 31.6}, burnIn: true,
     text: {
-      zh: '聊到相關的事，它會想起你寫過的某一天，記得那時候的你。',
+      zh: '聊到相關的事，它會想起你寫過的某一天，連日期和標題都記得。',
       en: "When it's relevant, it recalls a day you wrote about — by its date and title.",
     },
     subtitles: {
-      // 24 字 do not fit two 16-字 lines at a phrase break, so the sentence is shown in two steps.
-      zh: [['聊到相關的事，', '它會想起你寫過的某一天，'], ['記得那時候的你。']],
+      // 26 字 do not fit two 16-字 lines at a phrase break, so the sentence is shown in two steps.
+      zh: [['聊到相關的事，', '它會想起你寫過的某一天，'], ['連日期和標題都記得。']],
       en: [["When it's relevant, it recalls a day", 'you wrote about — by its date and title.']],
     },
   },

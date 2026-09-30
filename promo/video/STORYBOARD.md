@@ -110,9 +110,9 @@
   - 28.0–31.5：MG 暖黃螢光筆掃過「日期＋《標題》」；右側浮出一張「回憶卡」，就是那篇日記在日記頁的真實卡片（U05：日期、心情標籤、20 px 印章、標題），用細線連到引用句。
   - 31.5–33.0：停留。
 - **轉場**：入＝切。出＝回憶卡縮回，溶接到 S5（同一個視窗）。
-- **zh 旁白**（入點 24.7 s）：「聊到相關的事，它會想起你寫過的某一天，記得那時候的你。」
+- **zh 旁白**（入點 24.7 s）：「聊到相關的事，它會想起你寫過的某一天，連日期和標題都記得。」
 - **en 旁白**（入點 24.7 s）："When it's relevant, it recalls a day you wrote about — by its date and title."
-- **節奏核對**：zh 24 字（實測合成 5.06 s）→ 預估 5.3–6.0 s＋0.5 s ≈ 5.8–6.5 s；在 24.7 s 入點，實測收在 29.76 s；節奏模型最晚 31.2 s，離場尾 33.0 s 留 1.8 s ✓｜en 15 words → 5.8–6.25 s＋0.6 s ≈ 6.4–6.9 s；最晚 31.6 s，留 1.4 s ✓
+- **節奏核對**：zh 26 字（實測合成 5.67 s）→ 預估 5.8–6.5 s＋0.5 s ≈ 6.3–7.0 s；在 24.7 s 入點，實測收在 30.37 s；最晚 31.7 s，離場尾 33.0 s 留 1.3 s ✓｜en 15 words → 5.8–6.25 s＋0.6 s ≈ 6.4–6.9 s；最晚 31.6 s，留 1.4 s ✓
 - **畫面文字**（27.5–32.5）：zh「被記得」｜en "Remembered"
 - **音樂／音效**：延續 S3 的律動；回憶卡浮出時一個很輕的紙張聲。
 
@@ -507,7 +507,7 @@
 | F2 | 不取名也行、之後隨時能改 | S2 字卡 | `onboarding_module.js:231–237`（「隨便／之後再取」→預設名）；`backend/app/services/companion_naming.py:46`（DEFAULT_COMPANION_NAME）、`:157`、`:181–184`（跳過取名題的後備）；`i18n.js:150、512`（設定頁「AI 的名字」）、`:183、:543` | 取名題之前就按「直接開始聊天」＝不給名字（`companion_naming.py:155–157` 註解） |
 | F3 | 取名後標題立刻換名（早於 namingAck） | S2 畫面 | `onboarding_module.js:173–188`（PUT 成功就換）、`:331–340`（namingAck 要再等 1–3 s 假思考）；`desktop/js/settings_module.js:615–619`；`desktop/js/chat_module.js:115–121` | 重新載入後要先開過設定（`settings_module.js:420–435`） |
 | F4 | 先聽你說完、接住心情、不急著給建議 | S3 旁白 | `backend/app/services/prompts/zh-TW/persona_core.txt:18–23`；`prompts/en/persona_core.txt:18–23` | 提示詞設計，只在「帶著情緒傾訴」時切換；實際措辭看模型 |
-| F5 | 聊到相關的事會想起過往日記（zh 旁白只宣稱「想起你寫過的某一天」；en 旁白宣稱日期與《標題》，U04 en-take7 有拍到） | S4 旁白、Loop | `backend/app/services/memory_retrieval.py:29`（TOP_N=3）、`:300`（get_relevant_memories）、`:342–348`（帶日期＋《標題》＋摘要）；`prompts/zh-TW/conversation_prompt.txt:10–18`；`prompts/en/conversation_prompt.txt:10–18`（「一次對話最多一兩次」在第 18 行） | 只在高度相關時引用、一次對話最多一兩次；排除今天；en 關鍵字不做詞幹還原 |
+| F5 | 聊到相關的事會想起過往日記，說出日期與《標題》（zh、en 旁白都宣稱；U04 zh-take26「9 月 14 日《第一次上台報告前的失眠夜》」、en-take26 “September 14 in “Sleepless before my first presentation,”” 都有拍到） | S4 旁白、Loop | `backend/app/services/memory_retrieval.py:29`（TOP_N=3）、`:300`（get_relevant_memories）、`:342–348`（帶日期＋《標題》＋摘要）；`prompts/zh-TW/conversation_prompt.txt:10–18`；`prompts/en/conversation_prompt.txt:10–18`（「一次對話最多一兩次」在第 18 行） | 只在高度相關時引用、一次對話最多一兩次；排除今天；en 關鍵字不做詞幹還原 |
 | F6 | 按一下，對話就成了一篇日記（第一人稱、標題、摘要、情緒分數） | S5 旁白、Loop | `chat_module.js:1029`（endChat）、`:1074`；`i18n.js:165、527`；`backend/app/api/routes/chat.py:146–196`；`prompts/zh-TW/daily_note_prompt.txt:1、28、40–44` | 需要可用的 AI 供應商 |
 | F7 | 行事曆那天多一枚印章＋小語 | S5 旁白、Loop | `backend/app/services/diary_service.py:129–137`（upsert_day_note）；`backend/app/services/day_stamp.py:11–19、34–44`；`daily_note_prompt.txt:46–47`；`backend/app/api/schemas.py:23`（預設開）；`chat_module.js:1180`；`desktop/js/calendar_module.js:488–491`（月格 14 px）、`:708–713`（日面板 40 px）；`desktop/js/diary_module.js:232–235、343–356` | 模型沒回合法印章＝那天不蓋；設定可關；同日再結束一次會覆蓋 |
 | F8 | 開心的日子有個小小的慶祝 | S6 旁白 | `desktop/js/mascot.js:161–167`（eggKindFor）、`:169–178`（showSaveEgg：跳＋金星、1.2 s 淡出）；`chat_module.js:1096–1100` | 條件是該篇 valence ≥0.45（含中性日）；22:00–05:00 改晚安版 |
@@ -596,3 +596,7 @@
 ## 修訂紀錄（v3.1, 2026-09-30）
 
 - **S4 zh 旁白**由「……連日期和標題都記得。」改成「聊到相關的事，它會想起你寫過的某一天，記得那時候的你。」（en 不變）。原因：U04 zh 錄影 16 個 take，grok-4.3 只用轉述回想過去的日記，一次也沒有說出「M 月 D 日《標題》」，例如「你之前第一次上台報告前也失眠到半夜爬起來順講稿」；en 版則有引用 "September 14, “Sleepless before my first presentation”"（U04 en-take7）。旁白只能宣稱畫面拍得到的事，所以 zh 只說「想起某一天」，en 保留日期＋標題。事實表 F5 與 S4 節奏核對同步更新；新旁白合成 5.06 s，收在 29.76 s；最晚 31.2 s，離場尾留 1.8 s。
+
+## 修訂紀錄（v3.2, 2026-10-01）
+
+- **S4 zh 旁白恢復 v3 原句**「聊到相關的事，它會想起你寫過的某一天，連日期和標題都記得。」（取代 v3.1 的「……記得那時候的你。」；en 不變）。原因：修正 UI 後重錄的 zh 主線 U04 zh-take26，回覆逐字引用了日期＋標題——「你這麼說，讓我想起 9 月 14 日《第一次上台報告前的失眠夜》那次，你也是準備一整週，還是半夜爬起來順講稿。」——和種子 D-16 一致，所以 v3.1 改句的理由（zh 沒有任何 take 說出日期＋標題）不再成立，原句現在有畫面支持。zh 畫面也和 en 一樣，用螢光筆掃過「9 月 14 日《第一次上台報告前的失眠夜》」。S4 節奏核對回到 v3（26 字、入點 24.7 s、最晚 31.7 s，離場尾留 1.3 s）；事實表 F5 同步（兩語都有拍到：zh-take26、en-take26）。只重合成這一句（zh S4，1 次 API 呼叫）：實測 5.67 s，收在 30.37 s。
