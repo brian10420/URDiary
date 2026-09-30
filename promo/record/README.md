@@ -44,6 +44,32 @@ node promo/record/record_shots.js --shotlog
 或停掉後端、`seed_demo.py --reset` 重種。U06 之後、同一天的 U12 會把「今天的日記」當成最近一篇，
 所以 U12 要在主線之前錄（或重種之後）。
 
+## U12 主方案：不用等到隔天早上
+
+分鏡 S7 要的是「D+1 早上、第一次打開 App」：昨天＝主線 U06 寫出的真日記、今天 10:00 有助教課、問候是早上版。
+App 的「今天」「早上」都跟著後端的 `URDIARY_TIMEZONE` 走（05:00 換日，05:00–10:59 是早上），所以把整個隔離環境
+放到 UTC+14（Pacific/Kiritimati，比台北快 6 小時）就能在同一個晚上錄完：
+
+```bash
+export URDIARY_TIMEZONE=Pacific/Kiritimati          # 種子、demo 後端、錄影器（seed 維護旗標）都要用同一個
+export URDIARY_DATA_DIR=$(mktemp -d /tmp/urdiary-rec-XXXXXX)
+.venv/bin/python promo/demo/seed_demo.py              # 摘要要印出 D0＝當地換日前的那一天
+promo/demo/run_demo_backend.sh                         # 另一個終端機（同樣 export 那個時區）
+
+# 1) 當地 05:00 之前（台北 23:00 前）：主線寫出 D0 的日記（每個帳號一次）
+node promo/record/record_shots.js --session chain --lang zh --attempts 1
+node promo/record/record_shots.js --session chain --lang en --attempts 1
+
+# 2) 仍在 05:00 之前：把手機 session 開好、停在密碼框（瀏覽器時區預設取種子 manifest 的時區）
+node promo/record/record_shots.js --session morning  --lang zh --at 2026-10-01T05:05:00+14:00 &
+node promo/record/record_shots.js --session morning  --lang en --at 2026-10-01T05:06:30+14:00 &
+node promo/record/record_shots.js --session morning2 --lang zh --at 2026-10-01T05:08:30+14:00 &   # 重拍：先把問候改回昨天
+node promo/record/record_shots.js --session morning2 --lang en --at 2026-10-01T05:10:30+14:00 &
+```
+
+鐵律：05:00 之後，在錄影開始之前**不能有任何登入**（登入就會呼叫 check-in，把「今天第一次」用掉）。
+所以設定階段（登入、開關設定、停在密碼框）一律在 05:00 之前做完，時間到了只按「登入」。
+
 ## 鏡頭表是資料
 
 `record_shots.js` 開頭的 `SESSIONS`：每個 session 是一串 `[動作, 參數…]`，`['rec', 'U03']` 到 `['stop']`

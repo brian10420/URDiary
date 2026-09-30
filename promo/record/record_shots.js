@@ -18,7 +18,9 @@
  *   node promo/record/record_shots.js --retrim                            # 修正 -t 之前組裝、尾巴多一段的檔
  *   node promo/record/record_shots.js --sheets                            # 只重做 contact sheet
  *   node promo/record/record_shots.js --shotlog                           # SHOTLOG.md（併入 <out>/_picks.json）
- *   共用：--out DIR（預設 /mnt/Data_SSD/urdiary-media/recordings）、--phone-dpr 2|3
+ *   node promo/record/record_shots.js --session morning --lang zh --at 2026-10-01T05:05:00+14:00   # U12 主方案（D+1 早上）
+ *   共用：--out DIR（預設 /mnt/Data_SSD/urdiary-media/recordings）、--phone-dpr 2|3、
+ *         --tz <IANA 時區>（瀏覽器時區；預設取種子 manifest 的時區，也就是後端的 URDIARY_TIMEZONE）
  *
  * 鐵律：只連 8124；不讀、不碰金鑰（金鑰只由 run_demo_backend.sh 交給後端）；錄影檔只寫到 --out
  * （預設 /mnt/Data_SSD/urdiary-media/recordings/）。重拍前的狀態重設一律走 seed_demo.py 的維護旗標。
@@ -101,6 +103,28 @@ const SESSIONS = {
     steps: [
       ['seed', '--set-checkin', 'today', '--clear-chat'], ['open'], ['login'], ['awaitOpening'], ['touchSettings'],
       ['relogin'], ['awaitOpening'], ['hold', 0.5],
+      ['rec', 'U13'], ['hold', 1.5], ['nav', 'calendar'], ['awaitCalendar'], ['hold', 3.5], ['stop'],
+    ],
+  },
+  // U12＋U13 主方案（D+1 早上、「昨天」＝主線 U06 寫出的真日記）：設定階段（登入、開關設定、停在密碼框）
+  // 在後端的換日時刻（05:00）之前做完；--at 指定的時間一到才按登入——那一刻才是這一天第一次呼叫 check-in，
+  // 整段錄進去。要在白天之外的時段錄，就把 demo 後端與種子放在別的時區（URDIARY_TIMEZONE）、瀏覽器用 --tz 對齊。
+  morning: {
+    device: 'phone', role: 'main', llm: true, shots: ['U12', 'U13'],
+    steps: [
+      ['seed', '--set-checkin', 'today', '--clear-chat'], ['open'], ['login'], ['awaitOpening'], ['touchSettings'],
+      ['openSwitchUser'], ['pickProfile'], ['fillPassword'], ['waitUntil'],
+      ['rec', 'U12'], ['hold', 1.5], ['submitLogin'], ['awaitCheckin'], ['hold', 3.5], ['stop'],
+      ['rec', 'U13'], ['hold', 1.5], ['nav', 'calendar'], ['awaitCalendar'], ['hold', 3.5], ['stop'],
+    ],
+  },
+  // 同一帳號的重拍：時間到了先把問候改回「昨天」並清掉上一句（分鏡的重拍方式），再按登入
+  morning2: {
+    device: 'phone', role: 'main', llm: true, shots: ['U12', 'U13'],
+    steps: [
+      ['seed', '--set-checkin', 'today', '--clear-chat'], ['open'], ['login'], ['awaitOpening'], ['touchSettings'],
+      ['openSwitchUser'], ['pickProfile'], ['fillPassword'], ['waitUntil'], ['seed', '--set-checkin', 'yesterday', '--clear-chat'],
+      ['rec', 'U12'], ['hold', 1.5], ['submitLogin'], ['awaitCheckin'], ['hold', 3.5], ['stop'],
       ['rec', 'U13'], ['hold', 1.5], ['nav', 'calendar'], ['awaitCalendar'], ['hold', 3.5], ['stop'],
     ],
   },
@@ -307,7 +331,7 @@ class Runner {
       ...(gpu ? ['--use-gl=angle', '--use-angle=gl-egl'] : ['--disable-gpu'])];
     this.browser = await chromium.launch({ headless: true, args });
     this.ctx = await this.browser.newContext({
-      viewport: null, locale: LOCALE[this.lang], timezoneId: 'Asia/Taipei', reducedMotion: 'no-preference',
+      viewport: null, locale: LOCALE[this.lang], timezoneId: this.tz || 'Asia/Taipei', reducedMotion: 'no-preference',
       colorScheme: 'light', ...(d.userAgent ? { userAgent: d.userAgent } : {}), ...(d.touch ? { hasTouch: true } : {}),
     });
     const uiLang = UI_LANG[this.lang];
@@ -460,7 +484,7 @@ class Runner {
     const meta = await c.capture.stop();
     const rec = {
       shot: c.shot, lang: this.lang, take: c.take, session: this.sessionName, device: this.session.device,
-      account: this.acct.username, ui_lang: UI_LANG[this.lang],
+      account: this.acct.username, ui_lang: UI_LANG[this.lang], timezone: this.tz || 'Asia/Taipei',
       viewport: `${this.device.width}x${this.device.height}@${this.device.dpr}`,
       started_at: c.startedAt, ended_at: new Date().toISOString(),
       raw_dir: path.relative(this.out, c.capture.dir), raw_duration_s: +(meta.tEnd - meta.t0).toFixed(2),
@@ -579,6 +603,16 @@ const ACTIONS = {
   },
 
   async hold(r, seconds) { await sleep(seconds * 1000); },
+
+  // 等到 --at 指定的時刻（ISO 8601，例如 2026-10-01T05:05:00+14:00）；已經過了就直接往下
+  async waitUntil(r) {
+    if (!r.at) throw new Error('waitUntil needs --at <ISO time>');
+    const target = Date.parse(r.at);
+    if (Number.isNaN(target)) throw new Error(`bad --at ${r.at}`);
+    log(`waiting until ${r.at} (${Math.max(0, Math.round((target - Date.now()) / 1000))} s)`);
+    while (Date.now() < target) await sleep(Math.min(1000, target - Date.now()));
+    log('time reached');
+  },
 
   async clickInput(r) { await r.click(r.L('#user-input')); },
   async press(r, key) { await r.page.keyboard.press(key); r.event(`key ${key}`); },
@@ -890,7 +924,8 @@ async function runSession(args) {
   const results = [];
   for (let attempt = 1; attempt <= attempts; attempt++) {
     const r = new Runner({ session, sessionName: name, lang, role: args.role || session.role, out, dataDir, persona, manifest,
-      take: args.take, fixedTake: !!args.take, phoneDpr: args['phone-dpr'], attemptsLeft: attempts - attempt });
+      take: args.take, fixedTake: !!args.take, phoneDpr: args['phone-dpr'], attemptsLeft: attempts - attempt,
+      tz: args.tz || manifest.timezone || 'Asia/Taipei', at: args.at });
     log(`=== session ${name} (${lang}, ${r.acct.username}) attempt ${attempt}/${attempts}`);
     let aborted = false;
     try {
@@ -1142,7 +1177,9 @@ function buildShotlog(args) {
       L.push(`### ${k}${p.pick ? `　—　${p.pick}` : ''}`, '');
       L.push(`- 檔案：${rec.file ? '`' + rec.file + '`' : '（未組裝）'}${fp ? `（${fp.size_mb} MB）` : ''}`);
       if (fp) L.push(`- ffprobe：${fp.codec}${fp.profile ? ' ' + fp.profile : ''}，${fp.width}×${fp.height}，${fp.pix_fmt}，r_frame_rate ${fp.r_frame_rate}，${fp.frames} 幀，${fp.duration_s} s`);
-      L.push(`- 帳號／裝置：\`${rec.account}\`（${rec.ui_lang}），${rec.device} ${rec.viewport}；錄於 ${local(rec.started_at)}`);
+      L.push(`- 帳號／裝置：\`${rec.account}\`（${rec.ui_lang}），${rec.device} ${rec.viewport}；錄於 ${local(rec.started_at)}` +
+        (rec.timezone && rec.timezone !== 'Asia/Taipei'
+          ? `；後端與瀏覽器時區 ${rec.timezone}（當地 ${new Date(rec.started_at).toLocaleString('sv-SE', { timeZone: rec.timezone })}）` : ''));
       if (rec.frames) L.push(`- 擷取：${rec.frames.count} 張 screencast 幀，幀間隔 p50 ${rec.frames.p50_ms} ms／p95 ${rec.frames.p95_ms} ms` +
         (rec.frames.flushes !== undefined ? `，flush ${rec.frames.flushes} 次` : '（錄影器加 flush 之前錄的）') + '（畫面靜止時沿用前一幀）');
       for (const e of (rec.events || [])) if (e.text) L.push(`- 使用者輸入（${e.t.toFixed(1)}s 起逐字打）：「${e.text}」`);
