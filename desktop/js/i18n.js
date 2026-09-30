@@ -18,7 +18,7 @@ const I18N = (function() {
         'zh-TW': {
             'app.title': 'URDiary - 您的情緒日記助手',
             'app.tagline': '您的情緒陪伴與日記助手',
-            'app.footer': 'URDiary © 2025 - 您的日記助手',
+            'app.footer': 'URDiary © {year} - 您的日記助手',
 
             'pwa.updateAvailable': '有新版本可用',
             'pwa.updateReload': '重新載入',
@@ -380,7 +380,7 @@ const I18N = (function() {
         'en': {
             'app.title': 'URDiary — Your Emotional Diary Companion',
             'app.tagline': 'Your emotional companion & diary assistant',
-            'app.footer': 'URDiary © 2025 — your diary companion',
+            'app.footer': 'URDiary © {year} — your diary companion',
 
             'pwa.updateAvailable': 'A new version is available',
             'pwa.updateReload': 'Reload',
@@ -770,7 +770,7 @@ const I18N = (function() {
     function applyDom(root) {
         const scope = root || document;
         scope.querySelectorAll('[data-i18n]').forEach(el => {
-            el.textContent = t(el.getAttribute('data-i18n'));
+            el.textContent = t(el.getAttribute('data-i18n'), { year: new Date().getFullYear() });
         });
         scope.querySelectorAll('[data-i18n-placeholder]').forEach(el => {
             el.setAttribute('placeholder', t(el.getAttribute('data-i18n-placeholder')));
