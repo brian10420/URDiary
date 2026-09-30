@@ -1403,6 +1403,8 @@ function buildShotlog(args) {
   const local = (iso) => (iso ? new Date(iso).toLocaleString('sv-SE', { timeZone: 'Asia/Taipei' }) + '（台北）' : '-');
   const byKey = {};
   for (const x of recs) byKey[`${x.rec.shot}/${x.rec.lang}-take${x.rec.take}`] = x.rec;
+  // 為了磁碟空間刪掉的舊 .mov：JSON 與縮圖條還在，表格標「已刪」
+  const fileCell = (rec) => (!rec.file ? '（未組裝）' : '`' + rec.file + '`' + (fs.existsSync(path.join(out, rec.file)) ? '' : '（已刪）'));
   const L = [];
   L.push('# URDiary 介紹影片 UI 錄影記錄（SHOTLOG）', '');
   L.push(`產生時間：${local(new Date().toISOString())}　｜　錄影器：\`promo/record/record_shots.js\`　｜　分鏡：\`promo/video/STORYBOARD.md\` §3`, '');
@@ -1414,7 +1416,7 @@ function buildShotlog(args) {
       const k = `${shot}/${rec.lang}-take${rec.take}`;
       const p = picks[k] || {};
       const fp = rec.ffprobe;
-      L.push(`| ${shot} | ${rec.lang}-take${rec.take} | ${rec.file ? '`' + rec.file + '`' : '（未組裝）'} | ${fp ? fp.duration_s.toFixed(1) + ' s' : '-'} | ${fp ? `${fp.width}×${fp.height} ${fp.r_frame_rate} ${fp.codec}` : '-'} | ${p.pick || ''} |`);
+      L.push(`| ${shot} | ${rec.lang}-take${rec.take} | ${fileCell(rec)} | ${fp ? fp.duration_s.toFixed(1) + ' s' : '-'} | ${fp ? `${fp.width}×${fp.height} ${fp.r_frame_rate} ${fp.codec}` : '-'} | ${p.pick || ''} |`);
     }
   }
   L.push('');
@@ -1426,7 +1428,7 @@ function buildShotlog(args) {
       const p = picks[k] || {};
       const fp = rec.ffprobe;
       L.push(`### ${k}${p.pick ? `　—　${p.pick}` : ''}`, '');
-      L.push(`- 檔案：${rec.file ? '`' + rec.file + '`' : '（未組裝）'}${fp ? `（${fp.size_mb} MB）` : ''}`);
+      L.push(`- 檔案：${fileCell(rec)}${fp ? `（${fp.size_mb} MB）` : ''}`);
       if (fp) L.push(`- ffprobe：${fp.codec}${fp.profile ? ' ' + fp.profile : ''}，${fp.width}×${fp.height}，${fp.pix_fmt}，r_frame_rate ${fp.r_frame_rate}，${fp.frames} 幀，${fp.duration_s} s`);
       L.push(`- 帳號／裝置：\`${rec.account}\`（${rec.ui_lang}），${rec.device} ${rec.viewport}；錄於 ${local(rec.started_at)}` +
         (rec.timezone && rec.timezone !== 'Asia/Taipei'
