@@ -100,10 +100,14 @@ const MascotModule = (function () {
         `<circle cx="169" cy="86" r="7" fill="#b98d6d" stroke="${OUTLINE}" stroke-width="5"/>`) +
       BASE_BOOK + FACE_HAPPY + BLUSH;
 
-    // 存日記彩蛋升級（v2.6 motion Task 8）：兩張從書頂翻起的書頁（同形，第二張晚一拍）。
-    // 靜止畫面不畫——opacity="0" 簡報屬性，mascot.css 的 mm-page-flip 動畫才把它們帶出來；
-    // 頁的左緣就是書脊 x=100，CSS 以 fill-box 的 0% 為翻頁軸。
-    const FLIP_PAGE = `<path class="mm-flip-page" opacity="0" d="M100 80 q20 -26 44 -16 l-2 16 q-22 -8 -42 12 z" fill="#f9f3e6" stroke="${OUTLINE}" stroke-width="5" stroke-linejoin="round"/>`;
+    // 存日記彩蛋升級（v2.6 motion Task 8；fix 1 改成單張）：一張書頁從書頂右半邊翻到左半邊。
+    // 頁＝書頂右半邊往內縮 2，描邊 5 正好落在書頂描邊 9 的內半邊：翻起前（原位）與落下後
+    // （mm-page-flip 以書脊 x=100 鏡射）都跟書頂重合，淡入、淡出時看不到第二個輪廓。
+    // 書脊那條邊不描（路徑不閉合，填色自動補齊）；兩端用 square 端點蓋滿書脊那一欄的反鋸齒，不留亮縫。
+    // non-scaling-stroke：翻到接近垂直時兩側描邊不被壓扁。寬度因此以螢幕 px 計——彩蛋固定 150px 寬，
+    // 3.41 ≈ 5 × 150/220（viewBox 220）；改彩蛋尺寸要一起改。
+    // 靜止畫面不畫——opacity="0" 簡報屬性，動畫才把它帶出來；CSS 以 fill-box 左下角（書脊前端）為軸。
+    const FLIP_PAGE = `<path class="mm-flip-page" opacity="0" d="M100 74 H128 Q144 74 144 90 V92 H100" fill="#f9f3e6" stroke="${OUTLINE}" stroke-width="3.41" stroke-linejoin="round" stroke-linecap="square" vector-effect="non-scaling-stroke"/>`;
 
     const POSE_JUMP =
       part('shadow', `<ellipse cx="100" cy="176" rx="34" ry="7" fill="#d8c5ae"/>`) +
@@ -111,7 +115,7 @@ const MascotModule = (function () {
         `<path d="M42 70 l3 7 7 3 -7 3 -3 7 -3 -7 -7 -3 7 -3 z" fill="#f5c542" stroke="${OUTLINE}" stroke-width="3"/>` +
         `<path d="M172 56 l3.5 8 8 3.5 -8 3.5 -3.5 8 -3.5 -8 -8 -3.5 8 -3.5 z" fill="#f5c542" stroke="${OUTLINE}" stroke-width="3"/>` +
         `<path d="M186 118 l2.5 6 6 2.5 -6 2.5 -2.5 6 -2.5 -6 -6 -2.5 6 -2.5 z" fill="#f5c542" stroke="${OUTLINE}" stroke-width="3"/>`) +
-      `<g transform="translate(0 -18)">${BASE_BOOK}${FACE_HAPPY}${part('flip', FLIP_PAGE + FLIP_PAGE)}</g>`;
+      `<g transform="translate(0 -18)">${BASE_BOOK}${FACE_HAPPY}${part('flip', FLIP_PAGE)}</g>`;
 
     const POSE_TEA =
       part('prop',

@@ -27,18 +27,18 @@
 .mascot-egg:not(.mascot-egg-night) svg { animation: mascot-pop .45s ease-out; }
 @keyframes mascot-pop { 0% { transform: translateY(18px) scale(.85); } 60% { transform: translateY(-6px) scale(1.04); } 100% { transform: translateY(0) scale(1); } }
 
-/* 存日記彩蛋升級（v2.6 motion Task 8）：開心版（.mascot-egg-happy）多了書籤飄動、兩張翻頁、
+/* 存日記彩蛋升級（v2.6 motion Task 8）：開心版（.mascot-egg-happy）多了書籤飄動、一張翻頁、
    金星依序亮起。晚安版（.mascot-egg-night）與安靜版（根本沒有彩蛋）維持原樣。時間軸：0–450ms 既有的
-   mascot-pop 進場；翻頁 150–850／330–1030ms；1200ms 起淡出（mascot.js 的計時器不變）。 */
+   mascot-pop 進場；翻頁 150ms 從書頂右半邊翹起、600ms 過垂直、880ms 落在左半邊（與書頂重合）、
+   900ms 淡掉；1200ms 起淡出（mascot.js 的計時器不變）。 */
 .mascot-egg-happy .mm-bookmark {
     transform-box: fill-box; transform-origin: 50% 0%;
     animation: mm-flutter 900ms ease-in-out 120ms 1 both;
 }
 .mascot-egg-happy .mm-flip-page {
     transform-box: fill-box; transform-origin: 0% 100%;
-    animation: mm-page-flip 700ms ease-in-out 150ms 1 both;
+    animation: mm-page-flip 1000ms linear 1 both;
 }
-.mascot-egg-happy .mm-flip-page + .mm-flip-page { animation-delay: 330ms; }
 .mascot-egg-happy .mm-stars path {
     transform-box: fill-box; transform-origin: 50% 50%;
     animation: mm-twinkle 500ms ease-out 1 both;
@@ -52,12 +52,35 @@
     70% { transform: rotate(-6deg); }
     85% { transform: rotate(3deg); }
 }
+/* 翻頁（fix 1：單張；兩張錯開翻會在左半邊疊出半透明重影）。百分比＝毫秒 ÷ 10，格子之間線性內插。
+   正面看一張以書脊為軸翻過去的紙：頁上一點 (x, y)（原點＝書脊前端＝fill-box 左下角）翻到 θ 時落在
+   X = x·cosθ + c·y、Y = y − 0.7·x·sinθ；c = 0.5·sinθ 讓頁的後緣稍微領先，立到垂直（60%）時仍是
+   一窄條紙而不是一條線。寫成 skewX(atan c) scaleX(cosθ + 0.7·c·sinθ) skewY(−atan(0.7·sinθ))。
+   θ：15%→60% 加速翹起，60%→88% 同速接著往左倒、減速落下；88% 的 scaleX(-1) 以書脊鏡射，頁正好
+   蓋在書頂左半邊上（與書頂重合），這時才淡掉（88%→90%）——淡出時看不到第二個輪廓。
+   100% 一定要寫 transform：沒寫的屬性會被內插回基底值（none），頁會在淡出途中往回彈。 */
 @keyframes mm-page-flip {
-    0%   { transform: scaleX(1) translateY(0); opacity: 0; }
-    12%  { opacity: 1; }
-    50%  { transform: scaleX(0) translateY(-10px); }
-    88%  { opacity: 1; }
-    100% { transform: scaleX(-1) translateY(0); opacity: 0; }
+    0% { transform: skewX(0deg) scaleX(1) skewY(0deg); opacity: 0; }
+    15% { transform: skewX(0deg) scaleX(1) skewY(0deg); opacity: 0; }  /*   0.0° */
+    18% { opacity: 1; }
+    20% { transform: skewX(1.7deg) scaleX(0.999) skewY(-2.3deg); }  /*   3.3° */
+    25% { transform: skewX(4.7deg) scaleX(0.996) skewY(-6.5deg); }  /*   9.4° */
+    30% { transform: skewX(8.5deg) scaleX(0.986) skewY(-11.8deg); }  /*  17.3° */
+    35% { transform: skewX(12.6deg) scaleX(0.964) skewY(-17.4deg); }  /*  26.7° */
+    40% { transform: skewX(16.8deg) scaleX(0.924) skewY(-23deg); }  /*  37.3° */
+    45% { transform: skewX(20.7deg) scaleX(0.855) skewY(-27.8deg); }  /*  49.0° */
+    50% { transform: skewX(23.8deg) scaleX(0.745) skewY(-31.7deg); }  /*  61.7° */
+    55% { transform: skewX(25.8deg) scaleX(0.579) skewY(-34.1deg); }  /*  75.4° */
+    60% { transform: skewX(26.6deg) scaleX(0.35) skewY(-35deg); }  /*  90.0° */
+    64% { transform: skewX(25.9deg) scaleX(0.092) skewY(-34.2deg); }  /* 103.8° */
+    68% { transform: skewX(23.4deg) scaleX(-0.239) skewY(-31.2deg); }  /* 120.1° */
+    72% { transform: skewX(18.8deg) scaleX(-0.572) skewY(-25.4deg); }  /* 137.2° */
+    76% { transform: skewX(12.6deg) scaleX(-0.824) skewY(-17.4deg); }  /* 153.4° */
+    80% { transform: skewX(6.4deg) scaleX(-0.957) skewY(-8.9deg); }  /* 167.1° */
+    84% { transform: skewX(1.8deg) scaleX(-0.997) skewY(-2.5deg); }  /* 176.5° */
+    88% { transform: skewX(0deg) scaleX(-1) skewY(0deg); opacity: 1; }  /* 180.0° */
+    90% { opacity: 0; }
+    100% { transform: skewX(0deg) scaleX(-1) skewY(0deg); opacity: 0; }
 }
 @keyframes mm-twinkle {
     0%   { transform: scale(0); }

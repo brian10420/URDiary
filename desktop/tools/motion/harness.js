@@ -27,7 +27,7 @@
             setup: (stage) => mount(stage, `<div class="h-card">${MascotModule.thinkingBubbleHtml()}</div>`),
         },
         'egg-happy': {
-            viewport: [320, 280], frames: [0, 150, 300, 450, 600, 800, 1000],
+            viewport: [320, 280], frames: [0, 150, 300, 450, 600, 700, 800, 900, 1000, 1200],
             setup: () => MascotModule.showSaveEgg('happy'),
         },
         'egg-night': {

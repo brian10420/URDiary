@@ -20,19 +20,18 @@ describe('存日記彩蛋', () => {
     });
     afterEach(() => { vi.useRealTimers(); });
 
-    it('開心版：兩張翻頁紙（靜止不畫）、書籤在、只用書頁色＋描邊色', () => {
+    it('開心版：一張翻頁紙（靜止不畫）、書籤在、只用書頁色＋描邊色', () => {
         MascotModule.showSaveEgg('happy');
         const egg = document.querySelector('.mascot-egg');
         expect(egg.classList.contains('mascot-egg-happy')).toBe(true);    // 翻頁 CSS 只認這個 class
         expect(egg.classList.contains('mascot-egg-night')).toBe(false);
         const pages = egg.querySelectorAll('.mm-flip .mm-flip-page');
-        expect(pages.length).toBe(2);
-        pages.forEach((p) => {
-            expect(p.getAttribute('opacity')).toBe('0');
-            expect(p.getAttribute('fill')).toBe('#f9f3e6');
-            expect(p.getAttribute('stroke')).toBe('#4b2e1e');
-            expect(p.hasAttribute('transform')).toBe(false);   // CSS 翻頁動畫才掛得上
-        });
+        expect(pages.length).toBe(1);   // fix 1：兩張錯開翻會在左半邊疊出半透明重影，改成單張
+        const page = pages[0];
+        expect(page.getAttribute('opacity')).toBe('0');
+        expect(page.getAttribute('fill')).toBe('#f9f3e6');
+        expect(page.getAttribute('stroke')).toBe('#4b2e1e');
+        expect(page.hasAttribute('transform')).toBe(false);   // CSS 翻頁動畫才掛得上
         expect(egg.querySelector('.mm-bookmark')).not.toBeNull();
     });
 
