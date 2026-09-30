@@ -62,6 +62,9 @@ export URDIARY_DATA_DIR
 export URDIARY_RATE_LIMIT_ENABLED=0
 export URDIARY_REQUIRE_INVITE=0
 export ENV=development
+# 後端預設會從環境變數 URDIARY_FRONTEND_DIR 取前端目錄；呼叫者的 shell 若殘留舊值（例如指到
+# 別的 checkout 或舊版打包），錄到的就不是這個 repo 的 desktop/。先清掉，讓後端用預設的 repo 路徑。
+unset URDIARY_FRONTEND_DIR
 export SECRET_KEY=""
 export HASH_SALT=""
 

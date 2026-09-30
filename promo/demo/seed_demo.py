@@ -136,13 +136,19 @@ def existing_usernames(target: Path) -> set:
     db = target / DB_NAME
     if not db.exists():
         return set()
-    con = sqlite3.connect(f"{db.as_uri()}?mode=ro", uri=True)
+    con = None
     try:
+        con = sqlite3.connect(f"{db.as_uri()}?mode=ro", uri=True)
         return {row[0] for row in con.execute("SELECT username FROM users")}
-    except sqlite3.OperationalError:
-        return set()  # 還沒有 users 表 (空資料庫)
+    except sqlite3.OperationalError as exc:
+        if "no such table" in str(exc):
+            return set()  # 還沒有 users 表 (空資料庫)
+        refuse(f"cannot read {db} (read-only open failed: {exc})")
+    except sqlite3.Error as exc:
+        refuse(f"cannot read {db}: {exc}")
     finally:
-        con.close()
+        if con is not None:
+            con.close()
 
 
 def load_manifest(target: Path):
@@ -167,12 +173,16 @@ def stub_checkin_warning(target: Path, manifest: dict):
         for role in ROLES_FULL:
             acct = info["accounts"][role]
             names[acct["id"]] = acct["username"]
-    con = sqlite3.connect(f"{(target / DB_NAME).as_uri()}?mode=ro", uri=True)
+    con = None
     try:
+        con = sqlite3.connect(f"{(target / DB_NAME).as_uri()}?mode=ro", uri=True)
         rows = con.execute("SELECT id, last_checkin_date FROM users WHERE id IN (%s)"
                            % ",".join("?" * len(names)), list(names)).fetchall()
+    except sqlite3.Error as exc:
+        refuse(f"cannot read {target / DB_NAME} to check the stub check-in state: {exc}")
     finally:
-        con.close()
+        if con is not None:
+            con.close()
     pending = [names[uid] for uid, value in rows if not value or value[:10] < today.isoformat()]
     if pending:
         print(f"[seed_demo] WARNING (stub mode): opening the app as {', '.join(sorted(pending))} today would "
