@@ -40,8 +40,9 @@ describe('ApiService.getMoodFromValence', () => {
         expect(ApiService.getMoodFromValence(0.45)).toBe('neutral');
         expect(ApiService.getMoodFromValence(0.44)).toBe('sad');
         expect(ApiService.getMoodFromValence(0.25)).toBe('sad');
-        expect(ApiService.getMoodFromValence(0.24)).toBe('angry');
-        expect(ApiService.getMoodFromValence(0)).toBe('angry');
+        expect(ApiService.getMoodFromValence(0.24)).toBe('sad');
+        expect(ApiService.getMoodFromValence(0.1)).toBe('sad');
+        expect(ApiService.getMoodFromValence(0)).toBe('sad');
         expect(ApiService.getMoodFromValence(1)).toBe('happy');
     });
 

@@ -6,7 +6,7 @@ import { loadScript } from './helpers/load.js';
 describe('MascotModule', () => {
     beforeEach(() => { loadScript('js/mascot.js'); });
 
-    // 門檻對齊 getMoodFromValence()（api_service.js:1301-1311）判定 sad 的
+    // 門檻對齊 getMoodFromValence()（api_service.js）判定 sad 的
     // 0.45 分界，不是 spec 字面的 <0——後端 valence 經 _clamp() 永遠落在
     // [0,1]，中性值 0.5（controller ruling R5，task 5 field-check 後裁定）。
     test('eggKindFor：日間正向=happy、夜間=goodnight、低於 0.45 門檻=quiet（quiet 優先於 goodnight）', () => {

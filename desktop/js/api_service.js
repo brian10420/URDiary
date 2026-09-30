@@ -1366,6 +1366,8 @@ const ApiService = (function() {
     // 從情緒值獲取情緒標籤
     // 後端的 valence 已被夾在 0~1 之間，原本以負值判斷 sad/angry 永遠不會成立，
     // 所有偏負面的日記都會被標成 neutral。這裡改用 0~1 的分界。
+    // valence 只表示正負向，分不出憤怒與悲傷，所以低於 0.45 一律標 sad；
+    // 'angry' 的標籤與色票仍保留給未來的情緒識別模型——這個對應就是替換點。
     function getMoodFromValence(valence) {
         if (typeof valence !== 'number' || isNaN(valence)) {
             return 'neutral';
@@ -1374,8 +1376,7 @@ const ApiService = (function() {
         if (valence >= 0.7) return 'happy';
         if (valence >= 0.55) return 'calm';
         if (valence >= 0.45) return 'neutral';
-        if (valence >= 0.25) return 'sad';
-        return 'angry';
+        return 'sad';
     }
     
     // 生成唯一ID
