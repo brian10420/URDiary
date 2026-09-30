@@ -16,6 +16,14 @@ MESSAGES = {
         "en": "Companion settings saved",
     },
 
+    "chat_ended_diary_done": {
+        "zh-TW": "對話已結束並生成摘要",
+        "en": "Chat ended — your diary entry is ready.",
+    },
+    "diary_done_memory_failed": {
+        "zh-TW": "日記已生成，但記憶更新失敗",
+        "en": "Your diary entry is ready, but updating memory failed.",
+    },
     "diary_failed_retry": {
         "zh-TW": "日記生成失敗，對話記錄已保留，請稍後重試: {error}",
         "en": "Diary generation failed — your conversation is preserved, please try again later: {error}",

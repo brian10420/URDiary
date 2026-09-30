@@ -87,3 +87,35 @@ def test_review_pass_receives_chat_history(client, auth_header, llm_headers, moc
     client.post("/chat/end/", json={}, headers={**headers, **llm_headers})
     review_prompt = mock_llm.calls[-1]["messages"][1]["content"]
     assert "今天吃了牛肉湯" in review_prompt  # 對話素材有進 review
+
+
+def _end_message(client, headers, llm_headers, mock_llm, review, lang=None):
+    _chat_once(client, headers, llm_headers, mock_llm)
+    mock_llm.respond(DIARY_REPLY)
+    mock_llm.respond(review)
+    extra = {"X-Language": lang} if lang else {}
+    resp = client.post("/chat/end/", json={}, headers={**headers, **llm_headers, **extra})
+    assert resp.status_code == 200
+    return resp.json()["message"]
+
+
+def test_chat_end_message_localized(client, auth_header, llm_headers, mock_llm):
+    headers, _ = auth_header
+    assert _end_message(client, headers, llm_headers, mock_llm, REVIEW_REPLY) == "對話已結束並生成摘要"
+
+
+def test_chat_end_message_en(client, auth_header, llm_headers, mock_llm):
+    headers, _ = auth_header
+    assert _end_message(client, headers, llm_headers, mock_llm, REVIEW_REPLY, "en") \
+        == "Chat ended — your diary entry is ready."
+
+
+def test_chat_end_memory_failed_message_zh(client, auth_header, llm_headers, mock_llm):
+    headers, _ = auth_header
+    assert _end_message(client, headers, llm_headers, mock_llm, _boom) == "日記已生成，但記憶更新失敗"
+
+
+def test_chat_end_memory_failed_message_en(client, auth_header, llm_headers, mock_llm):
+    headers, _ = auth_header
+    assert _end_message(client, headers, llm_headers, mock_llm, _boom, "en") \
+        == "Your diary entry is ready, but updating memory failed."

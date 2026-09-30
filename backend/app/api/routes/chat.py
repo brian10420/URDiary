@@ -190,7 +190,8 @@ def end_chat_session(user_input: UserDiaryCreate,
     clear_chat_history(user_id)
 
     return {
-        "message": "對話已結束並生成摘要" if result["memory_review_error"] is None else "日記已生成，但記憶更新失敗",
+        "message": msg("chat_ended_diary_done" if result["memory_review_error"] is None
+                    else "diary_done_memory_failed", lang),
         "model_used": model,
         "diary": result["diary"],
         "memory_review": result["memory_review"],
