@@ -145,4 +145,42 @@ describe('handleNavigation × View Transition（DOM）', () => {
         UIManager.hideDiaryDetail();
         expect(document.startViewTransition).not.toHaveBeenCalled();
     });
+
+    it('轉場 callback 內 switchToState 丟例外：console.error 記錄、vt-running 移除、待套用清掉', async () => {
+        stubViewTransition();
+        const err = vi.spyOn(console, 'error').mockImplementation(() => {});
+        const boom = new Error('boom');
+        document.getElementById('chat-view').classList.remove = () => { throw boom; };
+        UIManager.handleNavigation('calendar');
+        await UIManager.viewTransitionSettled();
+        await Promise.resolve();
+        await Promise.resolve();
+        expect(err).toHaveBeenCalledWith('視圖轉場錯誤:', boom);
+        expect(document.documentElement.classList.contains('vt-running')).toBe(false);
+        // 待套用已清掉：之後的導覽以目前狀態判斷（chat_full → diary → chat_diary）
+        delete document.getElementById('chat-view').classList.remove;
+        UIManager.handleNavigation('diary');
+        await UIManager.viewTransitionSettled();
+        await Promise.resolve();
+        expect(UIManager.getCurrentState()).toBe('chat_diary');
+        err.mockRestore();
+    });
+
+    it('callback 執行前的直接 switchToState 不會被待套用狀態蓋掉', async () => {
+        stubViewTransition();
+        UIManager.handleNavigation('calendar');          // 待套用 calendar_full
+        UIManager.switchToState('chat_diary');           // 直接切換：以它為準
+        await UIManager.viewTransitionSettled();
+        await Promise.resolve();
+        expect(UIManager.getCurrentState()).toBe('chat_diary');
+    });
+
+    it('startViewTransition 同步丟例外：移除 vt-running、清待套用、退回同步切換', () => {
+        document.startViewTransition = vi.fn(() => { throw new Error('nope'); });
+        UIManager.handleNavigation('calendar');
+        expect(UIManager.getCurrentState()).toBe('calendar_full');
+        expect(document.documentElement.classList.contains('vt-running')).toBe(false);
+        UIManager.handleNavigation('chat');              // 若待套用殘留會以它判斷
+        expect(UIManager.getCurrentState()).toBe('chat_full');
+    });
 });

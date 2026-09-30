@@ -196,17 +196,29 @@ const UIManager = (function() {
         // 轉場期間讓 .view-container 自己的 0.3s 過渡直接跳到終點（animations.css），
         // 否則「新畫面」快照裡還在淡入，兩層淡化疊在一起中途會發灰
         document.documentElement.classList.add('vt-running');
-        const transition = document.startViewTransition(function() {
-            // 連續觸發時每個 callback 都套「最新」的目標：前一個轉場被新的蓋掉時，瀏覽器
-            // 仍會呼叫它的 callback，這樣兩個 callback 都收斂到同一個最終狀態
-            const target = pendingViewState;
+        let transition;
+        try {
+            transition = document.startViewTransition(function() {
+                // 連續觸發時每個 callback 都套「最新」的目標：前一個轉場被新的蓋掉時，瀏覽器
+                // 仍會呼叫它的 callback，這樣兩個 callback 都收斂到同一個最終狀態
+                const target = pendingViewState;
+                pendingViewState = null;
+                if (target) {
+                    switchToState(target);
+                }
+            });
+        } catch (err) {
+            // startViewTransition 同步失敗：退回同步切換，不留下 vt-running 與待套用狀態
+            console.error('視圖轉場啟動失敗:', err);
+            document.documentElement.classList.remove('vt-running');
             pendingViewState = null;
-            if (target) {
-                switchToState(target);
-            }
-        });
+            switchToState(newState);
+            return null;
+        }
         activeViewTransition = transition;
-        transition.finished.catch(function() {}).then(function() {
+        transition.finished.catch(function(err) {
+            console.error('視圖轉場錯誤:', err);
+        }).then(function() {
             if (activeViewTransition === transition) {
                 activeViewTransition = null;
                 document.documentElement.classList.remove('vt-running');
@@ -572,6 +584,8 @@ const UIManager = (function() {
 
     // 切換到指定狀態
     function switchToState(newState) {
+        // 直接切換一律作廢尚未套用的轉場目標（轉場 callback 已先複製目標再呼叫這裡）
+        pendingViewState = null;
         console.log(`切換視圖狀態: ${currentViewState} -> ${newState}`);
         
         // 更新當前狀態
