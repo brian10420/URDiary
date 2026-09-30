@@ -88,6 +88,28 @@
     100% { transform: scale(1); }
 }
 
+/* 初次見面（v2.6 motion Task 9）：進場揮手浮層（.mascot-egg-wave）與取名慶祝浮層
+   （.mascot-egg-cheer）沿用 .mascot-egg 的 fixed＋pointer-events:none＋淡出，也沿用非晚安
+   彩蛋的 mascot-pop 進場；揮手本身是 Task 7 的 svg[data-mm-pose="wave"] .mm-arm-r。
+   名牌只用契約色：書頁米白底、描邊棕字。 */
+.mascot-egg-cheer { flex-direction: column; gap: 8px; }
+.mascot-egg-cheer .mm-arm-r { animation: mm-cheer-r 480ms ease-in-out 3 alternate; }
+.mascot-egg-cheer .mm-arm-l { animation: mm-cheer-l 480ms ease-in-out 3 alternate; }
+.mascot-egg-cheer .mm-stars path {
+    transform-box: fill-box; transform-origin: 50% 50%;
+    animation: mm-twinkle 500ms ease-out 1 both;
+}
+.mascot-egg-cheer .mm-stars path:nth-child(2) { animation-delay: 160ms; }
+.mascot-egg-name {
+    max-width: min(80vw, 320px); padding: 4px 16px;
+    border: 3px solid #4b2e1e; border-radius: 999px; background: #f9f3e6; color: #4b2e1e;
+    font-weight: 700; font-size: 18px; line-height: 1.4; text-align: center; overflow-wrap: anywhere;
+    animation: mm-name-in 420ms ease-out 180ms 1 both;
+}
+@keyframes mm-cheer-r { from { transform: rotate(-12deg); } to { transform: rotate(10deg); } }
+@keyframes mm-cheer-l { from { transform: rotate(12deg); } to { transform: rotate(-10deg); } }
+@keyframes mm-name-in { from { transform: translateY(10px) scale(.9); opacity: 0; } to { transform: none; opacity: 1; } }
+
 .mascot-cat-icon { vertical-align: middle; }
 
 /* ---- v2.6 motion：rig 部件的共同設定 ----------------------------------------
@@ -169,7 +191,9 @@ html.mm-paused svg[data-mm-idle] .mm-rig, html.mm-paused svg[data-mm-idle] .mm-z
     svg.mm-react .mm-rig, .mm-heart,
     svg[data-mm-pose="wave"] .mm-arm-r,
     .mascot-egg-happy .mm-bookmark, .mascot-egg-happy .mm-flip-page,
-    .mascot-egg-happy .mm-stars path { animation: none !important; }
+    .mascot-egg-happy .mm-stars path,
+    .mascot-egg-cheer .mm-arm-r, .mascot-egg-cheer .mm-arm-l, .mascot-egg-cheer .mm-stars path,
+    .mascot-egg-name { animation: none !important; }
     svg[data-mm-follow] .mm-face .mm-eyes, svg[data-mm-follow] .mm-face .mm-mouth,
     svg[data-mm-follow] .mm-blush { transition: none !important; }
 }

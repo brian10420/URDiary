@@ -32,6 +32,22 @@ const OnboardingModule = (function () {
     function isActive() { return active; }
 
     /**
+     * 初次見面的吉祥物浮層（v2.6 motion Task 9）。契約 §4：只綁兩個「操作事件」——
+     * 'wave'＝onboarding 啟動（maybeStart 真的把流程打開，隨第一則腳本訊息出現），'name'＝
+     * 取名這一步定案（使用者給了名字，或說「隨便／之後再取」拿到預設名字）。不看答案內容、不看
+     * 情緒；浮層是 fixed 的 .mascot-egg，不進 .chat-messages（聊天區仍只有安靜搖擺）。
+     * typeof 守衛：測試可不載 mascot.js。
+     */
+    function celebrate(kind, name) {
+        if (typeof MascotModule === 'undefined') return;
+        if (kind === 'wave' && typeof MascotModule.showOnboardingEgg === 'function') {
+            MascotModule.showOnboardingEgg();
+        } else if (kind === 'name' && typeof MascotModule.showNamingEgg === 'function') {
+            MascotModule.showNamingEgg(name);
+        }
+    }
+
+    /**
      * 開場 gate 的入口。回傳 true＝onboarding 進行中或本 session 剛完成
      * （呼叫端據此抑制 check-in）；false＝照常走每日問候。
      */
@@ -52,11 +68,13 @@ const OnboardingModule = (function () {
 
         answered = new Set(state.answered_keys || []);
         active = true;
+        // 揮手進場（v2.6 motion Task 9）跟第一則腳本訊息一起出現：啟動當下 App 可能還蓋著
+        // 啟動畫面（已登入者開 App 時），等假思考結束、訊息真的出現再揮手
         if (answered.size > 0) {
             // 中斷續跑：簡短再見面文案 → 第一個未答題（已答不重問）
-            script(I18N.t('onboarding.resume'), function () { askNext(false); });
+            script(I18N.t('onboarding.resume'), function () { celebrate('wave'); askNext(false); });
         } else {
-            script(I18N.t('onboarding.intro'), function () { askNext(false); });
+            script(I18N.t('onboarding.intro'), function () { celebrate('wave'); askNext(false); });
         }
         return true;
     }
@@ -234,10 +252,11 @@ const OnboardingModule = (function () {
             saveCompanionName(defaultName);
             script(I18N.t(phrase === 'later' ? 'onboarding.nameDefaultedLater'
                                              : 'onboarding.nameDefaulted', { name: defaultName }),
-                   function () { askNext(false); });
+                   function () { celebrate('name', defaultName); askNext(false); });
         } else if (name && Array.from(name).length <= NAME_MAX_CHARS) {
             saveCompanionName(name);
-            script(I18N.t('onboarding.namingAck', { name: name }), function () { askNext(false); });
+            script(I18N.t('onboarding.namingAck', { name: name }),
+                   function () { celebrate('name', name); askNext(false); });
         } else if (!namingRetried) {
             namingRetried = true;
             answered.delete(NAMING_KEY);   // 重試一次：取名還沒定案，currentKey 停在原地

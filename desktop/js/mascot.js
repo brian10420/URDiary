@@ -117,6 +117,20 @@ const MascotModule = (function () {
         `<path d="M186 118 l2.5 6 6 2.5 -6 2.5 -2.5 6 -2.5 -6 -6 -2.5 6 -2.5 z" fill="#f5c542" stroke="${OUTLINE}" stroke-width="3"/>`) +
       `<g transform="translate(0 -18)">${BASE_BOOK}${FACE_HAPPY}${part('flip', FLIP_PAGE)}</g>`;
 
+    // 取名慶祝（v2.6 motion Task 9）：雙手高舉＋開心臉＋腮紅＋兩顆金星。
+    // 左手＝右手（揮手姿勢那隻）對書本中線 x=100 鏡射。
+    const POSE_CHEER =
+      part('stars',
+        `<path d="M58 40 l3 7 7 3 -7 3 -3 7 -3 -7 -7 -3 7 -3 z" fill="#f5c542" stroke="${OUTLINE}" stroke-width="3"/>` +
+        `<path d="M150 34 l3.5 8 8 3.5 -8 3.5 -3.5 8 -3.5 -8 -8 -3.5 8 -3.5 z" fill="#f5c542" stroke="${OUTLINE}" stroke-width="3"/>`) +
+      part('arm-l',
+        `<path d="M46 116 q-16 -10 -14 -26" stroke="${OUTLINE}" stroke-width="8" fill="none" stroke-linecap="round"/>` +
+        `<circle cx="31" cy="86" r="7" fill="#b98d6d" stroke="${OUTLINE}" stroke-width="5"/>`) +
+      part('arm-r',
+        `<path d="M154 116 q16 -10 14 -26" stroke="${OUTLINE}" stroke-width="8" fill="none" stroke-linecap="round"/>` +
+        `<circle cx="169" cy="86" r="7" fill="#b98d6d" stroke="${OUTLINE}" stroke-width="5"/>`) +
+      BASE_BOOK + FACE_HAPPY + BLUSH;
+
     const POSE_TEA =
       part('prop',
         `<path d="M174 84 q4 -6 0 -12 q-4 -6 0 -12 M186 88 q4 -6 0 -12" stroke="#c8b49a" stroke-width="4" fill="none" stroke-linecap="round"/>` +
@@ -188,7 +202,8 @@ const MascotModule = (function () {
 
     // 姿勢名 → 模板（data-mm-pose 的值；emptyHtml／showSaveEgg 由名稱取模板）
     const POSES = { sleep: POSE_SLEEP, calendar: POSE_CALENDAR, question: POSE_QUESTION,
-                    wave: POSE_WAVE, jump: POSE_JUMP, tea: POSE_TEA, goodnight: POSE_GOODNIGHT };
+                    wave: POSE_WAVE, jump: POSE_JUMP, tea: POSE_TEA, goodnight: POSE_GOODNIGHT,
+                    cheer: POSE_CHEER };
 
     // -- 對外 API -------------------------------------------------------------
     function loadingHtml(size) {
@@ -225,17 +240,41 @@ const MascotModule = (function () {
         return 'happy';
     }
 
+    /**
+     * 彩蛋浮層（存日記與初次見面共用）：fixed 置中、pointer-events:none（mascot.css），
+     * fadeAtMs 開始淡出、再 600ms 移除。caption 是使用者給的字（陪伴者名字）——一律
+     * textContent，絕不進 innerHTML。一次只留一個浮層（新的直接取代還沒淡完的舊的，
+     * 不疊在一起）；整個浮層 aria-hidden——純裝飾，名字已由對話訊息說過一次。
+     */
+    function showEggOverlay(variantClass, pose, caption, fadeAtMs) {
+        document.querySelectorAll('.mascot-egg').forEach((el) => el.remove());
+        const wrap = document.createElement('div');
+        wrap.className = 'mascot-egg ' + variantClass;
+        wrap.setAttribute('aria-hidden', 'true');
+        wrap.innerHTML = svg220(POSES[pose], 150, pose);
+        if (caption) {
+            const tag = document.createElement('div');
+            tag.className = 'mascot-egg-name';
+            tag.textContent = caption;
+            wrap.appendChild(tag);
+        }
+        document.body.appendChild(wrap);
+        setTimeout(() => { wrap.classList.add('fade'); }, fadeAtMs);
+        setTimeout(() => { wrap.remove(); }, fadeAtMs + 600);
+        return wrap;
+    }
+
     function showSaveEgg(kind) {
         if (kind === 'quiet') return; // 沉重的日記：安靜，不慶祝
-        const pose = kind === 'goodnight' ? 'goodnight' : 'jump';
-        const wrap = document.createElement('div');
         // mascot-egg-happy（v2.6 motion Task 8）：翻頁／書籤／金星的 CSS 只認這個 class
-        wrap.className = 'mascot-egg ' + (kind === 'goodnight' ? 'mascot-egg-night' : 'mascot-egg-happy');
-        wrap.innerHTML = svg220(POSES[pose], 150, pose);
-        document.body.appendChild(wrap);
-        setTimeout(() => { wrap.classList.add('fade'); }, 1200);
-        setTimeout(() => { wrap.remove(); }, 1800);
+        if (kind === 'goodnight') showEggOverlay('mascot-egg-night', 'goodnight', null, 1200);
+        else showEggOverlay('mascot-egg-happy', 'jump', null, 1200);
     }
+
+    // 初次見面（v2.6 motion Task 9）——兩個浮層都只由 onboarding_module.js 的「操作事件」觸發
+    // （onboarding 啟動、取名完成），不看任何答案內容或情緒；不進 .chat-messages（契約 §4）。
+    function showOnboardingEgg() { return showEggOverlay('mascot-egg-wave', 'wave', null, 1600); }
+    function showNamingEgg(name) { return showEggOverlay('mascot-egg-cheer', 'cheer', String(name || ''), 1600); }
 
     // 點擊反應的小愛心（v2.6 motion Task 6）：沿用 heart 印章的心形路徑與既有粉紅 #e8899a。
     // 外層無名 <g> 負責定位（transform 屬性；插在 <svg> 底下、mm-rig 之外，不跟著彈跳），
@@ -293,7 +332,7 @@ const MascotModule = (function () {
 
     return { loadingHtml, thinkingBubbleHtml, emptyHtml, welcomeHtml,
              checkinHtml, eggKindFor, showSaveEgg, categoryIcon, stampIcon,
-             reactionHeartSvg };
+             reactionHeartSvg, showOnboardingEgg, showNamingEgg };
 })();
 
 if (typeof window !== 'undefined') { window.MascotModule = MascotModule; }

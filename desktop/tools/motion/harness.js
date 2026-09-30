@@ -81,6 +81,15 @@
                 MascotMotion.settle(svg);                             // 影格＝回正過程
             },
         },
+        // --- Task 9 初次見面 -----------------------------------------------------
+        'onboarding-wave': {
+            viewport: [320, 280], frames: [0, 200, 400, 800, 1200],
+            setup: () => MascotModule.showOnboardingEgg(),
+        },
+        'naming-cheer': {
+            viewport: [320, 300], frames: [0, 200, 450, 700, 1000, 1400],
+            setup: () => MascotModule.showNamingEgg('小澄'),
+        },
     };
 
     // 眼睛跟隨場景：游標放在視窗的相對位置 (fx, fy)；揮手與呼吸先取消，只看跟隨的過渡
