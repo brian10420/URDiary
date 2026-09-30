@@ -1,11 +1,11 @@
 /**
  * S4 被記得 — 24.0–33.0 s (frames 1440–1979). STORYBOARD §1.2 S4.
- * U04: the second message and the reply that recalls the 09-14 diary. 28.0–31.5 the warm
- * highlighter sweeps the recall — en: the date + title the reply quotes ("September 14 entry,
- * “Sleepless before my first presentation,”"); zh (v3.1): the paraphrased recall 「你之前第一次上台
- * 報告前也失眠到半夜爬起來順講稿」, since no zh take quoted date + title. A memory card (U05, the real
- * 09-14 diary card, cropped at native 2×) floats in on the right, beside the reply and clear of her
- * second message, and a thin line runs to it through the gap under the highlighted line.
+ * U04: the second message and the reply that recalls the 09-14 diary by date + title — zh-take26
+ * 「9 月 14 日《第一次上台報告前的失眠夜》」, en-take26 "September 14 in “Sleepless before my first
+ * presentation,”" (it wraps after "first", so the sweep runs over two lines). 28.0–31.5 the warm
+ * highlighter sweeps it (media.ts QUOTE_SPANS). A memory card (U05, the real 09-14 diary card, cropped
+ * at native 2×) floats in on the right, beside the reply and clear of her second message, and a thin
+ * line runs to it through the gap under the last highlighted line.
  * 31.5–33.0 hold; out: the card retracts and the window dissolves into S5. Caption 27.5–32.5.
  */
 import {introPlacement} from '../data/media.ts';
@@ -13,10 +13,10 @@ import type {Lang} from '../data/timeline.ts';
 import {EASE_IN_OUT, EASE_OUT, lerp, ramp} from '../lib/anim.ts';
 import {C} from '../lib/theme.ts';
 import {useTime} from '../lib/time.tsx';
-import {Highlighter} from '../components/Annotations.tsx';
+import {HighlighterLines} from '../components/Annotations.tsx';
 import {Stamp} from '../components/Mascot.tsx';
 import {MediaSlot, clipAspect} from '../components/MediaSlot.tsx';
-import {inWindow, windowBox} from './window-marks.ts';
+import {inWindow, quoteBoxes, quoteInWindow} from './window-marks.ts';
 
 const CARD_IN = 29.6; // the paper sound (audio.ts) plays here
 const CARD_OUT = [32.5, 32.9] as const;
@@ -30,9 +30,10 @@ const MemoryCard = ({lang}: {lang: Lang}) => {
   const placement = introPlacement('S4.U05');
   const [sx, sy, sw] = inWindow('s4CardSlot', lang);
   const card = {x: sx, y: sy, w: sw, h: sw / clipAspect(placement, lang, 1.73)};
-  const [qx, qy, qw, qh] = inWindow('s4Quote', lang);
+  const spans = quoteInWindow(lang);
+  const [qx, qy, qw, qh] = spans[spans.length - 1];
   const line = ramp(t, 30.2, 30.8, EASE_IN_OUT) * (1 - outK);
-  // start just under the end of the highlighted words, so the dot and the line stay off the text
+  // start just under the end of the (last line of the) highlighted words, so the dot and the line stay off the text
   const x1 = qx + qw + 4;
   const y1 = qy + qh + 2;
   const gap = qy + qh + 9; // the blank band under the highlighted line
@@ -84,8 +85,8 @@ const MemoryCard = ({lang}: {lang: Lang}) => {
 
 export const S4 = ({lang}: {lang: Lang}) => (
   <>
-    <MediaSlot placement={introPlacement('S4.U04')} lang={lang} tone="ui" targets={[windowBox('s4Quote', lang)]} labelPosition="center" />
-    <Highlighter rect={inWindow('s4Quote', lang)} from={28.0} sweepSec={1.0} until={32.6} />
+    <MediaSlot placement={introPlacement('S4.U04')} lang={lang} tone="ui" targets={quoteBoxes(lang)} labelPosition="center" />
+    <HighlighterLines rects={quoteInWindow(lang)} from={28.0} sweepSec={1.0} until={32.6} />
     <MemoryCard lang={lang} />
   </>
 );

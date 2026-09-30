@@ -71,6 +71,25 @@ export const Highlighter = ({rect, from, sweepSec = 0.9, until}: {rect: Rect; fr
   );
 };
 
+/**
+ * The highlighter over a quote that runs across several text lines (one rect per line, reading order): the
+ * sweep goes through them one after another, each line's share of `sweepSec` in proportion to its width.
+ */
+export const HighlighterLines = ({rects, from, sweepSec = 0.9, until}: {rects: readonly Rect[]; from: number; sweepSec?: number; until: number}) => {
+  const total = rects.reduce((n, r) => n + r[2], 0) || 1;
+  let start = from;
+  return (
+    <>
+      {rects.map((r, i) => {
+        const sec = (sweepSec * r[2]) / total;
+        const mark = <Highlighter key={i} rect={r} from={start} sweepSec={sec} until={until} />;
+        start += sec;
+        return mark;
+      })}
+    </>
+  );
+};
+
 /** A soft "tap" ripple where the recording's cursor clicks (S5 33.8). */
 export const TapRipple = ({at, x, y}: {at: number; x: number; y: number}) => {
   const t = useTime();

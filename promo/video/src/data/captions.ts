@@ -62,12 +62,12 @@ export const CAPTIONS: readonly CaptionItem[] = [
   },
   {
     id: 's6-left-stamp', scene: 'S6', in: 43.0, out: 50.6, kind: 'panel-label',
-    text: {zh: '晴朗有勁', en: 'Sunny Spirit'}, note: '左格下方，依實際印章：U09 zh-take3／en-take2 都是 09-26 的 sun（recorded.ts）',
+    text: {zh: '晴朗有勁', en: 'Sunny Spirit'}, note: '左格下方，依實際印章：U09 zh-take4／en-take3 都是 09-26 的 sun（recorded.ts）',
   },
   {
     id: 's6-right-stamp', scene: 'S6', in: 46.8, out: 51.0, kind: 'panel-label',
-    text: {zh: '照顧自己', en: 'Quiet Night'},
-    note: '右格下方，依實際印章：S5 錄到的今天——zh U07 zh-take4 是 heal「照顧自己」、en U07 en-take3 是 moon “Quiet Night”（i18n stamp.heal／stamp.moon；recorded.ts）',
+    text: {zh: '靜靜的夜', en: 'Rainy Comfort'},
+    note: '右格下方，依實際印章：S5 錄到的今天——zh U07 zh-take10 是 moon「靜靜的夜」、en U07 en-take11 是 umbrella “Rainy Comfort”（i18n stamp.moon／stamp.umbrella；recorded.ts）',
   },
   {
     id: 's7-phone', scene: 'S7', in: 55.0, out: 59.5, kind: 'card',

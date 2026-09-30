@@ -5,8 +5,9 @@
  * in so the dated lines read) → 「記憶帳本」 (64.2) → approve one item (≈ 66.8) → 「已生效」. Caption
  * 64.2–67.6 「可以設定：記下之前先問你」 (optional mode). No sound on the approval. Out 67.8–68.2:
  * the window shrinks away into S9's paper while the camera pulls back.
- * Tap times follow shots.ts 'S8.U15' (the recording has no visible pointer): notice 4.5, text box
- * 7.2, ledger tab 9.92, approve 13.32 / 13.25 in the takes.
+ * Tap times follow shots.ts 'S8.U15' (the recording has no visible pointer): each ripple lands just
+ * before the take reacts — memory window zh 4.80 / en 4.77, text box 7.52 / 7.43, ledger 10.28 / 10.12,
+ * approve 13.80 / 13.72.
  */
 import {introPlacement} from '../data/media.ts';
 import type {Lang} from '../data/timeline.ts';
@@ -21,7 +22,7 @@ export const S8 = ({lang}: {lang: Lang}) => {
     {at: 61.4, id: 's8Notice'},
     {at: 62.8, id: 's8ProfileText'},
     {at: 64.2, id: 's8LedgerTab'},
-    {at: lang === 'zh' ? 66.78 : 66.76, id: 's8Approve'},
+    {at: 66.78, id: 's8Approve'},
   ] as const;
   return (
     <WindowSet camera={s8Camera(lang)} exit={[67.8, 68.2]}>

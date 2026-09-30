@@ -18,7 +18,7 @@ export const AUDIO_EXT = ['mp3', 'wav', 'm4a', 'aac', 'ogg', 'flac'] as const;
 
 export type ShotId =
   | 'G1' | 'G2' | 'G3' | 'G4' | 'G5' | 'G6'
-  | 'U02' | 'U03' | 'U04' | 'U05' | 'U06' | 'U07' | 'U08' | 'U09' | 'U10' | 'U11' | 'U12' | 'U15' | 'U16';
+  | 'U02' | 'U03' | 'U04' | 'U05' | 'U06' | 'U07' | 'U08' | 'U09' | 'U10' | 'U11' | 'U12' | 'U13' | 'U15' | 'U16';
 
 export interface ShotSpec {
   id: ShotId;
@@ -74,6 +74,8 @@ export const SHOTS: Record<ShotId, ShotSpec> = {
     brief: '萬一 S5 那天沒蓋到印章，右格改用種子裡的沉重日印章卡'},
   U12: {id: 'U12', kind: 'ui', perLang: true, device: 'phone', label: '早安', name: '手機早安問候',
     brief: '行動版對話頁 → 思考泡泡 → 端茶小吉祥物＋早安問候'},
+  U13: {id: 'U13', kind: 'ui', perLang: true, device: 'phone', optional: true, label: '手機行事曆', name: '手機行事曆（選用）',
+    brief: '底部分頁點「行事曆」→ 行動版月格，今天 10:00 的課'},
   U15: {id: 'U15', kind: 'ui', perLang: true, device: 'desktop', label: '你的記憶，你作主', name: '核可通知 → 使用者檔案 → 帳本',
     brief: '點通知泡泡 → 使用者檔案（游標進文字框）→ 記憶帳本 → 核可一筆 → 已生效'},
   U16: {id: 'U16', kind: 'ui', perLang: true, device: 'desktop', stillOk: true, optional: true, label: 'AI 由你選', name: '供應商字樣（選用）',
@@ -129,9 +131,10 @@ export const INTRO_PLACEMENTS: readonly Placement[] = [
   {key: 'S6.G3', shot: 'G3', at: [46.8, 51.2], srcIn: 0, rate: 1, note: 'S6 右格'},
   {key: 'S6.card', shot: 'U07', variant: 'card', fallback: 'U11', at: [47.2, 51.2], srcIn: 0, rate: 1, note: 'S6 右格下方：S5 錄到的鼓勵組印章卡（U07 日面板裁切 ui/U07-<lang>-card；沒蓋到就換 U11）'},
   {key: 'S7.G4', shot: 'G4', at: [50.6, 60.1], srcIn: 0, rate: 1, note: 'S7a 全畫面，之後當手機底圖'},
-  {key: 'S7.U12', shot: 'U12', at: [53.2, 60.1], srcIn: 0, rate: 1, note: 'S7b 手機畫面（54.2 起）'},
+  {key: 'S7.U12', shot: 'U12', at: [53.2, 60.1], srcIn: 0, rate: 1, note: 'S7b 手機畫面（54.2 起）：思考泡泡 → 早安問候'},
+  {key: 'S7.U13', shot: 'U13', at: [59.0, 60.1], srcIn: 0, rate: 1, note: 'S7 尾（選用）：點「行事曆」→ 10 月月格＋今天的課，蓋在 U12 上；沒有檔案就一直是 U12'},
   {key: 'S8.U15', shot: 'U15', at: [59.6, 68.2], srcIn: 0, rate: 1, note: 'S8 視窗內'},
-  {key: 'S9.U16', shot: 'U16', at: [73.6, 74.6], srcIn: 0, rate: 1, note: 'S9 可選 1 s（storyboard 寫在 75.0–80.0 那段；放在供應商段，Grok 亮起時）'},
+  {key: 'S9.U16', shot: 'U16', at: [73.6, 74.6], srcIn: 0, rate: 1, note: 'S9 可選 1 s（storyboard 寫在 75.0–80.0 那段；放在供應商段，Grok 亮起時）：真實的「AI: Grok (xAI)」'},
   {key: 'S10.G5', shot: 'G5', at: [79.8, 88.5], srcIn: 0, rate: 1, freezeFrom: 85.0, note: 'S10 左三分之一；85.0 起定格在尾幀'},
 ];
 
@@ -165,32 +168,34 @@ export interface Target {
 
 export const TARGETS = {
   s2Title: {shot: 'U02', rect: {zh: [36, 109, 62, 28], en: [36, 110, 86, 26]}, label: '對話標題（換成小樹洞）', provisional: false},
-  s3Reply: {shot: 'U03', rect: {zh: [92, 428, 1054, 140], en: [92, 428, 1298, 116]}, label: '回覆（推近目標）', provisional: false},
-  s4Reply: {shot: 'U04', rect: both([92, 521, 1298, 164]), label: '第二則回覆（推近目標）', provisional: false},
-  // zh (v3.1): the paraphrased recall 「你之前第一次上台報告前也失眠到半夜爬起來順講稿」— no date / title in zh takes.
-  // en: "September 14 entry, “Sleepless before my first presentation,”" (U04 en-take7).
-  s4Quote: {shot: 'U04', rect: {zh: [103, 603, 375, 28], en: [264, 603, 456, 28]}, label: '回憶句／日期＋標題（螢光筆）', provisional: false},
-  // Where the memory card floats: right of the reply, clear of her second message (y 436–500).
-  s4CardSlot: {shot: 'U04', rect: {zh: [1430, 506, 440, 254], en: [1430, 500, 440, 285]}, label: '回憶卡位置', provisional: false},
+  s3Reply: {shot: 'U03', rect: {zh: [92, 428, 1182, 140], en: [92, 428, 1298, 116]}, label: '回覆（推近目標）', provisional: false},
+  s4Reply: {shot: 'U04', rect: {zh: [92, 521, 1298, 164], en: [92, 569, 1298, 116]}, label: '第二則回覆（推近目標）', provisional: false},
+  // Where the memory card floats: right of the reply (it ends at x 1390), clear of her second message and its time
+  // (zh y 378–420, en y 485–552) and of the 「grok-4.3」 label at x 1845, y 803 — the en card sits lower and smaller.
+  s4CardSlot: {shot: 'U04', rect: {zh: [1430, 506, 440, 254], en: [1440, 560, 380, 246]}, label: '回憶卡位置', provisional: false},
   s5EndButton: {shot: 'U06', rect: {zh: [856, 939, 208, 55], en: [841, 939, 238, 55]}, label: '「結束對話並生成日記」按鈕', provisional: false},
   s5NewCard: {shot: 'U06', rect: {zh: [993, 157, 286, 159], en: [993, 157, 286, 180]}, label: '日記頁最上面的新卡片', provisional: false},
-  s5StampCard: {shot: 'U06', rect: {zh: [983, 246, 330, 59], en: [983, 246, 420, 59]}, label: '詳情頁印章卡（推近）', provisional: false},
-  s5TodayCell: {shot: 'U07', rect: both([466, 757, 208, 119]), label: '今天那格（推近）', provisional: false},
-  s5TodayStamp: {shot: 'U07', rect: both([662, 757, 14, 14]), label: '今天那格的 14 px 印章', provisional: false},
+  // The detail's stamp card now spans the whole panel (983–1881); the push aims at its stamp + note.
+  s5StampCard: {shot: 'U06', rect: {zh: [983, 246, 261, 59], en: [983, 246, 353, 59]}, label: '詳情頁印章卡：印章＋小語（推近）', provisional: false},
+  s5TodayCell: {shot: 'U07', rect: both([464, 756, 212, 121]), label: '今天那格（推近）', provisional: false},
+  s5TodayStamp: {shot: 'U07', rect: both([662, 756, 14, 14]), label: '今天那格的 14 px 印章', provisional: false},
   s5PanelCard: {shot: 'U07', rect: {zh: [1603, 257, 282, 106], en: [1603, 257, 282, 126]}, label: '日面板印章卡', provisional: false},
-  s5PanelStamp: {shot: 'U07', rect: both([1617, 292, 34, 32]), label: '日面板 40 px 印章（配對剪接起點）', provisional: false},
-  u10Egg: {shot: 'U10', rect: both([795, 455, 320, 180]), label: '存日記彩蛋（裁切）', provisional: false},
+  s5PanelStamp: {shot: 'U07', rect: {zh: [1618, 294, 35, 30], en: [1616, 305, 33, 30]}, label: '日面板 40 px 印章（配對剪接起點）', provisional: false},
+  // = the U10 clip's own crop (shots.ts EGG): the egg on the diary page, no text inside
+  u10Egg: {shot: 'U10', rect: both([854, 492, 142, 80]), label: '存日記彩蛋（裁切）', provisional: false},
+  s7CalendarTab: {shot: 'U13', rect: both([295, 800, 60, 34]), label: '手機底部「行事曆」分頁（點擊）', provisional: false},
   s8Notice: {shot: 'U15', rect: {zh: [92, 641, 753, 44], en: [92, 641, 1107, 44]}, label: '溫暖通知泡泡', provisional: false},
   s8Modal: {shot: 'U15', rect: both([640, 192, 640, 626]), label: '記憶視窗（推近）', provisional: false},
   s8ProfileText: {shot: 'U15', rect: both([690, 385, 60, 30]), label: '使用者檔案文字框', provisional: false},
   s8LedgerTab: {shot: 'U15', rect: {zh: [873, 276, 110, 42], en: [926, 276, 154, 42]}, label: '「記憶帳本」分頁', provisional: false},
   s8Approve: {shot: 'U15', rect: {zh: [1157, 468, 42, 22], en: [1120, 511, 66, 21]}, label: '「核可」按鈕', provisional: false},
-  // ReadmeLoop crops (en takes; aspect = the loop panel 1160×450) and marks
-  loopChat: {shot: 'U03', rect: both([60, 150, 1320, 512]), label: '對話欄（裁切）', provisional: false},
-  loopMemory: {shot: 'U04', rect: both([60, 272, 1320, 512]), label: '回覆＋引用（裁切）', provisional: false},
-  loopDiary: {shot: 'U06', rect: both([940, 88, 980, 380]), label: '新日記卡（裁切）', provisional: false},
-  loopMonth: {shot: 'U08', rect: both([460, 480, 1108, 430]), label: '月格（裁切）', provisional: false},
-  loopQuote: {shot: 'U04', rect: both([264, 603, 456, 28]), label: '日期＋標題（螢光筆）', provisional: false},
+  // ReadmeLoop crops (en takes; aspect = the loop panel 1160×450), each placed so no line of text is cut at an
+  // edge: the chat pair shows the whole conversation column (below the header title, above the input box),
+  // the diary crop stops inside the second card row's bottom padding, the month crop above the 7–11 row.
+  loopChat: {shot: 'U03', rect: both([40, 137, 1840, 714]), label: '對話欄（裁切）', provisional: false},
+  loopMemory: {shot: 'U04', rect: both([40, 137, 1840, 714]), label: '回覆＋引用（裁切）', provisional: false},
+  loopDiary: {shot: 'U06', rect: both([963, 160, 954, 370]), label: '新日記卡（裁切）', provisional: false},
+  loopMonth: {shot: 'U08', rect: both([460, 486, 1003, 389]), label: '月格（裁切）', provisional: false},
   loopStampA: {shot: 'U08', rect: both([886, 629, 10, 9]), label: '印章 9/24（相機）', provisional: false},
   loopStampB: {shot: 'U08', rect: both([1330, 499, 10, 9]), label: '印章 9/19（音樂）', provisional: false},
   loopStampC: {shot: 'U08', rect: both([1330, 629, 10, 9]), label: '印章 9/26（太陽）', provisional: false},
@@ -198,6 +203,17 @@ export const TARGETS = {
 
 export type TargetId = keyof typeof TARGETS;
 export const targetRect = (id: TargetId, lang: Lang): Rect => TARGETS[id].rect[lang];
+
+/**
+ * The date + title the S4 reply recalls (U04 zh-take26 / en-take26 — the loop uses the same en take), as the
+ * warm highlighter sweeps it: one rect per text line, in reading order. zh 「9 月 14 日《第一次上台報告前的失眠夜》」
+ * sits on one line; en "September 14 in “Sleepless before my first / presentation,”" wraps after "first".
+ * Measured on the settled reply (glyph columns at 4K), padded like the other marks.
+ */
+export const QUOTE_SPANS: Record<Lang, readonly Rect[]> = {
+  zh: [[251, 603, 292, 28]],
+  en: [[1005, 579, 320, 28], [104, 603, 113, 28]],
+};
 
 const byKey = (list: readonly Placement[], key: string): Placement => {
   const p = list.find((x) => x.key === key);

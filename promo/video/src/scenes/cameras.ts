@@ -27,15 +27,26 @@ const CHAT_SOFT: Cam = {zoom: 1.045, target: CHAT, blend: 0.2};
 
 const clampAxis = (c: number, lo: number, hi: number): number => (lo > hi ? (lo + hi) / 2 : Math.min(hi, Math.max(lo, c)));
 
-/** A push centred on `point`, as close as the window's edges allow (the window keeps filling the frame). */
-export const framed = (zoom: number, [x, y]: readonly [number, number]): Cam => ({
-  zoom,
-  blend: 1,
-  target: [
-    clampAxis(x, WINDOW.x + 960 / zoom, WINDOW.x + WINDOW.contentW - 960 / zoom),
-    clampAxis(y, WINDOW.y + 540 / zoom, WINDOW.y + WINDOW.bar + WINDOW.contentH - 540 / zoom),
-  ],
-});
+/**
+ * A push centred on `point`, as close as the window's edges allow (the window keeps filling the frame).
+ * The frame's top edge never rests inside the window's title bar — that would cut its 「URDiary」 in half
+ * (S3's reply sits just there) — so it snaps to show the bar whole or not at all, whichever is nearer.
+ */
+export const framed = (zoom: number, [x, y]: readonly [number, number]): Cam => {
+  const halfH = 540 / zoom;
+  const lo = WINDOW.y + halfH; // frame top on the window's top edge: the bar shows whole
+  const hi = WINDOW.y + WINDOW.bar + WINDOW.contentH - halfH;
+  let cy = clampAxis(y, lo, hi);
+  if (cy - halfH > WINDOW.y && cy - halfH < WINDOW.y + WINDOW.bar) {
+    const below = lo + WINDOW.bar; // frame top just under the bar: the bar is out of frame
+    cy = below <= hi && below - cy < cy - lo ? below : lo;
+  }
+  return {
+    zoom,
+    blend: 1,
+    target: [clampAxis(x, WINDOW.x + 960 / zoom, WINDOW.x + WINDOW.contentW - 960 / zoom), cy],
+  };
+};
 
 export const s2s5Camera = (lang: Lang): readonly CamKey[] => {
   const s3 = framed(1.35, centerOf('s3Reply', lang)); // S3 推到回覆（回覆字約 16 px）

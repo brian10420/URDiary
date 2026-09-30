@@ -9,13 +9,13 @@
 import type {ReactNode} from 'react';
 import {AbsoluteFill} from 'remotion';
 import {MOTION} from '../generated/mascot.ts';
-import {loopPlacement, targetRect, type TargetId} from '../data/media.ts';
+import {QUOTE_SPANS, loopPlacement, targetRect, type TargetId} from '../data/media.ts';
 import {HERO_CARD, HERO_CARD_FADE, HERO_PERIOD_SEC, LOOP_SEGMENTS, LOOP_UI_LANG, SWAYS_PER_PERIOD, g6SourceTime, heroPhase} from '../data/loop.ts';
 import {UI} from '../data/ui-strings.ts';
 import {EASE_IN_OUT, keyframesAt, ramp, rotationOf} from '../lib/anim.ts';
 import {C} from '../lib/theme.ts';
 import {useTime} from '../lib/time.tsx';
-import {CircleMark, Highlighter} from '../components/Annotations.tsx';
+import {CircleMark, HighlighterLines} from '../components/Annotations.tsx';
 import {CaptionText} from '../components/Caption.tsx';
 import {LoopDraftOverlay} from '../components/DraftOverlay.tsx';
 import {Mascot} from '../components/Mascot.tsx';
@@ -80,13 +80,13 @@ const HeroSheet = ({phase, cardOpacity}: {phase: number; cardOpacity: number}) =
   </AbsoluteFill>
 );
 
-/** A target rect (recording CSS px) inside the panel, through the panel's crop of that recording. */
-const inPanel = (crop: TargetId, id: TargetId): [number, number, number, number] => {
+/** A rect (recording CSS px) inside the panel, through the panel's crop of that recording. */
+const rectInPanel = (crop: TargetId, [x, y, w, h]: readonly [number, number, number, number]): [number, number, number, number] => {
   const [cx, cy, cw] = targetRect(crop, LOOP_UI_LANG);
   const k = PANEL.w / cw;
-  const [x, y, w, h] = targetRect(id, LOOP_UI_LANG);
   return [(x - cx) * k, (y - cy) * k, w * k, h * k];
 };
+const inPanel = (crop: TargetId, id: TargetId) => rectInPanel(crop, targetRect(id, LOOP_UI_LANG));
 
 const Panel = ({children}: {children: ReactNode}) => (
   <div style={{position: 'absolute', left: PANEL.x, top: PANEL.y, width: PANEL.w, height: PANEL.h, borderRadius: 18, overflow: 'hidden', background: C.uiGrey, border: `2px solid ${C.line}`}}>
@@ -114,7 +114,9 @@ const UiSheet = () => {
         <MediaSlot placement={loopPlacement('L.U04')} lang={LOOP_UI_LANG} tone="ui" crop={crop('loopMemory')} labelPosition="center" />
         <MediaSlot placement={loopPlacement('L.U06')} lang={LOOP_UI_LANG} tone="ui" crop={crop('loopDiary')} labelPosition="center" />
         <MediaSlot placement={loopPlacement('L.U08')} lang={LOOP_UI_LANG} tone="ui" crop={crop('loopMonth')} labelPosition="center" />
-        {t >= memory.start && t < memory.end ? <Highlighter rect={inPanel('loopMemory', 'loopQuote')} from={8.6} sweepSec={0.9} until={memory.end + 0.4} /> : null}
+        {t >= memory.start && t < memory.end ? (
+          <HighlighterLines rects={QUOTE_SPANS[LOOP_UI_LANG].map((r) => rectInPanel('loopMemory', r))} from={8.6} sweepSec={0.9} until={memory.end + 0.4} />
+        ) : null}
         {t >= 13.5 && t < 17.0
           ? (['loopStampA', 'loopStampB', 'loopStampC'] as const).map((id, i) => (
               <CircleMark key={id} rect={inPanel('loopMonth', id)} from={14.0 + i * 0.7} drawSec={0.45} until={17.2} stroke={4} />

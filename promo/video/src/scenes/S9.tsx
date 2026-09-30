@@ -8,6 +8,8 @@
  *             Fine print line 1 (71.2–80.0).
  *   75.0–80.0 the line retracts; a 「本地模型（Ollama／LM Studio）」 box grows inside the laptop
  *             and the dots circle inside it. Fine print line 2 (75.0–80.0).
+ *   73.6–74.6 (optional, U16): under the chips, the real app's provider selector 「AI: Grok (xAI)」
+ *             (native 2× crop, drawn 1:1 at 560×80), fading in and out.
  * No logos, no sound on the moving dots (§1.2 「避免科技感」).
  */
 import {AbsoluteFill} from 'remotion';
@@ -205,7 +207,9 @@ const FinePrint = ({lang}: {lang: Lang}) => {
 
 export const S9 = ({lang}: {lang: Lang}) => {
   const t = useTime();
-  const u16 = mediaFor(introPlacement('S9.U16'), lang).entry;
+  const u16Placement = introPlacement('S9.U16');
+  const u16 = mediaFor(u16Placement, lang).entry;
+  const u16Opacity = presence(t, u16Placement.at[0], u16Placement.at[1], 0.2, 0.2);
   const mascot = ramp(t, 68.6, 69.2, EASE_OUT);
   return (
     <AbsoluteFill>
@@ -217,9 +221,9 @@ export const S9 = ({lang}: {lang: Lang}) => {
       <DbFile />
       <LocalModel lang={lang} />
       <Providers lang={lang} />
-      {u16 ? (
-        // under the provider chips, clear of the fine print (744 px down)
-        <div style={{position: 'absolute', left: CHIP_X, top: 486, width: 560, height: 80, borderRadius: 12, overflow: 'hidden', boxShadow: C.shadow}}>
+      {u16 && u16Opacity > 0 ? (
+        // under the provider chips, clear of the fine print (744 px down); only while the clip plays
+        <div style={{position: 'absolute', left: CHIP_X, top: 486, width: 560, height: 80, borderRadius: 12, overflow: 'hidden', boxShadow: C.shadow, opacity: u16Opacity}}>
           <MediaSlot placement={introPlacement('S9.U16')} lang={lang} tone="ui" compact />
         </div>
       ) : null}
