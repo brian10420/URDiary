@@ -5,7 +5,7 @@
  *
  *   ComfyUI shots  G1–G6 (§4.3)          public/media/G1.mp4 …           language-neutral
  *   UI recordings  U02–U16 (§3.1)        public/media/U03-zh.mp4 / U03-en.mp4   (one per UI language)
- *   narration      (§1.2)                public/media/narration/zh/S6A.mp3 …
+ *   narration      (§1.2)                public/media/narration/zh/S6-A.mp3 …
  *   music bed      (§5.1)                public/media/music/bed-90s.mp3
  *   sound effects  (§5.1 音效 column)     public/media/sfx/<id>.mp3
  */

@@ -8,7 +8,8 @@
  * from each 節奏核對; `estimateSpeechSec()` re-derives it from the §0 rhythm rules so an edited
  * line cannot silently overrun its scene (scripts/check.mjs).
  *
- * Audio slots: public/media/narration/<lang>/<id>.mp3 (e.g. narration/zh/S6A.mp3). Scenes with
+ * Audio slots: public/media/narration/<lang>/<id>.mp3 (e.g. narration/zh/S6-A.mp3; the ids are the ones
+ * promo/narration/lines.json uses, so its TTS files drop straight in). Scenes with
  * two or three separately timed sentences (S6, S9) get one file per sentence.
  */
 import type {Lang, SceneId} from './timeline.ts';
@@ -84,12 +85,12 @@ export const NARRATION: readonly NarrationLine[] = [
     },
   },
   {
-    id: 'S6A', scene: 'S6', in: {zh: 43.1, en: 43.1}, latestEnd: {zh: 46.35, en: 45.6}, burnIn: true,
+    id: 'S6-A', scene: 'S6', in: {zh: 43.1, en: 43.1}, latestEnd: {zh: 46.35, en: 45.6}, burnIn: true,
     text: {zh: '開心的日子，有個小小的慶祝；', en: 'Good days get a little celebration.'},
     subtitles: {zh: [['開心的日子，有個小小的慶祝；']], en: [['Good days get a little celebration.']]},
   },
   {
-    id: 'S6B', scene: 'S6', in: {zh: 46.8, en: 46.8}, latestEnd: {zh: 50.05, en: 48.9}, burnIn: true,
+    id: 'S6-B', scene: 'S6', in: {zh: 46.8, en: 46.8}, latestEnd: {zh: 50.05, en: 48.9}, burnIn: true,
     text: {zh: '難過的日子，只有安靜的陪伴。', en: 'Hard days get quiet company.'},
     subtitles: {zh: [['難過的日子，只有安靜的陪伴。']], en: [['Hard days get quiet company.']]},
   },
@@ -116,17 +117,17 @@ export const NARRATION: readonly NarrationLine[] = [
     },
   },
   {
-    id: 'S9A', scene: 'S9', in: {zh: 68.6, en: 68.6}, latestEnd: {zh: 71.1, en: 71.95}, burnIn: true,
+    id: 'S9-A', scene: 'S9', in: {zh: 68.6, en: 68.6}, latestEnd: {zh: 71.1, en: 71.95}, burnIn: true,
     text: {zh: '日記存在你自己的電腦。', en: 'Your diary is stored on your own computer.'},
     subtitles: {zh: [['日記存在你自己的電腦。']], en: [['Your diary is stored on your own computer.']]},
   },
   {
-    id: 'S9B', scene: 'S9', in: {zh: 71.4, en: 72.1}, latestEnd: {zh: 74.65, en: 75.0}, burnIn: true,
+    id: 'S9-B', scene: 'S9', in: {zh: 71.4, en: 72.1}, latestEnd: {zh: 74.65, en: 75.0}, burnIn: true,
     text: {zh: '聊天內容，會送到你選的 AI；', en: 'Chats go to the AI you choose —'},
     subtitles: {zh: [['聊天內容，會送到你選的 AI；']], en: [['Chats go to the AI you choose —']]},
   },
   {
-    id: 'S9C', scene: 'S9', in: {zh: 75.0, en: 75.3}, latestEnd: {zh: 79.0, en: 79.05}, burnIn: true,
+    id: 'S9-C', scene: 'S9', in: {zh: 75.0, en: 75.3}, latestEnd: {zh: 79.0, en: 79.05}, burnIn: true,
     text: {zh: '想讓聊天留在本機，就改用本地模型。', en: 'or keep chats at home with a local model.'},
     subtitles: {zh: [['想讓聊天留在本機，', '就改用本地模型。']], en: [['or keep chats at home with a local model.']]},
   },

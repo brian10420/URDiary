@@ -64,7 +64,7 @@
 | `G1.mp4` … `G5.mp4` | ComfyUI 鏡頭（§4.3） | ≥1920×1080、補幀到 60 fps（§4.4）、靜音匯入 |
 | `G6.mp4` | README 搖擺循環 | 24 fps、**124 幀、首幀＝尾幀**（循環會丟掉最後一幀）；方形，疊在 16:9 奶油底上 |
 | `U02-zh.mp4`、`U02-en.mp4` …（`U##-<lang>`） | UI 錄影（§3） | 桌面 1920×1080 CSS @DPR2（3840×2160）、手機 390×844 @DPR3；一律轉成 CFR 60 fps。U05、U08、U09、U11、U16 可以用靜態圖（`.png`） |
-| `narration/zh/S1.mp3` …（`narration/<lang>/<id>`） | 旁白，一句一檔 | id＝`S1`–`S5`、`S6A`、`S6B`、`S7`、`S8`、`S9A`、`S9B`、`S9C`、`S10`。有檔案之後，字幕長度、配樂閃避都改用檔案的實際長度 |
+| `narration/zh/S1.mp3` …（`narration/<lang>/<id>`） | 旁白，一句一檔 | id＝`S1`–`S5`、`S6-A`、`S6-B`、`S7`、`S8`、`S9-A`、`S9-B`、`S9-C`、`S10`。有檔案之後，字幕長度、配樂閃避都改用檔案的實際長度 |
 | `music/bed-90s.mp3` | 90 s 配樂床（§5.1） | 已剪到 88.5 s 對齊畫面 |
 | `sfx/<id>.mp3` | 音效（§5.1） | id 見 `src/data/audio.ts`：`room-tone`、`typing`、`chime`、`paper`、`click`、`page`、`stamp`、`rain`、`cup`（選用） |
 
