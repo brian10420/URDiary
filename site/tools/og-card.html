@@ -1,0 +1,94 @@
+<!doctype html>
+<!--
+  1200×630 link-preview card, rendered to site/assets/og-image.png by tools/render-og.js.
+  The mascot comes from vendor/mascot.js and the words from i18n.js, so the card cannot drift
+  from the page. Dev-only: tools/ is not part of the published site.
+-->
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>URDiary link-preview card</title>
+    <link rel="stylesheet" href="../vendor/mascot.css">
+    <style>
+        html, body { margin: 0; }
+        body {
+            width: 1200px; height: 630px; overflow: hidden; background: #f9f3e6; color: #2b1a10;
+            font-family: -apple-system, "Segoe UI", Roboto, Arial, "PingFang TC", "Microsoft JhengHei", "Noto Sans TC", "Noto Sans CJK TC", sans-serif;
+        }
+        .card {
+            box-sizing: border-box; width: 1200px; height: 630px; padding: 0 70px 0 84px;
+            display: grid; grid-template-columns: minmax(0, 1fr) 452px; gap: 44px; align-items: center;
+        }
+        .serif { font-family: "Iowan Old Style", "Palatino Linotype", Palatino, "URW Palladio L", P052, Georgia, serif; }
+        .eyebrow {
+            display: inline-flex; align-items: center; gap: 10px; margin: 0 0 22px; padding: 7px 18px 7px 12px;
+            border-radius: 999px; background: #fffdf8; border: 1px solid rgba(75, 46, 30, .14);
+            color: #6b4f3e; font-size: 20px; font-weight: 700;
+        }
+        .eyebrow i { width: 12px; height: 12px; border-radius: 50%; background: #5fd0a0; box-shadow: 0 0 0 4px rgba(95, 208, 160, .28); }
+        h1 { margin: 0; font-size: 124px; line-height: .95; letter-spacing: -.02em; font-weight: 700; }
+        .en { margin: 26px 0 0; font-size: 39px; line-height: 1.22; font-weight: 700; color: #3a2417; }
+        .zh { margin: 14px 0 0; font-size: 31px; line-height: 1.4; font-weight: 700; letter-spacing: .05em; color: #6b4f3e; }
+        mark { color: inherit; background: linear-gradient(180deg, transparent 58%, rgba(95, 208, 160, .45) 58%, rgba(95, 208, 160, .45) 92%, transparent 92%); }
+        .page-wrap { position: relative; }
+        .page-wrap::before {
+            content: ""; position: absolute; z-index: 2; top: -16px; left: 50%; width: 150px; height: 36px;
+            transform: translateX(-50%) rotate(-3deg);
+            background: repeating-linear-gradient(135deg, rgba(255, 255, 255, .28) 0 7px, transparent 7px 14px), rgba(95, 208, 160, .62);
+        }
+        .page {
+            position: relative; height: 430px; border-radius: 36px; background-color: #fffdf8;
+            background-image: linear-gradient(90deg, transparent 0 52px, rgba(240, 167, 143, .5) 52px 54px, transparent 54px),
+                repeating-linear-gradient(180deg, transparent 0 35px, rgba(75, 46, 30, .07) 35px 36px);
+            box-shadow: 0 3px 0 rgba(75, 46, 30, .05), 0 40px 70px -40px rgba(75, 46, 30, .6), inset 0 0 0 1px rgba(75, 46, 30, .08);
+        }
+        .mascot { position: absolute; left: 50%; top: 52%; width: 250px; transform: translate(-50%, -50%); }
+        .mascot svg { display: block; width: 100%; height: auto; }
+        .mascot::after {
+            content: ""; position: absolute; z-index: -1; left: 18%; right: 18%; bottom: -2%; height: 10%;
+            background: radial-gradient(closest-side, rgba(75, 46, 30, .2), transparent);
+        }
+        .sticker {
+            position: absolute; width: 58px; height: 58px; display: grid; place-items: center; border-radius: 50%;
+            background: #fffdf8; border: 2px solid #fff; box-shadow: 0 8px 16px -10px rgba(75, 46, 30, .6);
+        }
+        .sticker svg { width: 70%; height: 70%; }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <div>
+            <p class="eyebrow"><i></i><span id="eyebrow"></span></p>
+            <h1 class="serif">URDiary</h1>
+            <p class="en serif" id="en"></p>
+            <p class="zh" id="zh"></p>
+        </div>
+        <div class="page-wrap">
+            <div class="page">
+                <span class="sticker" data-stamp="sun" style="left: 30px; top: 34px; transform: rotate(-12deg)"></span>
+                <span class="sticker" data-stamp="music" style="right: 30px; top: 60px; transform: rotate(9deg)"></span>
+                <span class="sticker" data-stamp="flower" style="left: 44px; bottom: 36px; transform: rotate(7deg)"></span>
+                <span class="sticker" data-stamp="coffee" style="right: 44px; bottom: 40px; transform: rotate(-6deg)"></span>
+                <div class="mascot" id="mascot"></div>
+            </div>
+        </div>
+    </div>
+    <script src="../vendor/mascot.js"></script>
+    <script src="../i18n.js"></script>
+    <script>
+        (function () {
+            var d = window.SITE_I18N;
+            document.getElementById('eyebrow').textContent = d.en['hero.eyebrow'];
+            document.getElementById('en').innerHTML = d.en['hero.promise'];
+            document.getElementById('zh').textContent = d['zh-TW']['hero.promise'].replace(/<\/?mark>/g, '');
+            var tpl = document.createElement('template');
+            tpl.innerHTML = MascotModule.welcomeHtml();
+            document.getElementById('mascot').appendChild(tpl.content.querySelector('svg'));
+            Array.prototype.forEach.call(document.querySelectorAll('[data-stamp]'), function (el) {
+                el.innerHTML = MascotModule.stampIcon(el.getAttribute('data-stamp'), 48);
+            });
+            document.documentElement.setAttribute('data-ready', '1');
+        })();
+    </script>
+</body>
+</html>
