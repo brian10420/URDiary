@@ -29,6 +29,7 @@
 'use strict';
 
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const { execFileSync, spawnSync } = require('child_process');
 
@@ -113,7 +114,7 @@ const SESSIONS = {
   morning: {
     device: 'phone', role: 'main', llm: true, shots: ['U12', 'U13'],
     steps: [
-      ['seed', '--set-checkin', 'today', '--clear-chat'], ['open'], ['login'], ['awaitOpening'], ['touchSettings'],
+      ['seed', '--set-checkin', 'today', '--clear-chat'], ['open'], ['login'], ['awaitOpening'], ['touchSettings'], ['preflightMic'],
       ['openSwitchUser'], ['pickProfile'], ['fillPassword'], ['waitUntil'],
       ['rec', 'U12'], ['hold', 1.5], ['submitLogin'], ['awaitCheckin'], ['hold', 3.5], ['stop'],
       ['rec', 'U13'], ['hold', 1.5], ['nav', 'calendar'], ['awaitCalendar'], ['hold', 3.5], ['stop'],
@@ -123,7 +124,7 @@ const SESSIONS = {
   morning2: {
     device: 'phone', role: 'main', llm: true, shots: ['U12', 'U13'],
     steps: [
-      ['seed', '--set-checkin', 'today', '--clear-chat'], ['open'], ['login'], ['awaitOpening'], ['touchSettings'],
+      ['seed', '--set-checkin', 'today', '--clear-chat'], ['open'], ['login'], ['awaitOpening'], ['touchSettings'], ['preflightMic'],
       ['openSwitchUser'], ['pickProfile'], ['fillPassword'], ['waitUntil'], ['seed', '--set-checkin', 'yesterday', '--clear-chat'],
       ['rec', 'U12'], ['hold', 1.5], ['submitLogin'], ['awaitCheckin'], ['hold', 3.5], ['stop'],
       ['rec', 'U13'], ['hold', 1.5], ['nav', 'calendar'], ['awaitCalendar'], ['hold', 3.5], ['stop'],
@@ -763,6 +764,22 @@ const ACTIONS = {
   },
 
   async hold(r, seconds) { await sleep(seconds * 1000); },
+
+  // 錄影前的麥克風字形檢查：原生解析度截一張圖，用 micPixelCheck 看按鈕裡是不是真的畫出了麥克風
+  // （圖示字型子集舊版沒有這個字形，按鈕只剩空圓）。沒畫出來就整個 session 中止，不要錄
+  async preflightMic(r) {
+    const p = await probePage(r.page);
+    const box = p.mic && p.mic.button_box;
+    if (!box) throw new Error('preflight: mic button not visible on the chat page');
+    const shot = await r.cdp.send('Page.captureScreenshot', { format: 'png' });
+    const tmp = path.join(os.tmpdir(), `urdiary-preflight-mic-${process.pid}.png`);
+    fs.writeFileSync(tmp, Buffer.from(shot.data, 'base64'));
+    let res;
+    try { res = micPixelCheck(tmp, box, p.mic.dpr || r.device.dpr); } finally { fs.rmSync(tmp, { force: true }); }
+    log(`preflight mic glyph: ${JSON.stringify(res)}`);
+    if (!res.ok) throw new Error(`preflight: mic glyph not rendered (${res.reason || 'shape check failed'})`);
+    r.state.preflightMic = res;
+  },
 
   // 等到 --at 指定的時刻（ISO 8601，例如 2026-10-01T05:05:00+14:00）；已經過了就直接往下
   async waitUntil(r) {
