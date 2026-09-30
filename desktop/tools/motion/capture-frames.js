@@ -12,9 +12,14 @@
  * 輸出：<out>/contact-sheet.png（每列一個場景、每欄一個時間點）＋ <out>/frames/<場景>@<ms>.png。
  * 輸出一律在 git 之外（預設 os.tmpdir()）。
  *
- * 決定性：先 page.clock.install() 讓 setTimeout／rAF 停住（場景的收尾計時器不會在擷取中途
- * 移除 class），setup 之後暫停 document.getAnimations() 的全部動畫（含 CSS transition、
- * View Transition 偽元素動畫），每個影格把全部動畫 seek 到同一個 currentTime 再截圖。
+ * 決定性：
+ *   1. page.clock.install({time}) 只是換上假時鐘，時間仍會照真實速度流動；真正凍結的是
+ *      page.clock.pauseAt()。所以 goto（頁面載入計時器正常跑）與調整視窗之後、setup 之前
+ *      呼叫 pauseAt(固定時間)：此後 setTimeout／setInterval／rAF 一律不會自己觸發（點擊反應的
+ *      900 ms 收尾、存檔彩蛋的 1200／1800 ms 淡出與移除、onboarding 淡出都不會在擷取中途改 DOM），
+ *      不論截圖花多久。要讓計時器跑必須明確呼叫 clock.runFor（目前沒有場景需要）。
+ *   2. setup 之後暫停 document.getAnimations() 的全部動畫（含 CSS transition、View Transition
+ *      偽元素動畫；動畫時間軸與假時鐘無關），每個影格把全部動畫 seek 到同一個 currentTime 再截圖。
  */
 'use strict';
 
@@ -46,6 +51,7 @@ async function captureScene(browser, name, reduced) {
     // 先定視窗大小再 setup：場景可能依 innerWidth 放游標，而 View Transition 遇到視窗改尺寸會被跳過
     const viewport = await page.evaluate((n) => window.MotionHarness.SCENES[n].viewport, name);
     await page.setViewportSize({ width: viewport[0], height: viewport[1] });
+    await page.clock.pauseAt(new Date('2026-10-01T10:00:05'));   // 凍結計時器（見檔頭）；須在 setup 前，其排程的計時器才不會跑
     const meta = await page.evaluate((n) => window.MotionHarness.setup(n), name);
     await page.evaluate(() => document.getAnimations().forEach((a) => a.pause()));
     const shots = [];

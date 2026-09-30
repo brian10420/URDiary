@@ -3,7 +3,7 @@
  *
  * 場景 = { viewport: [寬, 高], frames: [毫秒...], setup(stage) }：
  *   setup 只能「同步」把畫面與動畫觸發好——capture-frames.js 會先裝 Playwright 的
- *   假時鐘（page.clock.install），setTimeout／requestAnimationFrame 都不會自己跑，
+ *   假時鐘並 pauseAt 凍結（page.clock.install＋pauseAt），setTimeout／requestAnimationFrame 都不會自己跑，
  *   接著暫停 document.getAnimations() 全部動畫、逐一 seek 到 frames 的時間點截圖。
  *   所以依賴計時器的收尾（移除 class、淡出）在擷取期間不會發生，影格才穩定。
  * frames 的時間點＝審查時要看的關鍵姿勢（起點、最大位移、回彈、收尾）。
@@ -85,7 +85,7 @@
 
     // 手動檢視：file://.../harness.html?scene=<名稱>
     document.addEventListener('DOMContentLoaded', function () {
-        // 與 App 相同的行為層（main.js 也是這樣啟動）；擷取時假時鐘讓排程器不會自己跑
+        // 與 App 相同的行為層（main.js 也是這樣啟動）；擷取時假時鐘（pauseAt 凍結）讓排程器不會自己跑
         if (window.MascotMotion) window.MascotMotion.init();
         const name = new URLSearchParams(location.search).get('scene');
         if (name) { setup(name); return; }
