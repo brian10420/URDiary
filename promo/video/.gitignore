@@ -1,0 +1,9 @@
+# Remotion project for the URDiary intro video — see README.md
+node_modules/
+out/
+# real media (large, produced outside git; see README「素材放哪裡」)
+public/media/
+# regenerated from desktop/ and public/media/ by scripts/gen-mascot.mjs + scripts/media-manifest.mjs
+src/generated/
+# Remotion caches (browser download, webpack cache)
+.remotion*

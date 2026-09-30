@@ -1,0 +1,36 @@
+{
+  "name": "urdiary-intro-video",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Remotion project for the URDiary intro video (IntroLong zh/en) and the README loop — driven by STORYBOARD.md",
+  "license": "Apache-2.0",
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "gen": "node scripts/gen-mascot.mjs && node scripts/media-manifest.mjs",
+    "dev": "npm run gen && remotion studio",
+    "render:zh": "npm run gen && node scripts/render.mjs intro-zh",
+    "render:en": "npm run gen && node scripts/render.mjs intro-en",
+    "render:loop": "npm run gen && node scripts/render.mjs loop",
+    "render:draft": "npm run gen && node scripts/render.mjs --draft intro-zh intro-en loop",
+    "check": "npm run gen && node scripts/check.mjs",
+    "typecheck": "npm run gen && tsc --noEmit",
+    "contact-sheet": "node scripts/contact-sheet.mjs"
+  },
+  "dependencies": {
+    "@remotion/bundler": "4.0.530",
+    "@remotion/cli": "4.0.530",
+    "@remotion/google-fonts": "4.0.530",
+    "@remotion/renderer": "4.0.530",
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
+    "remotion": "4.0.530"
+  },
+  "devDependencies": {
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "typescript": "5.9.3"
+  }
+}
