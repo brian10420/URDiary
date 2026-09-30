@@ -1,0 +1,72 @@
+# Publishes site/ — the URDiary showcase page — to https://brian10420.github.io/URDiary/
+#
+# ONE-TIME SETUP (Brian): GitHub → repo Settings → Pages → Build and deployment →
+#   Source = "GitHub Actions". Until then the "Configure Pages" step fails with
+#   "Get Pages site failed"; nothing else is affected.
+#
+# The mascot is not committed under site/: desktop/ stays its single source of truth, and this
+# workflow copies it in (site/tools/sync-mascot.sh) right before uploading — so a change to the
+# app's mascot files (or its icon) redeploys the page too.
+name: Deploy showcase to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'site/**'
+      - 'desktop/js/mascot.js'
+      - 'desktop/js/mascot_motion.js'
+      - 'desktop/css/mascot.css'
+      - 'desktop/favicon.ico'                        # also copied by sync-mascot.sh
+      - 'desktop/assets/icons/icon-192.png'
+      - 'desktop/assets/icons/apple-touch-icon-180.png'
+      - '.github/workflows/pages.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# One deployment at a time; never cancel a deployment that is already running.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Check the page copy (zh-TW / en key parity)
+        run: node site/tools/check-i18n.js
+
+      - name: Copy the mascot from desktop/ (single source of truth)
+        run: |
+          bash site/tools/sync-mascot.sh
+          bash site/tools/sync-mascot.sh --check
+
+      - name: List the published videos (the page only requests listed files)
+        run: node site/tools/media-manifest.js
+
+      - name: Leave the dev-only tools out of the published site
+        run: rm -rf site/tools
+
+      - name: Configure Pages
+        uses: actions/configure-pages@v6
+
+      - name: Upload the site
+        uses: actions/upload-pages-artifact@v5
+        with:
+          path: site
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v5
