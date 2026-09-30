@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-09-30T17:21:01+08:00",
+  "generated_at": "2026-09-30T20:39:48+08:00",
   "voices": {
     "zh": "liora",
     "en": "lux"
@@ -150,14 +150,14 @@
       "id": "S4",
       "lang": "zh",
       "voice": "liora",
-      "text": "聊到相關的事，它會想起你寫過的某一天，連日期和標題都記得。",
+      "text": "聊到相關的事，它會想起你寫過的某一天，記得那時候的你。",
       "in_point_s": 24.7,
       "latest_end_s": 31.7,
       "budget_s": 7.0,
-      "duration_s": 5.837,
-      "lufs": -16.18,
-      "true_peak_db": -2.01,
-      "margin_s": 1.163,
+      "duration_s": 5.064,
+      "lufs": -16.4,
+      "true_peak_db": -1.99,
+      "margin_s": 1.936,
       "speed": null,
       "note": null,
       "files": {
@@ -165,7 +165,7 @@
         "wav": "/mnt/Data_SSD/urdiary-media/narration/normalized/zh/S4.wav",
         "mp3": "/mnt/Data_SSD/urdiary-media/narration/normalized/zh/S4.mp3"
       },
-      "ends_at_s": 30.537
+      "ends_at_s": 29.764
     },
     {
       "id": "S4",
