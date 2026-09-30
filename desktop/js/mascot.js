@@ -197,7 +197,8 @@ const MascotModule = (function () {
             `<p class="mascot-empty-caption">${escapeText(caption)}</p></div>`;
     }
 
-    function welcomeHtml() { return `<div class="mascot-welcome">${svg220(POSE_WAVE, 110, 'wave', 'data-mm-idle data-mm-tap')}</div>`; }
+    // 登入歡迎：待機＋可點＋眼睛跟隨游標（data-mm-follow 全 App 只有這一隻）
+    function welcomeHtml() { return `<div class="mascot-welcome">${svg220(POSE_WAVE, 110, 'wave', 'data-mm-idle data-mm-tap data-mm-follow')}</div>`; }
     function checkinHtml() { return `<span class="mascot-checkin">${svg220(POSE_TEA, 44, 'tea')}</span>`; }
 
     // 安靜門檻：spec §4 原文寫「負向情緒 → 安靜版」並字面舉例 valence<0，

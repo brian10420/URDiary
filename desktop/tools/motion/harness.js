@@ -64,7 +64,32 @@
             viewport: [240, 220], frames: [0, 60, 120, 190, 260, 340, 420, 600, 850],
             setup: (stage) => MascotMotion.react(mount(stage, MascotModule.emptyHtml('diary', '')).querySelector('svg')),
         },
+        // --- Task 7 登入頁：揮手一次＋眼睛跟隨 ------------------------------------
+        'login-wave': {
+            viewport: [220, 200], frames: [0, 240, 480, 720, 960, 1200],
+            setup: (stage) => mount(stage, MascotModule.welcomeHtml()),
+        },
+        'follow-right': { viewport: [320, 240], frames: [0, 70, 140], setup: (stage) => lookScene(stage, 1, 0.5) },
+        'follow-left': { viewport: [320, 240], frames: [0, 70, 140], setup: (stage) => lookScene(stage, 0, 0.5) },
+        'follow-up': { viewport: [320, 240], frames: [0, 70, 140], setup: (stage) => lookScene(stage, 0.5, 0) },
+        'follow-down': { viewport: [320, 240], frames: [0, 70, 140], setup: (stage) => lookScene(stage, 0.5, 1) },
+        'touch-settle': {
+            viewport: [320, 240], frames: [0, 210, 420],
+            setup: (stage) => {
+                const svg = lookScene(stage, 0, 0);                  // 先看向左上角
+                document.getAnimations().forEach((a) => a.finish());  // 看的過渡直接走完
+                MascotMotion.settle(svg);                             // 影格＝回正過程
+            },
+        },
     };
+
+    // 眼睛跟隨場景：游標放在視窗的相對位置 (fx, fy)；揮手與呼吸先取消，只看跟隨的過渡
+    function lookScene(stage, fx, fy) {
+        const svg = mount(stage, MascotModule.welcomeHtml()).querySelector('svg');
+        document.getAnimations().forEach((a) => a.cancel());
+        MascotMotion.lookAt(svg, fx * innerWidth, fy * innerHeight);
+        return svg;
+    }
 
     function list() { return Object.keys(SCENES); }
 

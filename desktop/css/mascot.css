@@ -75,6 +75,28 @@ svg.mm-react .mm-face-alt { visibility: visible; }
     100%    { transform: translateY(-26px) scale(.9); opacity: 0; }
 }
 
+/* 揮手姿勢一出現就揮一次（v2.6 motion Task 7）：登入框每次開啟都重新注入 welcomeHtml()，
+   所以「每次開登入框揮一次」；之後 Task 9 的 onboarding 進場浮層用同一個姿勢、同一個揮手。
+   支點＝肩膀＝手臂群組外框的左下角。 */
+.mm-arm-r, .mm-arm-l { transform-box: fill-box; }
+.mm-arm-r { transform-origin: 0% 100%; }
+.mm-arm-l { transform-origin: 100% 100%; }
+svg[data-mm-pose="wave"] .mm-arm-r { animation: mm-wave 1.2s ease-in-out 1; }
+@keyframes mm-wave {
+    0%, 100% { transform: rotate(0deg); }
+    20% { transform: rotate(-16deg); }
+    40% { transform: rotate(8deg); }
+    60% { transform: rotate(-14deg); }
+    80% { transform: rotate(5deg); }
+}
+
+/* 眼睛跟隨（v2.6 motion Task 7）：mascot_motion.js 直接寫 inline transform（位移量隨游標變），
+   這裡只給平滑；.mm-settle＝觸控後回正，放慢一點。 */
+svg[data-mm-follow] .mm-face .mm-eyes, svg[data-mm-follow] .mm-face .mm-mouth,
+svg[data-mm-follow] .mm-blush { transition: transform 140ms ease-out; }
+svg[data-mm-follow].mm-settle .mm-face .mm-eyes, svg[data-mm-follow].mm-settle .mm-face .mm-mouth,
+svg[data-mm-follow].mm-settle .mm-blush { transition-duration: 420ms; transition-timing-function: ease-in-out; }
+
 /* 分頁隱藏時（html.mm-paused，mascot_motion.js 設）連 CSS 的循環待機一起停 */
 html.mm-paused svg[data-mm-idle] .mm-rig, html.mm-paused svg[data-mm-idle] .mm-zzz { animation-play-state: paused; }
 
@@ -83,5 +105,8 @@ html.mm-paused svg[data-mm-idle] .mm-rig, html.mm-paused svg[data-mm-idle] .mm-z
     .mascot-egg { transition: none; }
     svg[data-mm-idle] .mm-rig, svg[data-mm-idle][data-mm-pose="sleep"] .mm-zzz,
     svg.mm-blink .mm-eyes[data-mm-eyes="dot"],
-    svg.mm-react .mm-rig, .mm-heart { animation: none !important; }
+    svg.mm-react .mm-rig, .mm-heart,
+    svg[data-mm-pose="wave"] .mm-arm-r { animation: none !important; }
+    svg[data-mm-follow] .mm-face .mm-eyes, svg[data-mm-follow] .mm-face .mm-mouth,
+    svg[data-mm-follow] .mm-blush { transition: none !important; }
 }

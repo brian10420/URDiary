@@ -22,7 +22,11 @@ const MascotMotion = (function () {
     const BLINK_STAGGER_MS = 400;          // 同一 tick 多隻吉祥物時各自錯開，免得同步眨眼
     const REACT_MS = 900;                  // 點擊反應全長（彈跳 600ms、愛心 900ms 取長者）
     const REACT_INTERVAL_MS = 1200;        // 同一隻吉祥物兩次反應的最小間隔（限流）
-    const MOTION_CLASSES = ['mm-blink', 'mm-react'];   // reduced-motion 開啟時要立刻拔掉的一次性 class
+    const MOTION_CLASSES = ['mm-blink', 'mm-react', 'mm-settle'];   // reduced-motion 開啟時要立刻拔掉的 class
+    const LOOK_MAX = 6;                    // 眼睛最大位移（viewBox 單位；110px 的登入吉祥物約 3px）
+    const LOOK_REACH_PX = 240;             // 游標離臉這麼遠（螢幕 px）就到最大位移，更近則線性縮小
+    const LOOK_PARALLAX = 0.5;             // 嘴與腮紅只跟一半：像轉頭，不像只有眼珠在滑
+    const TOUCH_SETTLE_MS = 700;           // 觸控：看向點擊處多久後回正
 
     // ------------------------------------------------------------------
     // 純函式
@@ -48,6 +52,20 @@ const MascotMotion = (function () {
                 return true;
             }
         };
+    }
+
+    /**
+     * 眼睛跟隨：從臉中心 from 看向 to（兩者皆螢幕座標 px），回傳位移（viewBox 單位）。
+     * 方向＝from→to，長度＝max × min(1, 距離/reach)——永遠 ≤ max；距離 < 0.5px 或
+     * 非有限值回 {0,0}。
+     */
+    function computeLookOffset(from, to, max, reach) {
+        const dx = to.x - from.x;
+        const dy = to.y - from.y;
+        const dist = Math.hypot(dx, dy);
+        if (!isFinite(dist) || dist < 0.5) return { x: 0, y: 0 };
+        const k = (max * Math.min(1, dist / reach)) / dist;
+        return { x: dx * k, y: dy * k };
     }
 
     /**
@@ -93,6 +111,9 @@ const MascotMotion = (function () {
     let reduced = false;
     let scheduler = null;
     let tapLimiter = createRateLimiter(REACT_INTERVAL_MS);
+    let lastPointer = null;                // 最近一次滑鼠／筆的位置（rAF 合併後才計算）
+    let lookFrame = null;
+    let settleTimers = new WeakMap();      // 觸控回正計時器（每次觸控一次性，不是常駐）
 
     function isReducedMotion() { return reduced; }
 
@@ -176,12 +197,83 @@ const MascotMotion = (function () {
         if (target) react(target);
     }
 
-    /** reduced-motion 生效的瞬間：拔掉所有一次性動畫 class 與愛心，畫面回到靜止姿勢。 */
+    /** 臉（靜止臉的眼睛群組中心）在螢幕上的位置；環境量不到（jsdom、未渲染）回 null。 */
+    function faceCenter(svg) {
+        const eyes = svg.querySelector('.mm-face:not(.mm-face-alt) .mm-eyes');
+        if (!eyes || typeof eyes.getBBox !== 'function' || !eyes.parentNode ||
+            typeof eyes.parentNode.getScreenCTM !== 'function') return null;
+        const box = eyes.getBBox();
+        const m = eyes.parentNode.getScreenCTM();   // 父層矩陣：量「沒被跟隨位移過」的位置
+        if (!m) return null;
+        const px = box.x + box.width / 2;
+        const py = box.y + box.height / 2;
+        return { x: m.a * px + m.c * py + m.e, y: m.b * px + m.d * py + m.f };
+    }
+
+    /** 寫入眼睛／嘴／腮紅的 inline transform；off＝null 表示回正。 */
+    function applyLook(svg, off) {
+        function set(selector, k) {
+            svg.querySelectorAll(selector).forEach(function (el) {
+                el.style.transform = off
+                    ? 'translate(' + (off.x * k).toFixed(2) + 'px, ' + (off.y * k).toFixed(2) + 'px)'
+                    : '';
+            });
+        }
+        set('.mm-face .mm-eyes', 1);
+        set('.mm-face .mm-mouth', LOOK_PARALLAX);
+        set('.mm-blush', LOOK_PARALLAX);
+    }
+
+    /** 讓一隻 data-mm-follow 吉祥物看向螢幕座標 (x, y)。回傳是否真的轉了。 */
+    function lookAt(svg, x, y) {
+        if (reduced || !svg || !svg.hasAttribute('data-mm-follow')) return false;
+        const c = faceCenter(svg);
+        if (!c) return false;
+        svg.classList.remove('mm-settle');
+        applyLook(svg, computeLookOffset(c, { x: x, y: y }, LOOK_MAX, LOOK_REACH_PX));
+        return true;
+    }
+
+    /** 回正（觸控看完、或 reduced-motion 生效時）。 */
+    function settle(svg) {
+        if (!reduced) svg.classList.add('mm-settle');
+        applyLook(svg, null);
+    }
+
+    function followers() {
+        return Array.prototype.filter.call(document.querySelectorAll('svg[data-mm-follow]'), isShown);
+    }
+
+    function flushLook() {
+        lookFrame = null;
+        if (!lastPointer || reduced) return;
+        followers().forEach(function (svg) { lookAt(svg, lastPointer.x, lastPointer.y); });
+    }
+
+    // 滑鼠／筆：pointermove 只記位置，一個 rAF 內合併成一次計算（全頁共用，不是每隻各綁）
+    function onPointerMove(event) {
+        if (reduced || event.pointerType === 'touch') return;
+        lastPointer = { x: event.clientX, y: event.clientY };
+        if (lookFrame === null) lookFrame = requestAnimationFrame(flushLook);
+    }
+
+    // 觸控：沒有 hover，改成「看向點擊處，TOUCH_SETTLE_MS 後回正」
+    function onPointerDown(event) {
+        if (reduced || event.pointerType !== 'touch') return;
+        followers().forEach(function (svg) {
+            if (!lookAt(svg, event.clientX, event.clientY)) return;
+            clearTimeout(settleTimers.get(svg));
+            settleTimers.set(svg, setTimeout(function () { settle(svg); }, TOUCH_SETTLE_MS));
+        });
+    }
+
+    /** reduced-motion 生效的瞬間：拔掉所有一次性動畫 class、愛心、跟隨位移，回到靜止姿勢。 */
     function clearTransientMotion() {
         MOTION_CLASSES.forEach(function (cls) {
             document.querySelectorAll('.' + cls).forEach(function (el) { el.classList.remove(cls); });
         });
         removeHearts(document);
+        document.querySelectorAll('svg[data-mm-follow]').forEach(function (svg) { applyLook(svg, null); });
     }
 
     function onReducedChange(event) {
@@ -229,6 +321,8 @@ const MascotMotion = (function () {
         watchReducedMotion();
         document.addEventListener('visibilitychange', onVisibilityChange);
         document.addEventListener('click', onDocumentClick);
+        document.addEventListener('pointermove', onPointerMove, { passive: true });
+        document.addEventListener('pointerdown', onPointerDown, { passive: true });
         document.documentElement.classList.toggle('mm-paused', !!document.hidden);
         scheduler.start();
     }
@@ -240,6 +334,11 @@ const MascotMotion = (function () {
         scheduler.stop();
         document.removeEventListener('visibilitychange', onVisibilityChange);
         document.removeEventListener('click', onDocumentClick);
+        document.removeEventListener('pointermove', onPointerMove);
+        document.removeEventListener('pointerdown', onPointerDown);
+        if (lookFrame !== null) { cancelAnimationFrame(lookFrame); lookFrame = null; }
+        lastPointer = null;
+        settleTimers = new WeakMap();
         tapLimiter = createRateLimiter(REACT_INTERVAL_MS);
         if (reducedMql) {
             if (typeof reducedMql.removeEventListener === 'function') {
@@ -258,8 +357,11 @@ const MascotMotion = (function () {
         isReducedMotion: isReducedMotion,
         blink: blink,
         react: react,
+        lookAt: lookAt,
+        settle: settle,
         _test: {
             isTapAllowed: isTapAllowed,
+            computeLookOffset: computeLookOffset,
             nextBlinkDelay: nextBlinkDelay,
             createRateLimiter: createRateLimiter,
             createIdleScheduler: createIdleScheduler,
