@@ -189,6 +189,42 @@ const CalendarModule = (function() {
         return { segments: segments, overflow: overflow };
     }
 
+    /**
+     * ★ 純函式工廠：印章「壓印動畫」只給剛存的那篇日記蓋出的新章、而且只播一次（v2.6 motion Task 10）
+     *
+     * expect(diaryId)：存日記成功（chat_module.js 發的 urdiary:diary-saved）時登記。
+     * take(notes)：每次 loadMonth 拿到印章清單時呼叫，回傳「這次重繪該壓印的日期」集合，
+     *   並把對上的 id 消掉——之後的重繪、切月再回來都不重播。
+     * 「新」的判定＝note.source_diary_id 對上剛存的日記 id（/calendar/day-notes 本來就回這欄）：
+     * 不靠日期（時區／5 點換日都不用猜），也不靠「第一次看到」——第一次打開行事曆時既有的章
+     * 一律不動。同一天再存一篇會 upsert 出新 id，新章照樣壓一次。
+     */
+    function createStampPressTracker() {
+        let pending = new Set();
+        return {
+            expect: function (diaryId) {
+                if (diaryId === null || diaryId === undefined || diaryId === '') return;
+                pending.add(String(diaryId));
+            },
+            take: function (notes) {
+                const dates = new Set();
+                if (!Array.isArray(notes) || pending.size === 0) return dates;
+                notes.forEach(function (n) {
+                    if (!n || typeof n.date !== 'string' ||
+                        n.source_diary_id === null || n.source_diary_id === undefined) return;
+                    const id = String(n.source_diary_id);
+                    if (pending.has(id)) {
+                        dates.add(n.date);
+                        pending.delete(id);
+                    }
+                });
+                return dates;
+            },
+            clear: function () { pending = new Set(); },
+            size: function () { return pending.size; }
+        };
+    }
+
     // --- 狀態 -----------------------------------------------------------------
 
     let viewYear = 0;                       // 目前顯示的年
@@ -196,6 +232,8 @@ const CalendarModule = (function() {
     let selectedDate = null;                // 目前選取日 "YYYY-MM-DD"
     let occurrencesByDate = new Map();      // "YYYY-MM-DD" → occurrence[]（**只**服務目前顯示的月份）
     let dayNotesByDate = new Map();         // "YYYY-MM-DD" → note（v2.5 Spec A AI 日記印章；一天最多一筆）
+    const stampPress = createStampPressTracker();   // v2.6 motion Task 10：等著壓印的日記 id
+    let pressDates = new Set();             // 只服務「loadMonth 之後那一次」重繪：這次要壓印的日期
     let todaysOccurrences = [];             // 「今天」的 occurrence 快照，專供提醒用
     let todaysSnapshotDate = null;          // 上面那份快照對應的日期，null = 尚未取得
     let isRefreshingToday = false;          // refreshTodaysOccurrences 的併發防護
@@ -263,6 +301,14 @@ const CalendarModule = (function() {
 
     // 綁定所有事件（只執行一次）
     function bindListeners() {
+        // v2.6 motion Task 10：剛存好的日記 → 它的印章下次出現時壓印一次。安靜篇（情緒門檻，
+        // 契約 §4）與沒開「AI 行事曆印章」的不登記；只看操作結果，不看任何內容。
+        document.addEventListener('urdiary:diary-saved', function(event) {
+            const detail = event && event.detail;
+            if (!detail || detail.quiet || detail.dayNote === false) return;
+            stampPress.expect(detail.diaryId);
+        });
+
         // 視圖狀態機切到行事曆時才真的去要資料（惰性首載）
         document.addEventListener('viewStateChanged', function(event) {
             const state = event && event.detail ? event.detail.newState : null;
@@ -430,10 +476,17 @@ const CalendarModule = (function() {
             ]);
             indexOccurrences(response && response.occurrences);
             indexDayNotes(notesResponse && notesResponse.notes);
+            // 壓印：這次清單裡有剛存的日記蓋出的章 → 只在接下來這一次重繪帶 class。
+            // reduced-motion 下照樣「消耗」掉（不留到之後才播），只是不加動畫 class。
+            const toPress = stampPress.take(notesResponse && notesResponse.notes);
+            const reduce = typeof MascotMotion !== 'undefined' &&
+                typeof MascotMotion.isReducedMotion === 'function' && MascotMotion.isReducedMotion();
+            pressDates = reduce ? new Set() : toPress;
             // 這次載入的範圍涵蓋今天的話，順手更新提醒用的快照（免一次額外請求）
             applyTodaysSnapshot(range.startIso, range.endIso);
             renderGrid();
             renderDayPanel(selectedDate);
+            pressDates = new Set();
             scheduleReminders();
         } catch (error) {
             console.error('載入行事曆事件失敗:', error);
@@ -487,7 +540,8 @@ const CalendarModule = (function() {
     // 月格 14px 印章徽章 (核可佈局 A)；tooltip = 小語全文
     function renderCellStamp(note) {
         if (!note || typeof MascotModule === 'undefined' || !MascotModule.stampIcon) return '';
-        return `<span class="cell-stamp" title="${escapeHtml(note.phrase || '')}">` +
+        const press = pressDates.has(note.date) ? ' mm-stamp-press' : '';
+        return `<span class="cell-stamp${press}" title="${escapeHtml(note.phrase || '')}">` +
                `${MascotModule.stampIcon(note.stamp, 14)}</span>`;
     }
 
@@ -709,7 +763,8 @@ const CalendarModule = (function() {
             const sourceBtn = note.source_diary_id
                 ? `<button type="button" class="btn btn-sm" data-action="open-diary">${escapeHtml(I18N.t('calendar.stampFromDiary'))}</button>`
                 : '';
-            html += `<div class="day-stamp-card">
+            const press = pressDates.has(iso) ? ' mm-stamp-press' : '';
+            html += `<div class="day-stamp-card${press}">
                     ${MascotModule.stampIcon(note.stamp, 40)}
                     <div class="day-stamp-text">
                         <p class="day-stamp-phrase">${escapeHtml(note.phrase || '')}</p>
@@ -1342,6 +1397,9 @@ const CalendarModule = (function() {
 
         occurrencesByDate = new Map();
         dayNotesByDate = new Map();
+        // 換帳號：前一個帳號等著壓印的日記 id 不能帶到下一個帳號
+        stampPress.clear();
+        pressDates = new Set();
         // 提醒快照也要清 —— 換帳號後不能再拿前一個帳號的事件發通知
         todaysOccurrences = [];
         todaysSnapshotDate = null;
@@ -1380,6 +1438,8 @@ const CalendarModule = (function() {
         syncAllDayState: syncAllDayState,
         readForm: readForm,
         // 跨天結束日鎖定整天型 (v2.5 Spec A task 7)：同樣僅為 vitest 曝光
-        syncMultiDayState: syncMultiDayState
+        syncMultiDayState: syncMultiDayState,
+        // v2.6 motion Task 10：壓印判定的純函式工廠，僅為 vitest 曝光
+        createStampPressTracker: createStampPressTracker
     };
 })();

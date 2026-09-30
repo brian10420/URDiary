@@ -90,6 +90,17 @@
             viewport: [320, 300], frames: [0, 200, 450, 700, 1000, 1400],
             setup: () => MascotModule.showNamingEgg('小澄'),
         },
+        // --- Task 10 行事曆印章壓印（版位替身：.h-cell＝月格、.h-card＝日面板印章卡）----------
+        'stamp-press-cell': {
+            viewport: [160, 120], frames: [0, 120, 240, 360, 520],
+            setup: (stage) => mount(stage, `<div class="h-cell"><span class="cell-stamp mm-stamp-press">` +
+                `${MascotModule.stampIcon('cake', 14)}</span></div>`),
+        },
+        'stamp-press-card': {
+            viewport: [200, 140], frames: [0, 120, 240, 360, 520],
+            setup: (stage) => mount(stage, `<div class="h-card day-stamp-card mm-stamp-press">` +
+                `${MascotModule.stampIcon('cake', 40)}</div>`),
+        },
     };
 
     // 眼睛跟隨場景：游標放在視窗的相對位置 (fx, fy)；揮手與呼吸先取消，只看跟隨的過渡

@@ -1093,11 +1093,23 @@ const ChatModule = (function() {
             showMemoryPendingNotice(response.memory_review);
 
             // v2.4 spec ③：存日記彩蛋。只綁這個操作事件；negative valence → 安靜略過。
+            let eggKind = null;
             if (typeof MascotModule !== 'undefined') {
                 const valence = (response.diary && typeof response.diary.valence === 'number')
                     ? response.diary.valence : null;
-                MascotModule.showSaveEgg(MascotModule.eggKindFor(valence, new Date().getHours()));
+                eggKind = MascotModule.eggKindFor(valence, new Date().getHours());
+                MascotModule.showSaveEgg(eggKind);
             }
+
+            // v2.6 motion Task 10：廣播「剛存好一篇日記」——行事曆據此只對這篇蓋出的新印章
+            // 播一次壓印。只帶操作結果（日記 id、是否走安靜版、有沒有開印章），不帶任何內容。
+            document.dispatchEvent(new CustomEvent('urdiary:diary-saved', {
+                detail: {
+                    diaryId: (response.diary && response.diary.diary_id) || null,
+                    quiet: eggKind === 'quiet',
+                    dayNote: isDayNoteEnabled()
+                }
+            }));
 
             // 檢查配置是否自動切換到日記視圖
             if (CONFIG && CONFIG.APP.AUTO_SWITCH_TO_DIARY_AFTER_END) {

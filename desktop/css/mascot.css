@@ -110,6 +110,20 @@
 @keyframes mm-cheer-l { from { transform: rotate(12deg); } to { transform: rotate(-10deg); } }
 @keyframes mm-name-in { from { transform: translateY(10px) scale(.9); opacity: 0; } to { transform: none; opacity: 1; } }
 
+/* 行事曆印章壓印（v2.6 motion Task 10）：只有剛存的日記蓋出的新章、第一次出現時播一次——
+   誰帶 .mm-stamp-press 由 calendar_module.js 的 createStampPressTracker 決定，下一次重繪就不帶了。
+   月格 14px 徽章與日面板 40px 印章卡同一個動作：從上方蓋下、微回彈。 */
+.mm-stamp-press .mascot-stamp {
+    transform-origin: 50% 50%;
+    animation: mm-stamp-press 520ms cubic-bezier(.2, .9, .3, 1.15) 1 both;
+}
+@keyframes mm-stamp-press {
+    0%   { transform: scale(1.9) rotate(-14deg); opacity: 0; }
+    45%  { transform: scale(.9) rotate(3deg); opacity: 1; }
+    70%  { transform: scale(1.06) rotate(-1deg); opacity: 1; }
+    100% { transform: scale(1) rotate(0deg); opacity: 1; }
+}
+
 .mascot-cat-icon { vertical-align: middle; }
 
 /* ---- v2.6 motion：rig 部件的共同設定 ----------------------------------------
@@ -193,7 +207,7 @@ html.mm-paused svg[data-mm-idle] .mm-rig, html.mm-paused svg[data-mm-idle] .mm-z
     .mascot-egg-happy .mm-bookmark, .mascot-egg-happy .mm-flip-page,
     .mascot-egg-happy .mm-stars path,
     .mascot-egg-cheer .mm-arm-r, .mascot-egg-cheer .mm-arm-l, .mascot-egg-cheer .mm-stars path,
-    .mascot-egg-name { animation: none !important; }
+    .mascot-egg-name, .mm-stamp-press .mascot-stamp { animation: none !important; }
     svg[data-mm-follow] .mm-face .mm-eyes, svg[data-mm-follow] .mm-face .mm-mouth,
     svg[data-mm-follow] .mm-blush { transition: none !important; }
 }
