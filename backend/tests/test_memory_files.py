@@ -217,3 +217,48 @@ def test_unknown_section_rejected_in_every_language():
     for lang in (None, "zh-TW", "en"):
         r = mf.apply_op("user_profile", EN_PROFILE_TPL, "add", section="Hobbies", text="- x", lang=lang)
         assert not r.ok and r.error == "bad_section" and r.content == EN_PROFILE_TPL
+
+
+# --- v2.6 fix1：標頭遷移不吃字數上限；檔內節標頭只認標題 (不認 key) ------------------
+
+def _near_cap_zh_profile(total=790):
+    """zh 標頭、總長剛好 total 的使用者檔案 (含一條可刪的短句)。"""
+    base = mf.apply_op("user_profile", "", "add", section="情緒模式", text="- 小事 (2026-09-30)").content
+    filler = "- " + "字" * (total - len(base) - len("- ") - 1)
+    content = mf.apply_op("user_profile", base, "add", section="稱呼與身分", text=filler).content
+    assert len(content) == total
+    return content
+
+
+def test_migration_skipped_when_localized_content_would_exceed_cap():
+    content = _near_cap_zh_profile()
+    r = mf.apply_op("user_profile", content, "remove", target="- 小事 (2026-09-30)", lang="en")
+    assert r.ok and not mf.over_limit("user_profile", r.content)
+    assert r.content.startswith("## 稱呼與身分\n") and "Name & identity" not in r.content  # 標頭留 zh
+    # 同一份檔若有空間 → 照常遷移
+    roomy = mf.apply_op("user_profile", "", "add", section="情緒模式", text="- 小事 (2026-09-30)").content
+    moved = mf.apply_op("user_profile", roomy, "add", section="情緒模式", text="- b (2026-09-30)", lang="en")
+    assert moved.content.startswith("## Name & identity\n")
+
+
+def test_migration_still_applied_when_result_already_over_cap():
+    """套用前就超標 (呼叫端反正會拒絕)：照常遷移，不需要特判。"""
+    content = _near_cap_zh_profile()
+    r = mf.apply_op("user_profile", content, "add", section="情緒模式", text="- " + "x" * 40, lang="en")
+    assert r.ok and mf.over_limit("user_profile", r.content) and r.content.startswith("## Name & identity\n")
+
+
+def test_user_header_matching_a_key_is_not_a_section():
+    """使用者手打的 `## Timeline` 不是 canonical 節：op 落在真正的節，使用者標頭不動。"""
+    content = "## Timeline\n- 我自己的清單\n\n## 重要事件時間線\n- [2026-09-01] 舊事件\n"
+    for lang in (None, "zh-TW"):
+        r = mf.apply_op("user_profile", content, "add", section="timeline", text="- [2026-09-30] 新事件", lang=lang)
+        assert r.ok
+        assert r.content == ("## Timeline\n- 我自己的清單\n\n## 重要事件時間線\n- [2026-09-30] 新事件\n"
+                             "- [2026-09-01] 舊事件\n"), lang
+    for lang in ("en", "zh-TW"):
+        out = mf.localize_headers("user_profile", "## Timeline\n## Strengths\n## identity\n", lang)
+        assert out == "## Timeline\n## Strengths\n## identity\n"
+    assert mf.localize_headers("companion_notes", "## Support\n## Observations\n", "zh-TW") == "## Support\n## Observations\n"
+    # op 驗證仍接受 key (模型可以送 key)
+    assert mf.normalize_section("user_profile", "Timeline") == "timeline"

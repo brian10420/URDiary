@@ -228,3 +228,23 @@ def test_approve_remove_backfills_section_as_key(client, auth_header):
     assert mr.approve_op(uid, op_id)["ok"]
     with db_session() as db:
         assert crud.get_memory_op(db, uid, op_id).section == "emotion_patterns"
+
+
+def test_en_undo_on_near_cap_zh_file_succeeds_and_keeps_zh_headers(client, auth_header):
+    """fix1：標頭遷移 (+64 字) 不能把縮小檔案的撤銷變成 over_budget 鎖死。"""
+    _h, uid = auth_header
+    base = mf.apply_op("user_profile", "", "add", section="情緒模式", text="- 要撤銷的 (2026-09-30)").content
+    filler = "- " + "字" * (790 - len(base) - len("- ") - 1)
+    content = mf.apply_op("user_profile", base, "add", section="稱呼與身分", text=filler).content
+    assert len(content) == 790
+    with db_session() as db:
+        crud.upsert_memory_file(db, uid, "user_profile", content)
+        op_id = crud.create_memory_ops(db, [{
+            "user_id": uid, "file_key": "user_profile", "batch_id": "b-cap", "action": "add",
+            "section": "emotion_patterns", "target_text": None, "new_text": "- 要撤銷的 (2026-09-30)",
+            "status": "applied", "source": "review_pass"}])[0].id
+    r = mr.undo_op(uid, op_id, lang="en")
+    assert r["ok"] and r["status"] == "undone"
+    with db_session() as db:
+        after = crud.get_memory_files(db, uid)["user_profile"].content
+    assert "要撤銷的" not in after and after.startswith("## 稱呼與身分\n")

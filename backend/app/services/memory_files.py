@@ -36,12 +36,17 @@ SECTIONS = {file_key: tuple(titles) for file_key, titles in SECTION_TITLES.items
 # 時間線「最新在前」(v1 慣例)：add 插在節首而非節尾
 TIMELINE_SECTION = "timeline"
 
-# 任一語言的標題或 key (casefold) → key；名稱在兩個檔之間不重複，但仍逐檔查表
-_SECTION_LOOKUP = {
-    file_key: {name.casefold(): key
+# 檔內「## 標題」只認標題 (任一語言，casefold)——使用者手打的 `## Timeline` 不是節
+_TITLE_LOOKUP = {
+    file_key: {title.casefold(): key
                for key, titles in by_key.items()
-               for name in (key, *titles.values())}
+               for title in titles.values()}
     for file_key, by_key in SECTION_TITLES.items()
+}
+# op 的 section 欄 (模型送來的) 另外接受 key；名稱在兩個檔之間不重複，但仍逐檔查表
+_SECTION_LOOKUP = {
+    file_key: {**titles, **{key.casefold(): key for key in SECTION_TITLES[file_key]}}
+    for file_key, titles in _TITLE_LOOKUP.items()
 }
 
 
@@ -69,6 +74,14 @@ def normalize_section(file_key: str, name) -> Optional[str]:
     return _SECTION_LOOKUP.get(file_key, {}).get(cleaned) if cleaned else None
 
 
+def _header_key(file_key: str, line: str) -> Optional[str]:
+    """檔內一行若是某節的「## 標題」回該節 key；key 字樣、未知標題、非 '## ' 行回 None。"""
+    stripped = line.strip()
+    if not stripped.startswith("## "):
+        return None
+    return _TITLE_LOOKUP.get(file_key, {}).get(stripped[3:].strip().casefold())
+
+
 def canonical_section(file_key, name):
     """帳本 section 欄的存法：認得的節存 key；認不得的 (壞 op) 原樣保留當稽核真相。"""
     return normalize_section(file_key, name) or name
@@ -83,14 +96,11 @@ def localize_headers(file_key: str, content: str, lang) -> str:
         return content
     lines = content.split("\n")
     for i, line in enumerate(lines):
-        stripped = line.strip()
-        if not stripped.startswith("## "):  # 與 _is_header_of 同一套判定
-            continue
-        key = normalize_section(file_key, stripped)
+        key = _header_key(file_key, line)  # 與找節 (_insert_into_section) 同一套判定
         if key is None:
             continue
         title = section_title(file_key, key, lang)
-        if stripped[3:].strip() != title:
+        if line.strip()[3:].strip() != title:
             lines[i] = f"## {title}"
     return "\n".join(lines)
 
@@ -143,16 +153,11 @@ def _cleanup(content: str) -> str:
     return re.sub(r"\n{3,}", "\n\n", text)
 
 
-def _is_header_of(file_key: str, line: str, key: str) -> bool:
-    stripped = line.strip()
-    return stripped.startswith("## ") and normalize_section(file_key, stripped) == key
-
-
 def _insert_into_section(file_key: str, content: str, section: str, text: str) -> Optional[str]:
     """section 是 canonical key；節標頭可以是任一語言 (舊檔／混合檔都找得到)。"""
     lines = content.split("\n")
     try:
-        idx = next(i for i, ln in enumerate(lines) if _is_header_of(file_key, ln, section))
+        idx = next(i for i, ln in enumerate(lines) if _header_key(file_key, ln) == section)
     except StopIteration:
         return None
     end = len(lines)
@@ -177,11 +182,16 @@ def apply_op(file_key: str, content: str, action: str,
     lang (v2.6)：寫入者的介面語言。給了 → 空檔從該語言的模板起、成功寫入後把
     整份檔的節標頭換成該語言 (懶遷移)；None → 舊行為 (zh 模板、標頭不動)。
     target 一律比對「套用前」的原文 (模型看到的就是它)，標頭遷移在套用之後。
+    遷移不吃字數上限：en 標頭較長，換了會超標就先不換 (留到有空間的下次寫入)，
+    免得接近上限的檔連「縮小」的 op (撤銷、刪除) 都被 over_budget 擋下而鎖死；
+    套用前就已超標的結果照常換 (呼叫端反正會拒絕)。
     """
     content = content or ""
     result = _apply(file_key, content, action, section, target, text, lang)
     if result.ok and lang is not None:
-        result.content = localize_headers(file_key, result.content, lang)
+        localized = localize_headers(file_key, result.content, lang)
+        if not over_limit(file_key, localized) or over_limit(file_key, result.content):
+            result.content = localized
     return result
 
 
