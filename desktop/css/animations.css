@@ -56,6 +56,13 @@
     transform: scale(0.95);
     transition: transform 0.1s ease;
 }
+/* 視圖轉場（v2.6 motion Task 11）：分頁切換走 document.startViewTransition（ui_manager.js
+   transitionToState），用瀏覽器預設的根節點交叉淡化，縮短成 220ms——轉場期間瀏覽器會吃掉
+   點擊（實測 hit test 落在 <html>），越短越不擋手。html.vt-running 期間 .view-container
+   自己的 0.3s 過渡直接跳到終點，只留一層淡化。 */
+::view-transition-old(root), ::view-transition-new(root) { animation-duration: 220ms; }
+html.vt-running .view-container { transition: none !important; }
+
 /* 使用者要求減少動態效果（v2.6 motion Task 4）：本檔的通用動畫與視圖切換一律靜態。
    吉祥物在 mascot.css、聊天在 chat.css 各自處理；tests/reduced_motion_css.test.js
    逐檔檢查「每個 animation 都有 none 版」。本區塊會凍結 `.loading`
@@ -67,4 +74,6 @@
     .fade-in, .slide-in, .loading { animation: none !important; }
     .page-transition, .button-press { transition: none !important; }
     .view-container { transition: none !important; }
+    /* JS 在 reduce 下根本不開轉場；這裡是第二道保險 */
+    ::view-transition-group(*), ::view-transition-old(*), ::view-transition-new(*) { animation: none !important; }
 }

@@ -144,6 +144,19 @@ test.describe.serial('URDiary mobile E2E journey', () => {
                 }
             });
         });
+
+        // 視圖轉場計數（v2.6 motion Task 11）：包住 document.startViewTransition，檔尾的轉場
+        // test 用它證明兩件事——reduce 下一次都沒開、開了動態才真的走轉場路徑。每次導覽
+        // （含 reload）都重新套用，計數跟著頁面生命週期歸零。
+        await page.addInitScript(() => {
+            const original = Document.prototype.startViewTransition;
+            if (typeof original !== 'function') return;
+            window.__vtCalls = 0;
+            Document.prototype.startViewTransition = function (...args) {
+                window.__vtCalls += 1;
+                return original.apply(this, args);
+            };
+        });
     });
 
     test.afterAll(async () => {
@@ -365,5 +378,29 @@ test.describe.serial('URDiary mobile E2E journey', () => {
         await expect(page.locator('#diary-view')).toBeVisible();
         await expect(page.locator('#chat-view')).toBeHidden();
         await expect(page.locator('.view-container.active')).toHaveCount(1);
+    });
+
+    // v2.6 motion Task 11：旅程其餘部分都在 reducedMotion: 'reduce' 下跑（見 beforeAll），
+    // 這裡是唯一開動態的段落——驗 View Transition 路徑本身：真的有開轉場、每次都等
+    // 轉場播完再斷言（UIManager.viewTransitionSettled），播完後仍是窄螢幕單一面板、
+    // html.vt-running 已清掉。finally 切回 reduce，後面若再加 test 也不受影響。
+    test('view transitions: tab switches animate with motion allowed and settle into the single-pane layout', async () => {
+        // 前面整段都在 reduce 下（這個頁面自 reload 後）：一次轉場都不該開過
+        expect(await page.evaluate(() => window.__vtCalls)).toBe(0);
+
+        await page.emulateMedia({ reducedMotion: 'no-preference' });
+        try {
+            const steps = [['calendar', '#calendar-view'], ['diary', '#diary-view'], ['chat', '#chat-view']];
+            for (const [view, pane] of steps) {
+                await page.click(`.tab-bar .nav-item[data-view="${view}"]`);
+                await page.evaluate(() => UIManager.viewTransitionSettled());
+                await expect(page.locator(pane)).toBeVisible();
+                await expect(page.locator('.view-container.active')).toHaveCount(1);
+                await expect(page.locator('html')).not.toHaveClass(/vt-running/);
+            }
+            expect(await page.evaluate(() => window.__vtCalls)).toBe(steps.length);
+        } finally {
+            await page.emulateMedia({ reducedMotion: 'reduce' });
+        }
     });
 });

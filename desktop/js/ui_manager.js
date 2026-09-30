@@ -105,69 +105,121 @@ const UIManager = (function() {
         console.log('UI管理器初始化完成');
     }
     
-    // 處理導航點擊
+    // 處理導航點擊（頭部導覽／底部分頁列／日記空狀態「開始對話」／行事曆「看日記」）。
+    // 決策在純函式 resolveNavigation；轉場在 transitionToState（v2.6 motion Task 11）。
+    // 以「待套用的狀態」為準做決策：View Transition 的 DOM 更新是非同步的，程式觸發的
+    // 連續導覽（例如 endChat 500ms 後自動 .click() 日記頁籤）不能拿過期的 currentViewState 判斷。
     function handleNavigation(view) {
         console.log(`處理導航點擊: ${view}, 當前狀態: ${currentViewState}`);
-        
+
         try {
-            // 行事曆是獨立的全螢幕狀態，不與聊天/日記組合分割 ——
-            // 任何狀態點「行事曆」都直接進 CALENDAR_FULL，不必逐狀態列舉
-            if (view === VIEW_TYPE.CALENDAR) {
-                switchToState(VIEW_STATE.CALENDAR_FULL);
-                return;
-            }
-
-            // 根據當前狀態和點擊的導航項目決定下一個狀態
-            switch (currentViewState) {
-                case VIEW_STATE.CHAT_FULL:
-                    // 狀態1: 全螢幕聊天 (點擊日記→狀態2，點擊聊天→維持狀態1)
-                    if (view === VIEW_TYPE.DIARY) {
-                        switchToState(VIEW_STATE.CHAT_DIARY_SPLIT);
-                    }
-                    break;
-                    
-                case VIEW_STATE.CHAT_DIARY_SPLIT:
-                    // 狀態2: 聊天+日記列表分割 (點擊聊天→狀態1)
-                    if (view === VIEW_TYPE.CHAT) {
-                        switchToState(VIEW_STATE.CHAT_FULL);
-                    }
-                    break;
-                    
-                case VIEW_STATE.DIARY_DETAIL_SPLIT:
-                    // 狀態3: 日記列表+日記詳情分割 (點擊聊天→狀態4)
-                    if (view === VIEW_TYPE.CHAT) {
-                        switchToState(VIEW_STATE.CHAT_DETAIL_SPLIT);
-                    }
-                    break;
-                    
-                case VIEW_STATE.CHAT_DETAIL_SPLIT:
-                    // 狀態4: 聊天+日記詳情分割 (點擊聊天→狀態1，點擊日記→狀態2)
-                    if (view === VIEW_TYPE.CHAT) {
-                        switchToState(VIEW_STATE.CHAT_FULL);
-                    } else if (view === VIEW_TYPE.DIARY) {
-                        switchToState(VIEW_STATE.CHAT_DIARY_SPLIT);
-                    }
-                    break;
-
-                case VIEW_STATE.CALENDAR_FULL:
-                    // 狀態5: 全螢幕行事曆 (點擊聊天→狀態1，點擊日記→狀態2)
-                    // 註：離開行事曆一律回到「列表」型的狀態，不還原離開前開著的
-                    // 日記詳情 —— 行事曆是全螢幕狀態，switchToState 進來時已把詳情收起
-                    if (view === VIEW_TYPE.CHAT) {
-                        switchToState(VIEW_STATE.CHAT_FULL);
-                    } else if (view === VIEW_TYPE.DIARY) {
-                        switchToState(VIEW_STATE.CHAT_DIARY_SPLIT);
-                    }
-                    break;
-
-                default:
-                    // 默認回到全螢幕聊天
-                    switchToState(VIEW_STATE.CHAT_FULL);
-                    break;
+            const next = resolveNavigation(pendingViewState || currentViewState, view);
+            if (next) {
+                transitionToState(next);
             }
         } catch (error) {
             console.error('導航處理錯誤:', error);
         }
+    }
+
+    /**
+     * 純函式：目前狀態＋點了哪個分頁 → 下一個狀態；null＝維持不動（v2.6 motion Task 11 自
+     * handleNavigation 原本的 switch 原樣抽出，行為逐條不變，見 tests/ui_manager_transitions.test.js）。
+     * - 行事曆：任何狀態都進 CALENDAR_FULL（已在行事曆也回傳它——重新套用會再發一次
+     *   viewStateChanged，行事曆據此重新載入，沿用 v2.5 的行為）
+     * - 狀態1 CHAT_FULL：日記→狀態2；聊天→不動
+     * - 狀態2 CHAT_DIARY_SPLIT：聊天→狀態1；日記→不動
+     * - 狀態3 DIARY_DETAIL_SPLIT：聊天→狀態4；日記→不動
+     * - 狀態4 CHAT_DETAIL_SPLIT：聊天→狀態1；日記→狀態2
+     * - 狀態5 CALENDAR_FULL：聊天→狀態1；日記→狀態2
+     * - 未知狀態：一律回到狀態1
+     */
+    function resolveNavigation(state, view) {
+        const S = VIEW_STATE;
+        if (view === VIEW_TYPE.CALENDAR) return S.CALENDAR_FULL;
+        switch (state) {
+            case S.CHAT_FULL:
+                return view === VIEW_TYPE.DIARY ? S.CHAT_DIARY_SPLIT : null;
+            case S.CHAT_DIARY_SPLIT:
+                return view === VIEW_TYPE.CHAT ? S.CHAT_FULL : null;
+            case S.DIARY_DETAIL_SPLIT:
+                return view === VIEW_TYPE.CHAT ? S.CHAT_DETAIL_SPLIT : null;
+            case S.CHAT_DETAIL_SPLIT:
+            case S.CALENDAR_FULL:
+                if (view === VIEW_TYPE.CHAT) return S.CHAT_FULL;
+                if (view === VIEW_TYPE.DIARY) return S.CHAT_DIARY_SPLIT;
+                return null;
+            default:
+                return S.CHAT_FULL;
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // 視圖轉場（v2.6 motion Task 11）
+    //
+    // 分頁切換改走 document.startViewTransition（Electron 35／Chromium 134 起支援）：
+    // 瀏覽器先拍下舊畫面、跑 callback 換 class、再交叉淡化到新畫面。三種情況退回
+    // 原本的同步 class 切換：API 不存在（jsdom、舊瀏覽器）、使用者要求減少動態、
+    // 目標狀態就是現在的狀態（例如再點一次行事曆＝重新載入，不需要轉場）。
+    // 只有 handleNavigation 走這裡；init、斷點變化、日記詳情開關仍直接 switchToState
+    // （那些不是分頁切換，詳情面板也有自己的過渡）。
+    // ------------------------------------------------------------------
+
+    /** 純函式：這次切換要不要用 View Transition。 */
+    function shouldUseViewTransition(opts) {
+        return !!(opts && opts.hasApi && !opts.reducedMotion && !opts.sameState);
+    }
+
+    function prefersReducedMotion() {
+        return typeof window.matchMedia === 'function' &&
+            !!window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    }
+
+    // 已排進 View Transition、callback 還沒套上的目標狀態（handleNavigation 以它為準）
+    let pendingViewState = null;
+    // 目前這一個轉場（viewTransitionSettled 等它；結束時清掉 html.vt-running）
+    let activeViewTransition = null;
+
+    function transitionToState(newState) {
+        const useTransition = shouldUseViewTransition({
+            hasApi: typeof document.startViewTransition === 'function',
+            reducedMotion: prefersReducedMotion(),
+            sameState: newState === (pendingViewState || currentViewState)
+        });
+        if (!useTransition) {
+            pendingViewState = null;
+            switchToState(newState);
+            return null;
+        }
+
+        pendingViewState = newState;
+        // 轉場期間讓 .view-container 自己的 0.3s 過渡直接跳到終點（animations.css），
+        // 否則「新畫面」快照裡還在淡入，兩層淡化疊在一起中途會發灰
+        document.documentElement.classList.add('vt-running');
+        const transition = document.startViewTransition(function() {
+            // 連續觸發時每個 callback 都套「最新」的目標：前一個轉場被新的蓋掉時，瀏覽器
+            // 仍會呼叫它的 callback，這樣兩個 callback 都收斂到同一個最終狀態
+            const target = pendingViewState;
+            pendingViewState = null;
+            if (target) {
+                switchToState(target);
+            }
+        });
+        activeViewTransition = transition;
+        transition.finished.catch(function() {}).then(function() {
+            if (activeViewTransition === transition) {
+                activeViewTransition = null;
+                document.documentElement.classList.remove('vt-running');
+            }
+        });
+        return transition;
+    }
+
+    /** 等目前的視圖轉場播完（沒有轉場就立刻 resolve）；e2e 與除錯用。 */
+    function viewTransitionSettled() {
+        return activeViewTransition
+            ? activeViewTransition.finished.catch(function() {})
+            : Promise.resolve();
     }
 
     // ------------------------------------------------------------------
@@ -1184,6 +1236,11 @@ const UIManager = (function() {
         // v2.3 task 2.1：響應式版面
         LAYOUT_MODE,
         getLayoutMode,
+        // v2.6 motion Task 11：分頁切換的決策（純函式）與視圖轉場
+        resolveNavigation,
+        shouldUseViewTransition,
+        transitionToState,
+        viewTransitionSettled,
         // 純函式，主要為 vitest 單元測試曝光；switchToState 內部也是唯一
         // 呼叫端，行為說明見函式本身上方註解
         resolvePaneClasses,

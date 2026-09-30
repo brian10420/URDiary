@@ -101,6 +101,19 @@
             setup: (stage) => mount(stage, `<div class="h-card day-stamp-card mm-stamp-press">` +
                 `${MascotModule.stampIcon('cake', 40)}</div>`),
         },
+        // --- Task 11 視圖轉場（替身：兩個全版面板；轉場規則來自真的 css/animations.css）-------
+        'view-transition': {
+            viewport: [360, 240], frames: [0, 55, 110, 165, 220],
+            setup: (stage) => {
+                mount(stage, `<div class="h-pane h-chat">${MascotModule.welcomeHtml()}</div>` +
+                    `<div class="h-pane h-cal" hidden>${MascotModule.emptyHtml('calendar', '')}</div>`);
+                const transition = document.startViewTransition(() => {
+                    stage.querySelector('.h-chat').hidden = true;
+                    stage.querySelector('.h-cal').hidden = false;
+                });
+                return transition.ready;
+            },
+        },
     };
 
     // 眼睛跟隨場景：游標放在視窗的相對位置 (fx, fy)；揮手與呼吸先取消，只看跟隨的過渡
