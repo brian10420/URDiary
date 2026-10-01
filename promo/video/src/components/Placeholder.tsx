@@ -6,9 +6,9 @@
  */
 import type {CSSProperties, ReactNode} from 'react';
 import {AbsoluteFill} from 'remotion';
-import type {ShotSpec} from '../data/media.ts';
+import {shotText, type ShotSpec} from '../data/media.ts';
 import type {Lang} from '../data/timeline.ts';
-import {UI} from '../data/ui-strings.ts';
+import {uiText} from '../data/ui-strings.ts';
 import {C, FONT} from '../lib/theme.ts';
 
 export type Tone = 'night' | 'day' | 'rain' | 'morning' | 'paper' | 'ui' | 'flat';
@@ -74,7 +74,9 @@ const anchor = (p: LabelPosition, compact: boolean): CSSProperties => {
 
 export const Placeholder = ({shot, mediaId, lang, tone, srcSec, status, illustration, targets, compact = false, labelPosition = 'center', style}: PlaceholderProps) => {
   const t = TONES[tone];
-  const kindWord = shot.kind === 'comfy' ? UI.comfyShot : `${UI.uiShot}${lang && shot.perLang ? `（${lang}）` : ''}`;
+  const UI = uiText(lang);
+  const text = shotText(shot, lang);
+  const kindWord = shot.kind === 'comfy' ? UI.comfyShot : `${UI.uiShot}${lang && shot.perLang ? (lang === 'en' ? ` (${lang})` : `（${lang}）`) : ''}`;
   const ext = shot.kind === 'ui' && shot.stillOk ? 'png|mp4' : 'mp4';
   const meta = [`${UI.missing} · public/media/${mediaId}.${ext}`, srcSec !== undefined ? `${UI.source} ${srcSec.toFixed(2)} s` : '', status ?? '']
     .filter(Boolean)
@@ -136,7 +138,7 @@ export const Placeholder = ({shot, mediaId, lang, tone, srcSec, status, illustra
             <span style={{fontFamily: FONT.sans, fontWeight: 800, fontSize: 20, padding: '0 8px', borderRadius: 999, background: shot.kind === 'comfy' ? C.gold : C.bookmark, color: C.textStrong}}>
               {shot.id}
             </span>
-            <span style={{fontSize: 18, fontWeight: 700}}>{shot.label}</span>
+            <span style={{fontSize: 18, fontWeight: 700}}>{text.label}</span>
           </div>
         ) : (
           <>
@@ -144,10 +146,10 @@ export const Placeholder = ({shot, mediaId, lang, tone, srcSec, status, illustra
               <span style={{fontFamily: FONT.sans, fontWeight: 800, fontSize: 64, lineHeight: 1, letterSpacing: '0.01em'}}>{shot.id}</span>
               <span style={{display: 'flex', flexDirection: 'column', alignItems: 'flex-start', textAlign: 'left'}}>
                 <span style={{fontSize: 20, fontWeight: 700, padding: '1px 10px', borderRadius: 999, background: shot.kind === 'comfy' ? C.gold : C.bookmark, color: C.textStrong}}>{kindWord}</span>
-                <span style={{fontSize: 36, fontWeight: 700, lineHeight: 1.3}}>{shot.label}</span>
+                <span style={{fontSize: 36, fontWeight: 700, lineHeight: 1.3}}>{text.label}</span>
               </span>
             </div>
-            <div style={{fontSize: 22, fontWeight: 500, opacity: 0.9, lineHeight: 1.45, marginTop: 4}}>{shot.brief}</div>
+            <div style={{fontSize: 22, fontWeight: 500, opacity: 0.9, lineHeight: 1.45, marginTop: 4}}>{text.brief}</div>
           </>
         )}
         <div style={{fontFamily: FONT.sans, fontSize: compact ? 14 : 19, fontWeight: 600, opacity: 0.82, fontVariantNumeric: 'tabular-nums'}}>{compact ? meta.replace(/^.*?· /, '') : meta}</div>

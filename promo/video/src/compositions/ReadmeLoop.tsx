@@ -11,7 +11,7 @@ import {AbsoluteFill} from 'remotion';
 import {MOTION} from '../generated/mascot.ts';
 import {QUOTE_SPANS, loopPlacement, targetRect, type TargetId} from '../data/media.ts';
 import {HERO_CARD, HERO_CARD_FADE, HERO_PERIOD_SEC, LOOP_SEGMENTS, LOOP_UI_LANG, SWAYS_PER_PERIOD, g6SourceTime, heroPhase} from '../data/loop.ts';
-import {UI} from '../data/ui-strings.ts';
+import {uiText} from '../data/ui-strings.ts';
 import {EASE_IN_OUT, keyframesAt, ramp, rotationOf} from '../lib/anim.ts';
 import {C} from '../lib/theme.ts';
 import {useTime} from '../lib/time.tsx';
@@ -73,7 +73,7 @@ const HeroSheet = ({phase, cardOpacity}: {phase: number; cardOpacity: number}) =
         illustration={<SwayStandIn phase={phase} />}
         compact
         labelPosition="top-left"
-        status={`${UI.phase} ${phase.toFixed(3)} / ${HERO_PERIOD_SEC.toFixed(3)} s`}
+        status={`${uiText(LOOP_UI_LANG).phase} ${phase.toFixed(3)} / ${HERO_PERIOD_SEC.toFixed(3)} s`}
       />
     </div>
     <LoopCard en={HERO_CARD.en} zh={HERO_CARD.zh} wordmark={HERO_CARD.wordmark} opacity={cardOpacity} />

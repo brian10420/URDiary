@@ -14,10 +14,10 @@ import {loadVariableFont as loadInter} from '@remotion/google-fonts/Inter';
 import {loadVariableFont as loadNewsreader} from '@remotion/google-fonts/Newsreader';
 import {CAPTIONS} from '../data/captions.ts';
 import {HERO_CARD, LOOP_SEGMENTS} from '../data/loop.ts';
-import {SHOTS, TARGETS} from '../data/media.ts';
+import {SHOTS, SHOTS_EN, TARGETS} from '../data/media.ts';
 import {NARRATION} from '../data/narration.ts';
 import {SCENES} from '../data/timeline.ts';
-import {UI} from '../data/ui-strings.ts';
+import {UI, UI_TEXT} from '../data/ui-strings.ts';
 
 const zhCorpus = (): string =>
   [
@@ -29,6 +29,8 @@ const zhCorpus = (): string =>
     ...Object.values(SHOTS).flatMap((s) => [s.label, s.name, s.brief]),
     ...Object.values(TARGETS).map((t) => t.label),
     ...Object.values(UI),
+    ...Object.values(UI_TEXT.en),
+    ...Object.values(SHOTS_EN).flatMap((s) => [s.label, s.name, s.brief]),
     // digits, Latin and punctuation used in labels / timecodes
     ' !"#$%&\'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~·—–×→／（）：「」《》、，。；？！…',
   ].join('');

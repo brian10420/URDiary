@@ -5,7 +5,8 @@
  */
 import {AbsoluteFill, useVideoConfig} from 'remotion';
 import {SCENES, sceneAt} from '../data/timeline.ts';
-import {UI} from '../data/ui-strings.ts';
+import {LOOP_UI_LANG} from '../data/loop.ts';
+import {UI, uiText} from '../data/ui-strings.ts';
 import {FONT} from '../lib/theme.ts';
 import {useAbsFrame} from '../lib/time.tsx';
 
@@ -54,6 +55,7 @@ export const IntroDraftOverlay = () => {
 };
 
 export const LoopDraftOverlay = ({phase}: {phase: number}) => {
+  const UI = uiText(LOOP_UI_LANG); // the README loop is the en film
   const f = useAbsFrame();
   const {fps} = useVideoConfig();
   return (

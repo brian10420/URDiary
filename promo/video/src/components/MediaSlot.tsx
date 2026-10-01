@@ -19,7 +19,7 @@ import {MEDIA_MANIFEST, type MediaEntry} from '../generated/media-manifest.ts';
 import {RECORDING_SIZE, SHOTS, type Placement, type ShotSpec, shotMediaId} from '../data/media.ts';
 import {CLIP_FPS, type Rect, clipById, clipGeometry, clipInFrame, sourceAt, speedMap} from '../data/shots.ts';
 import type {Lang} from '../data/timeline.ts';
-import {UI} from '../data/ui-strings.ts';
+import {uiText} from '../data/ui-strings.ts';
 import {At, useTime} from '../lib/time.tsx';
 import {Placeholder, type LabelPosition, type PlaceholderProps, type Tone} from './Placeholder.tsx';
 
@@ -115,7 +115,7 @@ const SlotBody = (props: MediaSlotProps) => {
         lang={lang}
         tone={props.tone}
         srcSec={srcSec}
-        status={props.status ?? (frozen ? UI.frozen : undefined)}
+        status={props.status ?? (frozen ? uiText(lang).frozen : undefined)}
         illustration={props.illustration}
         targets={props.targets}
         compact={props.compact}

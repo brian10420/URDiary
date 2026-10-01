@@ -82,6 +82,54 @@ export const SHOTS: Record<ShotId, ShotSpec> = {
     brief: '輸入區上方「AI: Grok (xAI) grok-4.3」'},
 };
 
+/** English label / name / brief per shot (the zh ones live on SHOTS; STORYBOARD.md §3 / §4.3). */
+export const SHOTS_EN: Record<ShotId, {label: string; name: string; brief: string}> = {
+  G1: {label: 'Things hard to say', name: 'Night desk',
+    brief: 'Night desk, warm lamp; phone lit with an empty chat box; mascot in 3/4 view watches the phone ~3 s, then turns to camera and smiles'},
+  G2: {label: 'Seen · left panel', name: 'A good day',
+    brief: 'Front smile → small hop, happy squint + blush, 3–4 gold four-point stars → lands, back to a smile'},
+  G3: {label: 'Seen · right panel', name: 'A hard day',
+    brief: 'Rain outside; the mascot keeps calm company, breathing slowly. No stars, no hop'},
+  G4: {label: 'Good morning', name: 'Good morning',
+    brief: 'Morning window light; mascot holds a white teacup, lifts it slightly, smiles; right third left clear for the phone'},
+  G5: {label: 'A way to care for yourself', name: 'Closing wave',
+    brief: 'Cream paper; mascot in the left third waves once, lowers its hand, smiles; last frame freezes'},
+  G6: {label: 'README loop', name: 'README sway loop',
+    brief: '±5° metronome sway (pivot 50% 88%), three swings per loop, one blink mid-way; first frame = last'},
+  U02: {label: 'Meet, then choose a name', name: 'First meeting + naming',
+    brief: 'Self-introduction → naming invitation → type "小樹洞" → title changes → namingAck'},
+  U03: {label: 'Being heard', name: 'Listening',
+    brief: 'Yu-ching sends a ~100-character message → thinking bubble → reply appears'},
+  U04: {label: 'Being remembered', name: 'Remembering that day',
+    brief: 'Second message → reply quotes "M/D 《title》"'},
+  U05: {label: 'Memory card', name: 'Past diary card',
+    brief: 'Card of the D-16 diary entry (date, mood tag, 20 px stamp, title)'},
+  U06: {label: 'One chat, one diary entry', name: 'End chat → diary',
+    brief: 'Press "End chat and write diary" → generating → new card on the diary page → detail with the 40 px stamp card'},
+  U07: {label: "Today's stamp", name: "Today's stamp",
+    brief: "Calendar → today's cell with its 14 px stamp → day panel with the 40 px stamp card + note"},
+  U08: {label: 'Month overview', name: 'Month overview',
+    brief: 'Still month grid: ≥12 days with stamps, multi-day bars, category icons'},
+  U09: {label: 'Good-day stamp card', name: 'Good-day panel',
+    brief: 'Day panel stamp card for a day with valence ≥0.65 (e.g. sun, "bright and energetic" + note)'},
+  U10: {label: 'Save-diary easter egg', name: 'Happy-hop easter egg (optional)',
+    brief: 'The hop easter egg in the middle of the screen when another demo account saves a diary entry'},
+  U11: {label: 'Hard-day stamp card (backup)', name: 'Hard-day panel',
+    brief: "If S5's day got no stamp, the right panel uses a heavy-day stamp card from the seed data"},
+  U12: {label: 'Good morning', name: 'Phone morning greeting',
+    brief: 'Mobile chat page → thinking bubble → little mascot with tea + good-morning greeting'},
+  U13: {label: 'Phone calendar', name: 'Phone calendar (optional)',
+    brief: 'Tap "Calendar" in the bottom tabs → mobile month grid, today\'s 10:00 class'},
+  U15: {label: 'Your memory, your call', name: 'Approval notice → user profile → ledger',
+    brief: 'Tap the notice bubble → user profile (cursor into the text box) → memory ledger → approve one entry → in effect'},
+  U16: {label: 'You choose the AI', name: 'Provider label (optional)',
+    brief: 'Above the input: "AI: Grok (xAI) grok-4.3"'},
+};
+
+/** label / name / brief of a shot in `lang` (zh = the fields on SHOTS). */
+export const shotText = (shot: ShotSpec, lang: Lang = 'zh'): {label: string; name: string; brief: string} =>
+  lang === 'en' ? SHOTS_EN[shot.id] : {label: shot.label, name: shot.name, brief: shot.brief};
+
 /**
  * Media id of a shot: ComfyUI shots are `G1`…; UI recordings live in public/media/ui/ as
  * `ui/U03-zh`, and a variant (a second cut of the same take, e.g. the S6 stamp card cropped from
@@ -202,6 +250,35 @@ export const TARGETS = {
 } as const satisfies Record<string, Target>;
 
 export type TargetId = keyof typeof TARGETS;
+/** English wording of each TARGETS label (placeholder annotation boxes in the en cut). */
+const TARGET_LABEL_EN: Record<TargetId, string> = {
+  s2Title: 'Chat title (becomes 小樹洞)',
+  s3Reply: 'Reply (push-in target)',
+  s4Reply: 'Second reply (push-in target)',
+  s4CardSlot: 'Memory card position',
+  s5EndButton: '"End chat and write diary" button',
+  s5NewCard: 'Newest card on the diary page',
+  s5StampCard: 'Detail stamp card: stamp + note (push-in)',
+  s5TodayCell: "Today's cell (push-in)",
+  s5TodayStamp: "Today's 14 px stamp",
+  s5PanelCard: 'Day-panel stamp card',
+  s5PanelStamp: 'Day-panel 40 px stamp (match-cut start)',
+  u10Egg: 'Save-diary easter egg (crop)',
+  s7CalendarTab: 'Phone bottom "Calendar" tab (tap)',
+  s8Notice: 'Warm notice bubble',
+  s8Modal: 'Memory window (push-in)',
+  s8ProfileText: 'User-profile text box',
+  s8LedgerTab: '"Memory ledger" tab',
+  s8Approve: '"Approve" button',
+  loopChat: 'Chat column (crop)',
+  loopMemory: 'Reply + quote (crop)',
+  loopDiary: 'New diary card (crop)',
+  loopMonth: 'Month grid (crop)',
+  loopStampA: 'Stamp 9/24 (camera)',
+  loopStampB: 'Stamp 9/19 (music)',
+  loopStampC: 'Stamp 9/26 (sun)',
+};
+export const targetLabel = (id: TargetId, lang: Lang = 'zh'): string => (lang === 'en' ? TARGET_LABEL_EN[id] : TARGETS[id].label);
 export const targetRect = (id: TargetId, lang: Lang): Rect => TARGETS[id].rect[lang];
 
 /**
