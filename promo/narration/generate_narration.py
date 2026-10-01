@@ -7,7 +7,7 @@
 App 的 voice_service.text_to_speech() 固定送 language "auto"、24 kHz／128 kbps，
 所以這裡在旁邊放一個薄包裝 tts_line()：同一個 _call()（同樣的錯誤映射、只記狀態碼），
 但 payload 多送 language "zh"/"en"、sample_rate 48000、bit_rate 192000（docs 建議）。
-backend/ 不動。聲音：zh=liora、en=lux（Brian 決定）。
+backend/ 不動。聲音：zh=liora、en=liora（Brian 2026-10-01 改：英文也用 liora；lux 版保留在 raw/en-lux、normalized/en-lux）。
 
 流程：raw mp3（不動）→ 前後補靜音再修剪（至少各留 120 ms）→ loudnorm 兩階段
 （−16 LUFS／−1.5 dBTP，linear）→ 48 kHz PCM16 WAV ＋ 192 kbps mp3 → 實測長度／LUFS／真峰值。
@@ -29,7 +29,7 @@ OUT = Path("/mnt/Data_SSD/urdiary-media/narration")
 KEY_FILE = Path.home() / ".config" / "urdiary-promo" / "xai_key"
 FFMPEG = "/mnt/Data_SSD/ComfyUI/.venv/bin/static_ffmpeg"
 FFPROBE = "/mnt/Data_SSD/ComfyUI/.venv/bin/static_ffprobe"
-VOICES = {"zh": "liora", "en": "lux"}
+VOICES = {"zh": "liora", "en": "liora"}
 TARGET_I, TARGET_TP, TARGET_LRA = -16.0, -1.5, 20
 PAD_S = 0.12
 SPEED_MAX = 1.10
